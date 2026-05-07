@@ -1042,55 +1042,75 @@ function updateMobileCatStrip() {
 }
 
 // ── Swipe between categories ──────────────────────────────────────────────────
-var swipeStartX = 0;
-var swipeStartY = 0;
-var swipeActive = false;
+// ── Swipe gesture — velocity + distance based ────────────────────────────────
+var swipeStartX   = 0;
+var swipeStartY   = 0;
+var swipeStartT   = 0;
+var swipeActive   = false;
+
+function handleSwipe(dx, dy, dt) {
+  if (!isMobile) return;
+  var adx = Math.abs(dx), ady = Math.abs(dy);
+  // Must be more horizontal than vertical
+  if (ady > adx * 0.8) return;
+  // Velocity in px/ms — a natural flick is >0.2px/ms; slow drag needs more distance
+  var vx = adx / (dt || 1);
+  var isFlick = vx > 0.2;
+  // Accept: flick >= 20px  OR  slow swipe >= 40px
+  if (adx < (isFlick ? 20 : 40)) return;
+  var cats = config && config.categories;
+  if (!cats) return;
+  if (dx < 0 && catIdx < cats.length - 1) {
+    catIdx++; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
+  } else if (dx > 0 && catIdx > 0) {
+    catIdx--; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
+  }
+}
 
 document.addEventListener('touchstart', function(e) {
-  // Don't swipe when interacting with overlays or scrollable panels
-  if (e.target.closest('#settings-overlay, #prefs-overlay, #ip-overlay, #cat-row, #item-panel')) return;
+  if (e.target.closest('#settings-overlay, #prefs-overlay, #ip-overlay, #cat-row')) return;
   swipeStartX = e.touches[0].clientX;
   swipeStartY = e.touches[0].clientY;
+  swipeStartT = Date.now();
   swipeActive = true;
 }, { passive: true });
 
 document.addEventListener('touchend', function(e) {
-  if (!swipeActive || !isMobile) return;
+  if (!swipeActive) return;
   swipeActive = false;
+  // Ignore taps on the item panel — let the individual item click handle it
+  if (e.target.closest('#item-panel')) return;
   var dx = e.changedTouches[0].clientX - swipeStartX;
   var dy = e.changedTouches[0].clientY - swipeStartY;
-  // Only register horizontal swipes (dx > dy * 1.5, minimum 50px)
-  if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-  var cats = config && config.categories;
-  if (!cats) return;
-  if (dx < 0 && catIdx < cats.length - 1) {
-    catIdx++; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
-  } else if (dx > 0 && catIdx > 0) {
-    catIdx--; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
-  }
+  handleSwipe(dx, dy, Date.now() - swipeStartT);
 }, { passive: true });
 
-// ── Item panel swipe: don't interfere with vertical scroll ───────────────────
+// ── Item panel: swipe between categories without fighting vertical scroll ─────
 var itemPanelSwipeX = 0;
 var itemPanelSwipeY = 0;
+var itemPanelSwipeT = 0;
+var itemPanelMoved  = false;
+
 document.getElementById('item-panel').addEventListener('touchstart', function(e) {
   itemPanelSwipeX = e.touches[0].clientX;
   itemPanelSwipeY = e.touches[0].clientY;
+  itemPanelSwipeT = Date.now();
+  itemPanelMoved  = false;
+}, { passive: true });
+
+document.getElementById('item-panel').addEventListener('touchmove', function(e) {
+  itemPanelMoved = true;
 }, { passive: true });
 
 document.getElementById('item-panel').addEventListener('touchend', function(e) {
   if (!isMobile) return;
-  var dx = e.changedTouches[0].clientX - itemPanelSwipeX;
-  var dy = e.changedTouches[0].clientY - itemPanelSwipeY;
-  // Only act on clear horizontal swipes, not vertical scrolls
-  if (Math.abs(dy) > 30 || Math.abs(dx) < 60) return;
-  var cats = config && config.categories;
-  if (!cats) return;
-  if (dx < 0 && catIdx < cats.length - 1) {
-    catIdx++; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
-  } else if (dx > 0 && catIdx > 0) {
-    catIdx--; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
-  }
+  var dx  = e.changedTouches[0].clientX - itemPanelSwipeX;
+  var dy  = e.changedTouches[0].clientY - itemPanelSwipeY;
+  var dt  = Date.now() - itemPanelSwipeT;
+  var adx = Math.abs(dx), ady = Math.abs(dy);
+  // If there was significant vertical movement, it was a scroll — ignore
+  if (ady > 20) return;
+  handleSwipe(dx, dy, dt);
 }, { passive: true });
 
 // ── Patch renderItems to call updateMobileCatStrip after render ───────────────
