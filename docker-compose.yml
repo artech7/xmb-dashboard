@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  xmb-dashboard:
+    # ── Option A: Pull pre-built image from GitHub Container Registry ──────────
+    # Replace YOUR_GITHUB_USERNAME with your GitHub username after first push.
+    # image: ghcr.io/YOUR_GITHUB_USERNAME/xmb-dashboard:latest
+
+    # ── Option B: Build locally ───────────────────────────────────────────────
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: xmb-dashboard
+    restart: unless-stopped
+
+    ports:
+      - "8484:8484"
+
+    environment:
+      - ADMIN_PASSWORD=admin          # ⚠ Change before deploying
+      - JWT_SECRET=change-me-please   # ⚠ Change before deploying
+      - PORT=8484
+
+    volumes:
+      - xmb-data:/app/data            # Persists config across restarts/updates
+
+    labels:
+      # Traefik — remove if not using
+      - "traefik.enable=true"
+      - "traefik.http.routers.xmb.rule=Host(`dash.yourdomain.local`)"
+      - "traefik.http.routers.xmb.entrypoints=web"
+      - "traefik.http.services.xmb.loadbalancer.server.port=8484"
+
+    networks:
+      - xmb-net
+
+volumes:
+  xmb-data:
+
+networks:
+  xmb-net:
+    driver: bridge

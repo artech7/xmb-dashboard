@@ -1,0 +1,33 @@
+services:
+  homelab-xmb:
+    image: homelab-xmb:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: homelab-xmb
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - homelab-xmb-data:/data
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      # ── REQUIRED: set your management portal password here ──────
+      - ADMIN_PASSWORD=changeme
+      # If unset, a random password is generated and printed in container logs on each restart.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/config"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homelab-xmb.rule=Host(`xmb.yourdomain.local`)"
+      - "traefik.http.routers.homelab-xmb.entrypoints=websecure"
+      - "traefik.http.services.homelab-xmb.loadbalancer.server.port=3000"
+
+volumes:
+  homelab-xmb-data:
+    driver: local

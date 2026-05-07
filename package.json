@@ -1,0 +1,14 @@
+{
+  "name": "xmb-dashboard",
+  "version": "1.0.0",
+  "description": "PS3 XMB-style homelab dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

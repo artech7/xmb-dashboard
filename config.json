@@ -1,0 +1,75 @@
+{
+  "system": {
+    "name": "HOMELAB",
+    "subtitle": "Media & Services",
+    "uptimeText": "",
+    "refreshInterval": 30
+  },
+  "theme": {
+    "accent": "#4a9eff",
+    "scanlines": true,
+    "vignette": true,
+    "waves": true,
+    "particles": true
+  },
+  "categories": [
+    {
+      "id": "media",
+      "icon": "🎬",
+      "label": "Media",
+      "items": [
+        {
+          "icon": "🎬", "label": "Jellyfin", "value": "Media Server",
+          "badge": "UP", "badgeClass": "ok", "url": "",
+          "detail": { "title": "Jellyfin", "rows": [["Type","Media Server"],["Port","8096"],["Streams","—"],["Movies","—"],["TV Episodes","—"],["Status","UP"]] }
+        },
+        {
+          "icon": "🔍", "label": "Jellyseerr", "value": "Request Manager",
+          "badge": "UP", "badgeClass": "ok", "url": "",
+          "detail": { "title": "Jellyseerr", "rows": [["Type","Request Manager"],["Port","5055"],["Pending","—"],["Total Requests","—"],["Status","UP"]] }
+        }
+      ]
+    },
+    {
+      "id": "music",
+      "icon": "🎵",
+      "label": "Music",
+      "items": [
+        {
+          "icon": "🎵", "label": "Navidrome", "value": "Music Streaming",
+          "badge": "UP", "badgeClass": "ok", "url": "",
+          "detail": { "title": "Navidrome", "rows": [["Type","Music Server"],["Port","4533"],["Artists","—"],["Albums","—"],["Tracks","—"],["Status","UP"]] }
+        },
+        {
+          "icon": "🌧️", "label": "Moodist", "value": "Ambient Sounds",
+          "badge": "UP", "badgeClass": "ok", "url": "",
+          "detail": { "title": "Moodist", "rows": [["Type","Ambient Sound Player"],["Status","UP"]] }
+        }
+      ]
+    },
+    {
+      "id": "books",
+      "icon": "📚",
+      "label": "Books",
+      "items": [
+        {
+          "icon": "🎧", "label": "Audiobookshelf", "value": "Audiobook Library",
+          "badge": "UP", "badgeClass": "ok", "url": "",
+          "detail": { "title": "Audiobookshelf", "rows": [["Type","Audiobook & Podcast Server"],["Port","13378"],["Books","—"],["Podcasts","—"],["Status","UP"]] }
+        }
+      ]
+    },
+    {
+      "id": "gaming",
+      "icon": "🎮",
+      "label": "Gaming",
+      "items": [
+        {
+          "icon": "🕹️", "label": "RomM", "value": "ROM Manager",
+          "badge": "UP", "badgeClass": "ok", "url": "",
+          "detail": { "title": "RomM", "rows": [["Type","ROM Manager"],["Port","8080"],["Platforms","—"],["ROMs","—"],["Status","UP"]] }
+        }
+      ]
+    }
+  ]
+}

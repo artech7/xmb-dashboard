@@ -1,0 +1,207 @@
+{
+  "title": "HOMELAB",
+  "clockFormat": "24h",
+  "categories": [
+    {
+      "id": "network",
+      "name": "Network",
+      "icon": "network",
+      "color": "#00c8ff",
+      "items": [
+        {
+          "name": "Router",
+          "url": "http://192.168.1.1",
+          "desc": "Gateway / Admin UI",
+          "icon": "router"
+        },
+        {
+          "name": "Pi-hole",
+          "url": "http://192.168.1.10",
+          "desc": "DNS / Ad Blocking",
+          "icon": "shield"
+        },
+        {
+          "name": "Unifi",
+          "url": "https://192.168.1.20",
+          "desc": "Network Controller",
+          "icon": "wifi"
+        },
+        {
+          "name": "Traefik",
+          "url": "http://192.168.1.5:8080",
+          "desc": "Reverse Proxy Dashboard",
+          "icon": "proxy"
+        }
+      ]
+    },
+    {
+      "id": "storage",
+      "name": "Storage",
+      "icon": "storage",
+      "color": "#ff9900",
+      "items": [
+        {
+          "name": "Synology DSM",
+          "url": "http://nas.local:5000",
+          "desc": "NAS Management UI",
+          "icon": "nas"
+        },
+        {
+          "name": "File Station",
+          "url": "http://nas.local:5000",
+          "desc": "Browse Files",
+          "icon": "folder"
+        },
+        {
+          "name": "MinIO",
+          "url": "http://192.168.1.5:9001",
+          "desc": "S3-Compatible Storage",
+          "icon": "bucket"
+        }
+      ]
+    },
+    {
+      "id": "compute",
+      "name": "Compute",
+      "icon": "server",
+      "color": "#cc66ff",
+      "items": [
+        {
+          "name": "Proxmox",
+          "url": "https://proxmox.local:8006",
+          "desc": "Hypervisor",
+          "icon": "vm"
+        },
+        {
+          "name": "Portainer",
+          "url": "http://192.168.1.5:9000",
+          "desc": "Docker Manager",
+          "icon": "docker"
+        },
+        {
+          "name": "Dozzle",
+          "url": "http://192.168.1.5:8888",
+          "desc": "Container Logs",
+          "icon": "logs"
+        }
+      ]
+    },
+    {
+      "id": "monitoring",
+      "name": "Monitor",
+      "icon": "monitor",
+      "color": "#00ff88",
+      "items": [
+        {
+          "name": "Grafana",
+          "url": "http://192.168.1.5:3000",
+          "desc": "Metrics & Dashboards",
+          "icon": "chart"
+        },
+        {
+          "name": "Prometheus",
+          "url": "http://192.168.1.5:9090",
+          "desc": "Metrics Backend",
+          "icon": "metrics"
+        },
+        {
+          "name": "Uptime Kuma",
+          "url": "http://192.168.1.5:3001",
+          "desc": "Service Uptime",
+          "icon": "uptime"
+        },
+        {
+          "name": "Netdata",
+          "url": "http://192.168.1.5:19999",
+          "desc": "Real-time Stats",
+          "icon": "pulse"
+        }
+      ]
+    },
+    {
+      "id": "media",
+      "name": "Media",
+      "icon": "media",
+      "color": "#ff4466",
+      "items": [
+        {
+          "name": "Jellyfin",
+          "url": "http://192.168.1.5:8096",
+          "desc": "Media Server",
+          "icon": "play"
+        },
+        {
+          "name": "Sonarr",
+          "url": "http://192.168.1.5:8989",
+          "desc": "TV Management",
+          "icon": "tv"
+        },
+        {
+          "name": "Radarr",
+          "url": "http://192.168.1.5:7878",
+          "desc": "Movie Management",
+          "icon": "film"
+        },
+        {
+          "name": "qBittorrent",
+          "url": "http://192.168.1.5:8080",
+          "desc": "Torrent Client",
+          "icon": "download"
+        }
+      ]
+    },
+    {
+      "id": "dev",
+      "name": "Dev",
+      "icon": "code",
+      "color": "#ffee00",
+      "items": [
+        {
+          "name": "Gitea",
+          "url": "http://192.168.1.5:3000",
+          "desc": "Git Repositories",
+          "icon": "git"
+        },
+        {
+          "name": "Frappe / ERPNext",
+          "url": "http://frappe.local",
+          "desc": "ERP / LMS",
+          "icon": "erp"
+        },
+        {
+          "name": "Mailpit",
+          "url": "http://192.168.1.5:8025",
+          "desc": "Local SMTP Testing",
+          "icon": "mail"
+        },
+        {
+          "name": "Kibana",
+          "url": "http://192.168.1.5:5601",
+          "desc": "Log Explorer / ES|QL",
+          "icon": "search"
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "icon": "settings",
+      "color": "#aaaaaa",
+      "items": [
+        {
+          "name": "Preferences",
+          "url": "#prefs",
+          "desc": "Theme, display & motion",
+          "icon": "edit"
+        },
+        {
+          "name": "Admin Panel",
+          "url": "#admin",
+          "desc": "Edit dashboard settings",
+          "icon": "edit"
+        }
+      ]
+    }
+  ],
+  "favicon": ""
+}
