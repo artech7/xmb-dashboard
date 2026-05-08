@@ -35,6 +35,7 @@ html, body {
   inset: 0;
   width: 100%; height: 100%;
   z-index: 0;
+  pointer-events: none;
 }
 
 /* ── TOP BAR ── */
@@ -811,12 +812,12 @@ function drawBg(c0, c1, c2) {
 // ── 1. GALAXY SPIRAL ──────────────────────────────────────
 var galaxyStars = null;
 function initGalaxyStars() {
-  var count = 600;
+  var count = 800;
   galaxyStars = [];
   var arms = 3;
   for (var i = 0; i < count; i++) {
     var arm = Math.floor(Math.random() * arms);
-    var dist = Math.pow(Math.random(), 0.6) * 0.48;
+    var dist = Math.pow(Math.random(), 0.5) * 0.92;
     var angle = arm * (Math.PI * 2 / arms) + dist * 4.5 + (Math.random() - 0.5) * 0.8;
     var scatter = (Math.random() - 0.5) * 0.06;
     galaxyStars.push({
@@ -836,13 +837,13 @@ function drawGalaxy() {
   drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
 
   var cx = W * 0.5, cy = H * 0.5;
-  var maxR = Math.min(W, H) * 0.46;
+  var maxR = Math.min(W, H) * 0.72;
   var spinT = t * 0.00012;
   var [ar,ag,ab] = accentRgb;
 
   // Core glow
   var core = ctx.createRadialGradient(cx,cy,0,cx,cy,maxR*0.22);
-  core.addColorStop(0, 'rgba('+ar+','+ag+','+ab+',0.45)');
+  core.addColorStop(0, 'rgba('+ar+','+ag+','+ab+',0.22)');
   core.addColorStop(0.4,'rgba('+Math.round(ar*0.5)+','+Math.round(ag*0.5)+','+Math.round(ab*0.5)+',0.15)');
   core.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle = core; ctx.fillRect(0,0,W,H);
@@ -857,7 +858,7 @@ function drawGalaxy() {
       var ax = cx + Math.cos(ang) * r;
       var ay = cy + Math.sin(ang) * r;
       var glow = ctx.createRadialGradient(ax,ay,0,ax,ay,maxR*0.06);
-      var a = (1-frac) * 0.06;
+      var a = (1-frac) * 0.03;
       glow.addColorStop(0,'rgba('+ar+','+ag+','+ab+','+a+')');
       glow.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle = glow; ctx.fillRect(0,0,W,H);
@@ -868,7 +869,7 @@ function drawGalaxy() {
   galaxyStars.forEach(function(s) {
     var ang = s.baseAngle + spinT * (1 - s.dist);
     var x = cx + Math.cos(ang) * s.dist * maxR;
-    var y = cy + Math.sin(ang) * s.dist * maxR * 0.55;
+    var y = cy + Math.sin(ang) * s.dist * maxR * 0.72;
     var tw = 0.7 + Math.sin(t * s.twinkle + s.phase) * 0.3;
     ctx.beginPath();
     ctx.arc(x, y, s.size * tw, 0, Math.PI*2);
@@ -964,12 +965,12 @@ function newSolarParticle() {
   return {
     x: side ? -0.05 : 1.05,
     y: Math.random(),
-    vx: (side ? 1 : -1) * (0.0015 + Math.random() * 0.003),
+    vx: (side ? 1 : -1) * (0.0005 + Math.random() * 0.001),
     vy: (Math.random()-0.5) * 0.0006,
     life: Math.random(),
     maxLife: 0.6 + Math.random() * 0.4,
     size: 0.5 + Math.random() * 2,
-    tail: 0.04 + Math.random() * 0.08
+    tail: 0.025 + Math.random() * 0.045
   };
 }
 function drawSolarWind() {
@@ -1032,13 +1033,13 @@ function initMatrix() {
 function drawMatrix() {
   if (!matrixCols || matrixCols.length !== Math.floor(W/18)) initMatrix();
   var [ar,ag,ab] = accentRgb;
+  var bg = nebulaBackground[1] || '#03010e';
+  var br = parseInt(bg.slice(1,3)||'03',16);
+  var bg2 = parseInt(bg.slice(3,5)||'01',16);
+  var bb = parseInt(bg.slice(5,7)||'0e',16);
 
-  // Fade trail
-  ctx.fillStyle = 'rgba('+
-    Math.round(parseInt(nebulaBackground[1].slice(1,3)||'03',16))+','+
-    Math.round(parseInt(nebulaBackground[1].slice(3,5)||'01',16))+','+
-    Math.round(parseInt(nebulaBackground[1].slice(5,7)||'0e',16))+
-    ',0.15)';
+  // Clear to near-black with slight trail (not full clear — creates the smear effect)
+  ctx.fillStyle = 'rgba('+br+','+bg2+','+bb+',0.18)';
   ctx.fillRect(0,0,W,H);
 
   var csize = 16;
@@ -3447,20 +3448,37 @@ document.addEventListener('keydown', function(e) {
       </div>
 
       <div class="p-section">
-        <div class="p-section-label">Background</div>
+        <div class="p-section-label">Background Style</div>
         <div class="p-row" data-pref-row="1">
-          <div class="p-row-label">Intensity</div>
+          <div class="p-row-label">Style</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="intensity" data-val="dim"    data-pref-row="1" data-pref-col="0">Dim</button>
-            <button class="p-toggle" data-pref="intensity" data-val="normal" data-pref-row="1" data-pref-col="1">Normal</button>
-            <button class="p-toggle" data-pref="intensity" data-val="vivid"  data-pref-row="1" data-pref-col="2">Vivid</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="nebula"     data-pref-row="1" data-pref-col="0">Nebula</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="galaxy"     data-pref-row="1" data-pref-col="1">Galaxy</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="underwater" data-pref-row="1" data-pref-col="2">Ocean</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="solarwind"  data-pref-row="1" data-pref-col="3">Solar Wind</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="4">Matrix</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="1" data-pref-col="5">Warp</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">Lava</button>
           </div>
         </div>
+      </div>
+
+
+      <div class="p-section">
+        <div class="p-section-label">Background</div>
         <div class="p-row" data-pref-row="2">
+          <div class="p-row-label">Intensity</div>
+          <div class="p-toggle-group">
+            <button class="p-toggle" data-pref="intensity" data-val="dim"    data-pref-row="2" data-pref-col="0">Dim</button>
+            <button class="p-toggle" data-pref="intensity" data-val="normal" data-pref-row="2" data-pref-col="1">Normal</button>
+            <button class="p-toggle" data-pref="intensity" data-val="vivid"  data-pref-row="2" data-pref-col="2">Vivid</button>
+          </div>
+        </div>
+        <div class="p-row" data-pref-row="3">
           <div class="p-row-label">Stars</div>
           <div class="p-toggle-group">
             <button class="p-toggle" data-pref="stars" data-val="off"    data-pref-row="2" data-pref-col="0">Off</button>
-            <button class="p-toggle" data-pref="stars" data-val="normal" data-pref-row="2" data-pref-col="1">Normal</button>
+            <button class="p-toggle" data-pref="stars" data-val="normal" data-pref-row="3" data-pref-col="1">Normal</button>
             <button class="p-toggle" data-pref="stars" data-val="dense"  data-pref-row="2" data-pref-col="2">Dense</button>
           </div>
         </div>
@@ -3468,29 +3486,29 @@ document.addEventListener('keydown', function(e) {
 
       <div class="p-section">
         <div class="p-section-label">Display</div>
-        <div class="p-row" data-pref-row="3">
+        <div class="p-row" data-pref-row="4">
           <div class="p-row-label">Font Size</div>
           <div class="p-toggle-group">
             <button class="p-toggle" data-pref="fontSize" data-val="small"  data-pref-row="3" data-pref-col="0">S</button>
-            <button class="p-toggle" data-pref="fontSize" data-val="normal" data-pref-row="3" data-pref-col="1">M</button>
+            <button class="p-toggle" data-pref="fontSize" data-val="normal" data-pref-row="4" data-pref-col="1">M</button>
             <button class="p-toggle" data-pref="fontSize" data-val="large"  data-pref-row="3" data-pref-col="2">L</button>
           </div>
         </div>
-        <div class="p-row" data-pref-row="4">
+        <div class="p-row" data-pref-row="5">
           <div class="p-row-label">Descriptions</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="showDesc" data-val="show" data-pref-row="4" data-pref-col="0">Show</button>
-            <button class="p-toggle" data-pref="showDesc" data-val="hide" data-pref-row="4" data-pref-col="1">Hide</button>
+            <button class="p-toggle" data-pref="showDesc" data-val="show" data-pref-row="5" data-pref-col="0">Show</button>
+            <button class="p-toggle" data-pref="showDesc" data-val="hide" data-pref-row="5" data-pref-col="1">Hide</button>
           </div>
         </div>
       </div>
 
       <div class="p-section">
         <div class="p-section-label">Clock</div>
-        <div class="p-row" data-pref-row="5">
+        <div class="p-row" data-pref-row="6">
           <div class="p-row-label">Format</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="clockFmt" data-val="default" data-pref-row="5" data-pref-col="0">Auto</button>
+            <button class="p-toggle" data-pref="clockFmt" data-val="default" data-pref-row="6" data-pref-col="0">Auto</button>
             <button class="p-toggle" data-pref="clockFmt" data-val="12h"     data-pref-row="5" data-pref-col="1">12h</button>
             <button class="p-toggle" data-pref="clockFmt" data-val="24h"     data-pref-row="5" data-pref-col="2">24h</button>
           </div>
@@ -3499,33 +3517,18 @@ document.addEventListener('keydown', function(e) {
 
       <div class="p-section">
         <div class="p-section-label">Motion</div>
-        <div class="p-row" data-pref-row="6">
+        <div class="p-row" data-pref-row="7">
           <div class="p-row-label">Animation</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="motion" data-val="normal"  data-pref-row="6" data-pref-col="0">Normal</button>
-            <button class="p-toggle" data-pref="motion" data-val="reduced" data-pref-row="6" data-pref-col="1">Slow</button>
+            <button class="p-toggle" data-pref="motion" data-val="normal"  data-pref-row="7" data-pref-col="0">Normal</button>
+            <button class="p-toggle" data-pref="motion" data-val="reduced" data-pref-row="7" data-pref-col="1">Slow</button>
             <button class="p-toggle" data-pref="motion" data-val="off"     data-pref-row="6" data-pref-col="2">Off</button>
           </div>
         </div>
       </div>
 
-      <div class="p-section">
-        <div class="p-section-label">Background Style</div>
-        <div class="p-row" data-pref-row="7">
-          <div class="p-row-label">Style</div>
-          <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="animStyle" data-val="nebula"     data-pref-row="7" data-pref-col="0">Nebula</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="galaxy"     data-pref-row="7" data-pref-col="1">Galaxy</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="underwater" data-pref-row="7" data-pref-col="2">Ocean</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="solarwind"  data-pref-row="7" data-pref-col="3">Solar Wind</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="7" data-pref-col="4">Matrix</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="7" data-pref-col="5">Warp</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="7" data-pref-col="6">Lava</button>
-          </div>
-        </div>
-      </div>
-
       <button id="prefs-reset-btn" data-pref-row="8" data-pref-col="0">Reset to Defaults</button>
+
     </div>
 
   </div>
@@ -3586,7 +3589,7 @@ function applyPrefs(prefs) {
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
 var THEME_KEYS = Object.keys(NEBULA_THEMES);
-var ROW_COLS   = [THEME_KEYS.length, 3, 3, 3, 2, 3, 3, 7, 1];   // row 0 = themes, row 7 = anim styles, row 8 = reset
+var ROW_COLS   = [THEME_KEYS.length, 7, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=stars, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
