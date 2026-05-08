@@ -812,7 +812,7 @@ function drawBg(c0, c1, c2) {
 // ── 1. GALAXY SPIRAL ──────────────────────────────────────
 var galaxyStars = null;
 function initGalaxyStars() {
-  var count = 800;
+  var count = 350;
   galaxyStars = [];
   var arms = 3;
   for (var i = 0; i < count; i++) {
@@ -851,14 +851,15 @@ function drawGalaxy() {
   // Arms glow
   for (var arm = 0; arm < 3; arm++) {
     var armBase = arm * (Math.PI*2/3) + spinT;
-    for (var step = 0; step < 60; step++) {
-      var frac = step / 60;
+    for (var step = 0; step < 25; step++) {
+      var frac = step / 25;
       var ang = armBase + frac * 4.5;
       var r = frac * maxR;
       var ax = cx + Math.cos(ang) * r;
       var ay = cy + Math.sin(ang) * r;
       var glow = ctx.createRadialGradient(ax,ay,0,ax,ay,maxR*0.06);
-      var a = (1-frac) * 0.03;
+      if (frac > 0.65) return;
+      var a = (1-frac) * 0.025;
       glow.addColorStop(0,'rgba('+ar+','+ag+','+ab+','+a+')');
       glow.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle = glow; ctx.fillRect(0,0,W,H);
@@ -1136,11 +1137,11 @@ function initLavaBlobs() {
     lavaBlobs.push({
       x: 0.1 + Math.random() * 0.8,
       y: Math.random(),
-      vy: (Math.random() > 0.5 ? 1 : -1) * (0.0003 + Math.random() * 0.0004),
-      r: 0.08 + Math.random() * 0.12,
+      vy: (Math.random() > 0.5 ? 1 : -1) * (0.00012 + Math.random() * 0.00016),
+      r: 0.14 + Math.random() * 0.18,
       wobble: Math.random() * Math.PI * 2,
-      wobbleSpeed: 0.008 + Math.random() * 0.012,
-      wobbleAmp: 0.02 + Math.random() * 0.04
+      wobbleSpeed: 0.003 + Math.random() * 0.005,
+      wobbleAmp: 0.03 + Math.random() * 0.06
     });
   }
 }
@@ -1163,7 +1164,7 @@ function drawLava() {
     var pulse = 0.5 + Math.sin(b.wobble * 0.7) * 0.15;
 
     var g = ctx.createRadialGradient(bx, by, 0, bx, by, br);
-    g.addColorStop(0,   'rgba('+ar+','+ag+','+ab+','+(pulse*0.55)+')');
+    g.addColorStop(0,   'rgba('+ar+','+ag+','+ab+','+(pulse*0.7)+')');
     g.addColorStop(0.5, 'rgba('+Math.round(ar*0.7)+','+Math.round(ag*0.7)+','+Math.round(ab*0.7)+','+(pulse*0.25)+')');
     g.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = g;
@@ -3607,7 +3608,7 @@ function applyKbFocus() {
   if (prefFocusRow === 0) {
     var swatches = document.querySelectorAll('.theme-swatch');
     el = swatches[prefFocusCol];
-  } else if (prefFocusRow === 7) {
+  } else if (prefFocusRow === 8) {
     el = document.getElementById('prefs-reset-btn');
   } else {
     el = document.querySelector('[data-pref-row="'+prefFocusRow+'"][data-pref-col="'+prefFocusCol+'"]');
@@ -3622,7 +3623,7 @@ function activateFocused() {
   if (prefFocusRow === 0) {
     var key = THEME_KEYS[prefFocusCol];
     if (key) { userPrefs.theme = key; applyPrefs(userPrefs); savePrefs(); renderPrefsUI(); }
-  } else if (prefFocusRow === 7) {
+  } else if (prefFocusRow === 8) {
     userPrefs = Object.assign({}, DEFAULT_PREFS);
     prefFocusRow = 0; prefFocusCol = 0;
     applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
@@ -3671,7 +3672,7 @@ document.addEventListener('keydown', function(e) {
 
     case 'ArrowDown':
       e.preventDefault();
-      prefFocusRow = Math.min(7, prefFocusRow + 1);
+      prefFocusRow = Math.min(8, prefFocusRow + 1);
       prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
       applyKbFocus(); break;
 
