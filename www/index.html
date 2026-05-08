@@ -651,6 +651,7 @@ const ctx = canvas.getContext('2d');
 let W, H, t = 0;
 let accentColor = '#00c8ff';
 let accentRgb = [0, 200, 255];
+var themeRgb = [0, 200, 255];  // set from selected color theme, used by wave
 
 function hexToRgb(hex) {
   const r = parseInt(hex.slice(1,3),16);
@@ -1229,7 +1230,7 @@ function drawWavePS3() {
   ctx.clearRect(0, 0, W, H);
   drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
 
-  var [ar, ag, ab] = accentRgb;
+  var [ar, ag, ab] = themeRgb;  // use theme color, not category accent
   var spd = animSpeed > 0 ? animSpeed : 0;
   var T   = t * spd;
 
@@ -3715,6 +3716,11 @@ function applyPrefs(prefs) {
   var theme = NEBULA_THEMES[prefs.theme] || NEBULA_THEMES.default;
   activeBlobs = BLOBS.map(function(b,i){ return {x:b.x,y:b.y,r:b.r,rgb:theme.blobs[i]||b.rgb,a:b.a,spd:b.spd}; });
   nebulaBackground = theme.bg;
+  // Derive a vivid representative color from the theme's dominant blob
+  var tb = theme.blobs[0];
+  var tMax = Math.max(tb[0], tb[1], tb[2]) || 1;
+  var tScale = 220 / tMax;
+  themeRgb = [Math.min(255,Math.round(tb[0]*tScale)), Math.min(255,Math.round(tb[1]*tScale)), Math.min(255,Math.round(tb[2]*tScale))];
   var im = {dim:0.45,normal:1.0,vivid:1.7}; blobOpacityMult = im[prefs.intensity]||1.0;
   var sm = {off:0,normal:240,dense:420};
   var nc = sm[prefs.stars]!==undefined?sm[prefs.stars]:240;
