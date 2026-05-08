@@ -811,73 +811,167 @@ function drawBg(c0, c1, c2) {
 
 // ── 1. GALAXY SPIRAL ──────────────────────────────────────
 var galaxyStars = null;
+var galaxyClouds = null;
+
 function initGalaxyStars() {
-  var count = 350;
-  galaxyStars = [];
   var arms = 3;
-  for (var i = 0; i < count; i++) {
+  galaxyStars = [];
+
+  // ── Arm stars — denser, tighter spiral ───────────────────
+  for (var i = 0; i < 700; i++) {
     var arm = Math.floor(Math.random() * arms);
-    var dist = Math.pow(Math.random(), 0.5) * 0.92;
-    var angle = arm * (Math.PI * 2 / arms) + dist * 4.5 + (Math.random() - 0.5) * 0.8;
-    var scatter = (Math.random() - 0.5) * 0.06;
+    var dist = Math.pow(Math.random(), 0.55) * 0.94;
+    var curl = dist * 5.2;
+    var scatter = (Math.random() - 0.5) * (0.04 + dist * 0.12);
     galaxyStars.push({
-      dist: dist + scatter,
-      baseAngle: angle,
-      size: Math.random() * 1.4 + 0.3,
-      alpha: Math.random() * 0.7 + 0.3,
-      color: Math.random() > 0.7 ? 1 : 0,
-      twinkle: Math.random() * 0.02 + 0.005,
-      phase: Math.random() * Math.PI * 2
+      type: 'arm',
+      arm: arm,
+      dist: Math.max(0.01, dist + (Math.random()-0.5)*0.05),
+      baseAngle: arm * (Math.PI*2/arms) + curl + scatter,
+      size: Math.random() > 0.92 ? Math.random()*1.6+1.2 : Math.random()*0.9+0.25,
+      alpha: Math.random() * 0.65 + 0.35,
+      color: Math.random() > 0.65 ? 1 : 0,  // 1=accent, 0=white
+      blueish: Math.random() > 0.80,          // hot blue-white stars
+      twinkle: Math.random() * 0.025 + 0.004,
+      phase: Math.random() * Math.PI * 2,
+      // Angular velocity — inner stars orbit faster (Keplerian)
+      orbitSpeed: 0.00028 + Math.random() * 0.00012,
+    });
+  }
+
+  // ── Background field stars ────────────────────────────────
+  for (var j = 0; j < 250; j++) {
+    galaxyStars.push({
+      type: 'field',
+      dist: 0.05 + Math.random() * 0.95,
+      baseAngle: Math.random() * Math.PI * 2,
+      size: Math.random() * 0.6 + 0.15,
+      alpha: Math.random() * 0.35 + 0.1,
+      color: 0,
+      blueish: Math.random() > 0.85,
+      twinkle: Math.random() * 0.012 + 0.002,
+      phase: Math.random() * Math.PI * 2,
+      orbitSpeed: 0.00005 + Math.random() * 0.00005,
+    });
+  }
+
+  // ── Gas clouds — 6 large soft nebulae around arms ─────────
+  galaxyClouds = [];
+  for (var k = 0; k < 6; k++) {
+    var arm2 = k % arms;
+    var cDist = 0.2 + Math.random() * 0.55;
+    var cCurl = cDist * 5.2;
+    galaxyClouds.push({
+      arm: arm2,
+      dist: cDist,
+      baseAngle: arm2 * (Math.PI*2/arms) + cCurl + (Math.random()-0.5)*0.6,
+      r: 0.12 + Math.random() * 0.14,   // as fraction of maxR
+      alpha: 0.06 + Math.random() * 0.06,
+      // Second color channel for variation
+      warm: Math.random() > 0.5,
     });
   }
 }
+
 function drawGalaxy() {
   if (!galaxyStars) initGalaxyStars();
   ctx.clearRect(0,0,W,H);
   drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
 
   var cx = W * 0.5, cy = H * 0.5;
-  var maxR = Math.min(W, H) * 0.72;
-  var spinT = t * 0.00012;
+  var maxR = Math.min(W, H) * 0.74;
+  var ellipse = 0.68;   // y compression — galaxy tilt
+  var spd = animSpeed > 0 ? animSpeed : 0;
+  // Global spin — faster than before
+  var spinT = t * 0.00022 * spd;
   var [ar,ag,ab] = accentRgb;
 
-  // Core glow
-  var core = ctx.createRadialGradient(cx,cy,0,cx,cy,maxR*0.22);
-  core.addColorStop(0, 'rgba('+ar+','+ag+','+ab+',0.22)');
-  core.addColorStop(0.4,'rgba('+Math.round(ar*0.5)+','+Math.round(ag*0.5)+','+Math.round(ab*0.5)+',0.15)');
-  core.addColorStop(1,'rgba(0,0,0,0)');
+  // ── Background deep-space gradient ───────────────────────
+  var bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, maxR*1.2);
+  bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+',0.18)');
+  bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+',0.08)');
+  bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
+
+  // ── Gas clouds (behind stars) ─────────────────────────────
+  galaxyClouds.forEach(function(c) {
+    var ang = c.baseAngle + spinT * 0.4;
+    var cx2 = cx + Math.cos(ang) * c.dist * maxR;
+    var cy2 = cy + Math.sin(ang) * c.dist * maxR * ellipse;
+    var cr = c.r * maxR;
+    var cg = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, cr);
+    var r2 = c.warm ? Math.round(ar*0.9 + 40) : ar;
+    var g2 = c.warm ? Math.round(ag*0.6) : Math.round(ag*0.8);
+    var b2 = c.warm ? Math.round(ab*0.3) : Math.round(ab*1.1);
+    r2 = Math.min(255,r2); b2 = Math.min(255,b2);
+    cg.addColorStop(0,   'rgba('+r2+','+g2+','+b2+','+c.alpha+')');
+    cg.addColorStop(0.5, 'rgba('+r2+','+g2+','+b2+','+(c.alpha*0.4)+')');
+    cg.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = cg; ctx.fillRect(0,0,W,H);
+  });
+
+  // ── Bright core ───────────────────────────────────────────
+  var core = ctx.createRadialGradient(cx,cy,0,cx,cy,maxR*0.18);
+  core.addColorStop(0,   'rgba(255,255,255,0.55)');
+  core.addColorStop(0.15,'rgba('+ar+','+ag+','+ab+',0.28)');
+  core.addColorStop(0.5, 'rgba('+Math.round(ar*0.5)+','+Math.round(ag*0.5)+','+Math.round(ab*0.5)+',0.10)');
+  core.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = core; ctx.fillRect(0,0,W,H);
 
-  // Arms glow
-  for (var arm = 0; arm < 3; arm++) {
-    var armBase = arm * (Math.PI*2/3) + spinT;
-    for (var step = 0; step < 25; step++) {
-      var frac = step / 25;
-      var ang = armBase + frac * 4.5;
-      var r = frac * maxR;
-      var ax = cx + Math.cos(ang) * r;
-      var ay = cy + Math.sin(ang) * r;
-      var glow = ctx.createRadialGradient(ax,ay,0,ax,ay,maxR*0.06);
-      if (frac > 0.65) continue;
-      var a = (1-frac) * 0.025;
+  // ── Arm glow trails ───────────────────────────────────────
+  var arms = 3;
+  for (var arm = 0; arm < arms; arm++) {
+    var armBase = arm * (Math.PI*2/arms) + spinT;
+    for (var step = 0; step < 30; step++) {
+      var frac = step / 30;
+      if (frac > 0.7) continue;
+      var ang2 = armBase + frac * 5.2;
+      var r2b = frac * maxR;
+      var ax = cx + Math.cos(ang2) * r2b;
+      var ay = cy + Math.sin(ang2) * r2b * ellipse;
+      var gRad = maxR * (0.04 + frac * 0.05);
+      var glow = ctx.createRadialGradient(ax,ay,0,ax,ay,gRad);
+      var a = (1-frac) * (1-frac) * 0.05;
       glow.addColorStop(0,'rgba('+ar+','+ag+','+ab+','+a+')');
       glow.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle = glow; ctx.fillRect(0,0,W,H);
     }
   }
 
-  // Stars
+  // ── Stars ────────────────────────────────────────────────
   galaxyStars.forEach(function(s) {
-    var ang = s.baseAngle + spinT * (1 - s.dist);
-    var x = cx + Math.cos(ang) * s.dist * maxR;
-    var y = cy + Math.sin(ang) * s.dist * maxR * 0.72;
-    var tw = 0.7 + Math.sin(t * s.twinkle + s.phase) * 0.3;
+    var ang3;
+    if (s.type === 'arm') {
+      // Keplerian-ish: inner stars orbit faster
+      var ov = s.orbitSpeed / (0.1 + s.dist * 0.9);
+      ang3 = s.baseAngle + (spinT * ov / s.orbitSpeed);
+    } else {
+      ang3 = s.baseAngle + spinT * (s.orbitSpeed / 0.0003);
+    }
+    var sx = cx + Math.cos(ang3) * s.dist * maxR;
+    var sy = cy + Math.sin(ang3) * s.dist * maxR * ellipse;
+    var tw = 0.75 + Math.sin(t * s.twinkle + s.phase) * 0.25;
+    var sz = s.size * tw;
     ctx.beginPath();
-    ctx.arc(x, y, s.size * tw, 0, Math.PI*2);
-    if (s.color === 1) ctx.fillStyle = 'rgba('+ar+','+ag+','+ab+','+(s.alpha*tw)+')';
-    else ctx.fillStyle = 'rgba(255,255,255,'+(s.alpha*tw)+')';
+    ctx.arc(sx, sy, sz, 0, Math.PI*2);
+    var col;
+    if (s.blueish)     col = 'rgba(180,210,255,'+(s.alpha*tw)+')';
+    else if (s.color)  col = 'rgba('+ar+','+ag+','+ab+','+(s.alpha*tw)+')';
+    else               col = 'rgba(255,255,255,'+(s.alpha*tw)+')';
+    ctx.fillStyle = col;
     ctx.fill();
+
+    // Tiny halo on bright stars
+    if (s.size > 1.2) {
+      var halo = ctx.createRadialGradient(sx,sy,0,sx,sy,sz*5);
+      halo.addColorStop(0,'rgba('+ar+','+ag+','+ab+','+(s.alpha*0.18*tw)+')');
+      halo.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle = halo;
+      var hr = sz*5;
+      ctx.fillRect(sx-hr,sy-hr,hr*2,hr*2);
+    }
   });
+
   drawVignette();
 }
 
