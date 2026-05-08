@@ -775,7 +775,7 @@ function animLoop() {
     case 'solarwind': drawSolarWind(); break;
     case 'matrix':    drawMatrix();    break;
     case 'warp':      drawWarp();      break;
-    case 'lava':      drawLava();      break;
+    case 'lava':      drawWavePS3();   break;
     default:          drawNebula();    break;
   }
   requestAnimationFrame(animLoop);
@@ -1224,109 +1224,106 @@ function drawWarp() {
 }
 
 // ── 6. LAVA LAMP ──────────────────────────────────────────
-var lavaBlobs = null;
-function initLavaBlobs() {
-  lavaBlobs = [];
-  // Mix of large slow blobs and smaller faster ones for organic feel
-  var configs = [
-    { rMin:0.22, rMax:0.30, speedMult:0.6 },
-    { rMin:0.22, rMax:0.30, speedMult:0.6 },
-    { rMin:0.18, rMax:0.24, speedMult:0.9 },
-    { rMin:0.18, rMax:0.24, speedMult:0.9 },
-    { rMin:0.14, rMax:0.18, speedMult:1.3 },
-    { rMin:0.14, rMax:0.18, speedMult:1.3 },
-    { rMin:0.10, rMax:0.14, speedMult:1.8 },
-    { rMin:0.10, rMax:0.14, speedMult:1.8 },
-  ];
-  configs.forEach(function(cfg) {
-    var dir = Math.random() > 0.5 ? 1 : -1;
-    lavaBlobs.push({
-      x:          0.05 + Math.random() * 0.9,
-      y:          Math.random(),
-      vx:         (Math.random() - 0.5) * 0.00008,
-      vy:         dir * (0.00018 + Math.random() * 0.00012) * cfg.speedMult,
-      r:          cfg.rMin + Math.random() * (cfg.rMax - cfg.rMin),
-      // Two independent sine waves for organic shape morphing
-      w1:         Math.random() * Math.PI * 2,
-      w2:         Math.random() * Math.PI * 2,
-      w1s:        0.007 + Math.random() * 0.006,
-      w2s:        0.005 + Math.random() * 0.004,
-      // Hue shift for psychedelic color cycling
-      hue:        Math.random() * Math.PI * 2,
-      hueSpeed:   0.002 + Math.random() * 0.003,
-    });
-  });
-}
-
-function lavaColorShift(baseR, baseG, baseB, hue, alpha) {
-  // Rotate color around the base accent using hue offset
-  var cos = Math.cos(hue), sin = Math.sin(hue);
-  var r = Math.round(Math.min(255, Math.max(0,
-    baseR * (0.213 + cos*0.787 - sin*0.213) +
-    baseG * (0.715 - cos*0.715 - sin*0.715) +
-    baseB * (0.072 - cos*0.072 + sin*0.928))));
-  var g2 = Math.round(Math.min(255, Math.max(0,
-    baseR * (0.213 - cos*0.213 + sin*0.143) +
-    baseG * (0.715 + cos*0.285 + sin*0.140) +
-    baseB * (0.072 - cos*0.072 - sin*0.283))));
-  var b2 = Math.round(Math.min(255, Math.max(0,
-    baseR * (0.213 - cos*0.213 - sin*0.787) +
-    baseG * (0.715 - cos*0.715 + sin*0.715) +
-    baseB * (0.072 + cos*0.928 + sin*0.072))));
-  return 'rgba('+r+','+g2+','+b2+','+alpha+')';
-}
-
-function drawLava() {
-  if (!lavaBlobs) initLavaBlobs();
-  ctx.clearRect(0,0,W,H);
+// ── 6. PS3 XMB WAVE (with depth) ─────────────────────────────────────────────
+function drawWavePS3() {
+  ctx.clearRect(0, 0, W, H);
   drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
-  var [ar,ag,ab] = accentRgb;
+
+  var [ar, ag, ab] = accentRgb;
   var spd = animSpeed > 0 ? animSpeed : 0;
+  var T   = t * spd;
 
-  lavaBlobs.forEach(function(b) {
-    // Advance
-    b.x  += b.vx * spd;
-    b.y  += b.vy * spd;
-    b.w1 += b.w1s * spd;
-    b.w2 += b.w2s * spd;
-    b.hue += b.hueSpeed * spd;
+  // 9 wave layers — back (dim, slow, high) to front (bright, fast, low)
+  var layers = [
+    // { yFrac, amp, freq, speed, phase, alpha, width, blur }
+    { yFrac:0.28, amp:28, freq:0.0032, speed:0.00025, phase:0.0,  alpha:0.04, width:1.0 },
+    { yFrac:0.34, amp:34, freq:0.0028, speed:0.00032, phase:1.1,  alpha:0.06, width:1.2 },
+    { yFrac:0.39, amp:38, freq:0.0026, speed:0.00038, phase:2.3,  alpha:0.08, width:1.4 },
+    { yFrac:0.44, amp:42, freq:0.0024, speed:0.00045, phase:0.7,  alpha:0.11, width:1.6 },
+    { yFrac:0.49, amp:46, freq:0.0022, speed:0.00054, phase:3.1,  alpha:0.15, width:1.8 },
+    { yFrac:0.54, amp:50, freq:0.0020, speed:0.00064, phase:1.8,  alpha:0.20, width:2.0 },
+    { yFrac:0.59, amp:54, freq:0.0018, speed:0.00076, phase:4.2,  alpha:0.28, width:2.4 },
+    { yFrac:0.64, amp:58, freq:0.0016, speed:0.00090, phase:2.9,  alpha:0.38, width:2.8 },
+    { yFrac:0.70, amp:60, freq:0.0014, speed:0.00110, phase:0.4,  alpha:0.52, width:3.4 },
+  ];
 
-    // Wrap X, bounce Y with new random drift
-    if (b.x < -0.2) b.x = 1.2;
-    if (b.x >  1.2) b.x = -0.2;
-    if (b.y < -0.25) {
-      b.vy = Math.abs(b.vy) * (0.7 + Math.random()*0.6);
-      b.vx = (Math.random()-0.5) * 0.00010;
+  layers.forEach(function(lyr, li) {
+    var baseY = H * lyr.yFrac;
+    // Second harmonic for the organic PS3 look
+    var freq2 = lyr.freq * 1.618;
+    var spd2  = lyr.speed * 0.72;
+
+    // Build path
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    var step = Math.max(2, Math.floor(W / 320));
+    for (var x = 0; x <= W; x += step) {
+      var y = baseY
+        + Math.sin(x * lyr.freq  + T * lyr.speed  + lyr.phase) * lyr.amp
+        + Math.sin(x * freq2     + T * spd2        + lyr.phase * 1.4) * (lyr.amp * 0.38)
+        + Math.sin(x * freq2*0.5 + T * spd2 * 0.5 + lyr.phase * 0.6) * (lyr.amp * 0.18);
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
-    if (b.y >  1.25) {
-      b.vy = -Math.abs(b.vy) * (0.7 + Math.random()*0.6);
-      b.vx = (Math.random()-0.5) * 0.00010;
+    ctx.lineTo(W, H);
+    ctx.closePath();
+
+    // Fill with gradient — bright at wave top, fades to transparent below
+    var grad = ctx.createLinearGradient(0, baseY - lyr.amp * 1.6, 0, baseY + lyr.amp * 1.6);
+    grad.addColorStop(0,   'rgba('+ar+','+ag+','+ab+','+(lyr.alpha * 0.15)+')');
+    grad.addColorStop(0.35,'rgba('+ar+','+ag+','+ab+','+(lyr.alpha * 0.85)+')');
+    grad.addColorStop(0.6, 'rgba('+ar+','+ag+','+ab+','+(lyr.alpha * 0.55)+')');
+    grad.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Stroke the wave crest — front layers are brighter
+    ctx.beginPath();
+    for (var x2 = 0; x2 <= W; x2 += step) {
+      var y2 = baseY
+        + Math.sin(x2 * lyr.freq  + T * lyr.speed  + lyr.phase) * lyr.amp
+        + Math.sin(x2 * freq2     + T * spd2        + lyr.phase * 1.4) * (lyr.amp * 0.38)
+        + Math.sin(x2 * freq2*0.5 + T * spd2 * 0.5 + lyr.phase * 0.6) * (lyr.amp * 0.18);
+      if (x2 === 0) ctx.moveTo(x2, y2);
+      else ctx.lineTo(x2, y2);
     }
+    // Crest glow — brighter on front waves
+    var crAlpha = lyr.alpha * 1.8;
+    ctx.strokeStyle = 'rgba('+ar+','+ag+','+ab+','+Math.min(0.9, crAlpha)+')';
+    ctx.lineWidth   = lyr.width;
+    ctx.stroke();
 
-    // Organic shape: position wobbles on two sine waves
-    var wx = Math.sin(b.w1) * 0.06 + Math.sin(b.w2 * 0.7) * 0.03;
-    var wy = Math.cos(b.w1 * 0.8) * 0.04 + Math.cos(b.w2) * 0.02;
-    var bx = (b.x + wx) * W;
-    var by = (b.y + wy) * H;
+    // Extra shimmer line slightly offset on front 4 waves
+    if (li >= 5) {
+      ctx.beginPath();
+      for (var x3 = 0; x3 <= W; x3 += step) {
+        var y3 = baseY - 3
+          + Math.sin(x3 * lyr.freq  + T * lyr.speed  + lyr.phase + 0.15) * lyr.amp
+          + Math.sin(x3 * freq2     + T * spd2        + lyr.phase * 1.4 + 0.1) * (lyr.amp * 0.38);
+        if (x3 === 0) ctx.moveTo(x3, y3);
+        else ctx.lineTo(x3, y3);
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,'+(lyr.alpha * 0.22)+')';
+      ctx.lineWidth   = lyr.width * 0.5;
+      ctx.stroke();
+    }
+  });
 
-    // Radius pulses on combined waves
-    var rPulse = 1.0 + Math.sin(b.w1) * 0.12 + Math.sin(b.w2 * 1.3) * 0.07;
-    var br = b.r * Math.min(W, H) * rPulse;
+  // Subtle horizontal glow band where waves converge
+  var midY = H * 0.50;
+  var band = ctx.createLinearGradient(0, midY - 80, 0, midY + 80);
+  band.addColorStop(0,   'rgba(0,0,0,0)');
+  band.addColorStop(0.5, 'rgba('+ar+','+ag+','+ab+',0.04)');
+  band.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = band;
+  ctx.fillRect(0, midY - 80, W, 160);
 
-    // Alpha pulses gently
-    var alpha = 0.55 + Math.sin(b.w1 * 0.6 + b.w2) * 0.15;
-
-    // Core glow with hue-shifted color
-    var coreCol  = lavaColorShift(ar, ag, ab, b.hue, alpha);
-    var midCol   = lavaColorShift(ar, ag, ab, b.hue + 0.5, alpha * 0.4);
-
-    var g = ctx.createRadialGradient(bx, by, 0, bx, by, br);
-    g.addColorStop(0,    coreCol);
-    g.addColorStop(0.45, midCol);
-    g.addColorStop(0.75, lavaColorShift(ar, ag, ab, b.hue + 1.0, alpha * 0.12));
-    g.addColorStop(1,    'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
+  // Stars peek through in the dark upper region
+  stars.forEach(function(s) {
+    if (s.y > 0.35) return;
+    var a = s.baseAlpha * (0.3 + Math.sin(t*s.twinkleSpeed+s.phase)*0.2) * (1 - s.y*2.5);
+    ctx.beginPath(); ctx.arc(s.x*W, s.y*H, s.size*0.7, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,'+Math.max(0,a)+')'; ctx.fill();
   });
 
   drawVignette();
@@ -3609,7 +3606,7 @@ document.addEventListener('keydown', function(e) {
             <button class="p-toggle" data-pref="animStyle" data-val="solarwind"  data-pref-row="1" data-pref-col="3">Solar Wind</button>
             <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="4">Matrix</button>
             <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="1" data-pref-col="5">Warp</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">Lava</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">XMB Wave</button>
           </div>
         </div>
       </div>
@@ -3733,7 +3730,7 @@ function applyPrefs(prefs) {
   if (newMode !== animMode) {
     animMode = newMode;
     galaxyStars = null; causticPoints = null; solarParticles = null;
-    matrixCols = null; warpStars = null; lavaBlobs = null;
+    matrixCols = null; warpStars = null;
   }
 }
 
