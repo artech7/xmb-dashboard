@@ -651,7 +651,8 @@ const ctx = canvas.getContext('2d');
 let W, H, t = 0;
 let accentColor = '#00c8ff';
 let accentRgb = [0, 200, 255];
-var themeRgb = [0, 200, 255];  // set from selected color theme, used by wave
+var themeRgb = [0, 200, 255];  // dominant theme color for wave
+var themeRgbPalette = [[0,200,255],[150,10,90],[0,90,130],[50,0,125],[75,10,160],[10,30,155]]; // all 6 blob colors
 
 function hexToRgb(hex) {
   const r = parseInt(hex.slice(1,3),16);
@@ -1230,7 +1231,23 @@ function drawWavePS3() {
   ctx.clearRect(0, 0, W, H);
   drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
 
-  var [ar, ag, ab] = themeRgb;  // use theme color, not category accent
+  // Each layer gets an interpolated color across the palette
+  // Back layers (low index) = blob[2], front layers (high index) = blob[0], mid = blob[1]/[3]
+  function waveColor(layerIdx, totalLayers, alpha) {
+    // Map layer depth to palette position
+    // Back (0) → palette[2], middle → palette[1], front (8) → palette[0]
+    var t2 = layerIdx / (totalLayers - 1);  // 0=back, 1=front
+    var paletteIdx = (1 - t2) * 2.8;        // maps 0→2.8 across palette
+    var lo = Math.floor(paletteIdx);
+    var hi = Math.min(lo + 1, themeRgbPalette.length - 1);
+    var frac = paletteIdx - lo;
+    var c0 = themeRgbPalette[lo] || themeRgbPalette[0];
+    var c1 = themeRgbPalette[hi] || themeRgbPalette[0];
+    var r = Math.round(c0[0] + (c1[0]-c0[0]) * frac);
+    var g = Math.round(c0[1] + (c1[1]-c0[1]) * frac);
+    var b = Math.round(c0[2] + (c1[2]-c0[2]) * frac);
+    return 'rgba('+r+','+g+','+b+','+alpha+')';
+  }
   var spd = animSpeed > 0 ? animSpeed : 0;
   var T   = t * spd;
 
@@ -1269,16 +1286,18 @@ function drawWavePS3() {
     ctx.lineTo(W, H);
     ctx.closePath();
 
-    // Fill with gradient — bright at wave top, fades to transparent below
+    // Per-layer palette color — back=blob[2], mid=blob[1], front=blob[0]
+    var layerTotal = 9;
+    // Fill with gradient using this layer's color
     var grad = ctx.createLinearGradient(0, baseY - lyr.amp * 1.6, 0, baseY + lyr.amp * 1.6);
-    grad.addColorStop(0,   'rgba('+ar+','+ag+','+ab+','+(lyr.alpha * 0.15)+')');
-    grad.addColorStop(0.35,'rgba('+ar+','+ag+','+ab+','+(lyr.alpha * 0.85)+')');
-    grad.addColorStop(0.6, 'rgba('+ar+','+ag+','+ab+','+(lyr.alpha * 0.55)+')');
+    grad.addColorStop(0,   waveColor(li, layerTotal, lyr.alpha * 0.12));
+    grad.addColorStop(0.35,waveColor(li, layerTotal, lyr.alpha * 0.85));
+    grad.addColorStop(0.6, waveColor(li, layerTotal, lyr.alpha * 0.50));
     grad.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Stroke the wave crest — front layers are brighter
+    // Stroke the wave crest
     ctx.beginPath();
     for (var x2 = 0; x2 <= W; x2 += step) {
       var y2 = baseY
@@ -1288,13 +1307,11 @@ function drawWavePS3() {
       if (x2 === 0) ctx.moveTo(x2, y2);
       else ctx.lineTo(x2, y2);
     }
-    // Crest glow — brighter on front waves
-    var crAlpha = lyr.alpha * 1.8;
-    ctx.strokeStyle = 'rgba('+ar+','+ag+','+ab+','+Math.min(0.9, crAlpha)+')';
+    ctx.strokeStyle = waveColor(li, layerTotal, Math.min(0.9, lyr.alpha * 1.8));
     ctx.lineWidth   = lyr.width;
     ctx.stroke();
 
-    // Extra shimmer line slightly offset on front 4 waves
+    // Shimmer on front 4 waves — slightly lighter tint toward next palette color
     if (li >= 5) {
       ctx.beginPath();
       for (var x3 = 0; x3 <= W; x3 += step) {
@@ -1310,11 +1327,12 @@ function drawWavePS3() {
     }
   });
 
-  // Subtle horizontal glow band where waves converge
+  // Glow band — blended color from mid-palette
   var midY = H * 0.50;
+  var midCol = themeRgbPalette[1] || themeRgbPalette[0];
   var band = ctx.createLinearGradient(0, midY - 80, 0, midY + 80);
   band.addColorStop(0,   'rgba(0,0,0,0)');
-  band.addColorStop(0.5, 'rgba('+ar+','+ag+','+ab+',0.04)');
+  band.addColorStop(0.5, 'rgba('+midCol[0]+','+midCol[1]+','+midCol[2]+',0.05)');
   band.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = band;
   ctx.fillRect(0, midY - 80, W, 160);
@@ -3716,11 +3734,14 @@ function applyPrefs(prefs) {
   var theme = NEBULA_THEMES[prefs.theme] || NEBULA_THEMES.default;
   activeBlobs = BLOBS.map(function(b,i){ return {x:b.x,y:b.y,r:b.r,rgb:theme.blobs[i]||b.rgb,a:b.a,spd:b.spd}; });
   nebulaBackground = theme.bg;
-  // Derive a vivid representative color from the theme's dominant blob
-  var tb = theme.blobs[0];
-  var tMax = Math.max(tb[0], tb[1], tb[2]) || 1;
-  var tScale = 220 / tMax;
-  themeRgb = [Math.min(255,Math.round(tb[0]*tScale)), Math.min(255,Math.round(tb[1]*tScale)), Math.min(255,Math.round(tb[2]*tScale))];
+  // Build vivid palette from all 6 theme blob colors
+  themeRgbPalette = theme.blobs.map(function(tb) {
+    var tMax = Math.max(tb[0], tb[1], tb[2]) || 1;
+    var tScale = 220 / tMax;
+    return [Math.min(255,Math.round(tb[0]*tScale)), Math.min(255,Math.round(tb[1]*tScale)), Math.min(255,Math.round(tb[2]*tScale))];
+  });
+  // Dominant color = first blob
+  themeRgb = themeRgbPalette[0];
   var im = {dim:0.45,normal:1.0,vivid:1.7}; blobOpacityMult = im[prefs.intensity]||1.0;
   var sm = {off:0,normal:240,dense:420};
   var nc = sm[prefs.stars]!==undefined?sm[prefs.stars]:240;
