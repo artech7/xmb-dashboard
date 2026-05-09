@@ -1117,7 +1117,7 @@ function drawSolarWind() {
 var matrixCols = null;
 var matrixChars = '日ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ012345789Z:·';
 function initMatrix() {
-  var cols = Math.floor(W / 18);
+  var cols = Math.floor(W / csize);
   matrixCols = [];
   for (var i = 0; i < cols; i++) {
     matrixCols.push({
@@ -1132,7 +1132,8 @@ function initMatrix() {
   }
 }
 function drawMatrix() {
-  if (!matrixCols || matrixCols.length !== Math.floor(W/18)) initMatrix();
+  var _mcsize = Math.max(12, Math.min(24, Math.round(H * 0.018)));
+  if (!matrixCols || matrixCols.length !== Math.floor(W/_mcsize)) initMatrix();
   var [ar,ag,ab] = accentRgb;
   var bg = nebulaBackground[1] || '#03010e';
   var br = parseInt(bg.slice(1,3)||'03',16);
@@ -1156,7 +1157,7 @@ function drawMatrix() {
       var ri = Math.floor(Math.random() * col.chars.length);
       col.chars[ri] = matrixChars[Math.floor(Math.random()*matrixChars.length)];
     }
-    var x = ci * 18 + 2;
+    var x = ci * csize + 2;
     for (var row = 0; row < col.len; row++) {
       var y = col.y - row * csize;
       if (y < 0 || y > H) continue;
@@ -1393,7 +1394,9 @@ function drawWavePS3() {
     return 'rgba('+r+','+g+','+b+','+alpha+')';
   }
   var spd = animSpeed > 0 ? animSpeed : 0;
-  var T   = t * spd;
+  var T      = t * spd;
+  var wScale = Math.max(0.7, Math.min(2.5, Math.min(W,H) / 800));
+  var aScale = Math.max(0.5, H / 900);   // amplitude scales with screen height
 
   // 9 wave layers — back (dim, slow, high) to front (bright, fast, low)
   var layers = [
@@ -1421,9 +1424,9 @@ function drawWavePS3() {
     var step = Math.max(2, Math.floor(W / 320));
     for (var x = 0; x <= W; x += step) {
       var y = baseY
-        + Math.sin(x * lyr.freq  + T * lyr.speed  + lyr.phase) * lyr.amp
-        + Math.sin(x * freq2     + T * spd2        + lyr.phase * 1.4) * (lyr.amp * 0.38)
-        + Math.sin(x * freq2*0.5 + T * spd2 * 0.5 + lyr.phase * 0.6) * (lyr.amp * 0.18);
+        + Math.sin(x * lyr.freq  + T * lyr.speed  + lyr.phase) * lyr.amp * aScale
+        + Math.sin(x * freq2     + T * spd2        + lyr.phase * 1.4) * (lyr.amp * 0.38 * aScale)
+        + Math.sin(x * freq2*0.5 + T * spd2 * 0.5 + lyr.phase * 0.6) * (lyr.amp * 0.18 * aScale);
       if (x === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
@@ -1445,14 +1448,14 @@ function drawWavePS3() {
     ctx.beginPath();
     for (var x2 = 0; x2 <= W; x2 += step) {
       var y2 = baseY
-        + Math.sin(x2 * lyr.freq  + T * lyr.speed  + lyr.phase) * lyr.amp
-        + Math.sin(x2 * freq2     + T * spd2        + lyr.phase * 1.4) * (lyr.amp * 0.38)
-        + Math.sin(x2 * freq2*0.5 + T * spd2 * 0.5 + lyr.phase * 0.6) * (lyr.amp * 0.18);
+        + Math.sin(x2 * lyr.freq  + T * lyr.speed  + lyr.phase) * lyr.amp * aScale
+        + Math.sin(x2 * freq2     + T * spd2        + lyr.phase * 1.4) * (lyr.amp * 0.38 * aScale)
+        + Math.sin(x2 * freq2*0.5 + T * spd2 * 0.5 + lyr.phase * 0.6) * (lyr.amp * 0.18 * aScale);
       if (x2 === 0) ctx.moveTo(x2, y2);
       else ctx.lineTo(x2, y2);
     }
     ctx.strokeStyle = waveColor(li, layerTotal, Math.min(0.9, lyr.alpha * 1.8));
-    ctx.lineWidth   = lyr.width;
+    ctx.lineWidth   = lyr.width * wScale;
     ctx.stroke();
 
     // Shimmer on front 4 waves — slightly lighter tint toward next palette color
@@ -1460,13 +1463,13 @@ function drawWavePS3() {
       ctx.beginPath();
       for (var x3 = 0; x3 <= W; x3 += step) {
         var y3 = baseY - 3
-          + Math.sin(x3 * lyr.freq  + T * lyr.speed  + lyr.phase + 0.15) * lyr.amp
-          + Math.sin(x3 * freq2     + T * spd2        + lyr.phase * 1.4 + 0.1) * (lyr.amp * 0.38);
+          + Math.sin(x3 * lyr.freq  + T * lyr.speed  + lyr.phase + 0.15) * lyr.amp * aScale
+          + Math.sin(x3 * freq2     + T * spd2        + lyr.phase * 1.4 + 0.1) * (lyr.amp * 0.38 * aScale);
         if (x3 === 0) ctx.moveTo(x3, y3);
         else ctx.lineTo(x3, y3);
       }
       ctx.strokeStyle = 'rgba(255,255,255,'+(lyr.alpha * 0.22)+')';
-      ctx.lineWidth   = lyr.width * 0.5;
+      ctx.lineWidth   = lyr.width * 0.5 * wScale;
       ctx.stroke();
     }
   });
