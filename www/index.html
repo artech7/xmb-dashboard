@@ -710,6 +710,7 @@ function resize() {
   // Reset screen-size-dependent animation states
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
+  deepSeaJellies = null; auroraCurtains = null;
 }
 
 function drawNebula() {
@@ -980,135 +981,327 @@ function drawGalaxy() {
   drawVignette();
 }
 
-// ── 2. UNDERWATER ─────────────────────────────────────────
-var causticPoints = null;
-function initCaustics() {
-  causticPoints = [];
-  for (var i = 0; i < 18; i++) {
-    causticPoints.push({
-      x: Math.random(), y: Math.random(),
-      vx: (Math.random()-0.5)*0.0004, vy: (Math.random()-0.5)*0.0003,
-      r: 0.12 + Math.random()*0.18,
-      phase: Math.random()*Math.PI*2,
-      speed: 0.0008 + Math.random()*0.001
-    });
+// ── 2. DEEP SEA BIOLUMINESCENCE ───────────────────────────────
+var deepSeaJellies  = null;
+var deepSeaParticles = null;
+var deepSeaMotes    = null;
+
+function initDeepSea() {
+  var U = Math.min(W, H);
+  deepSeaJellies = [];
+  for (var i = 0; i < 8; i++) {
+    deepSeaJellies.push(newJelly());
+  }
+  deepSeaParticles = [];
+  for (var j = 0; j < 120; j++) {
+    deepSeaParticles.push(newDeepParticle(true));
+  }
+  deepSeaMotes = [];
+  for (var k = 0; k < 60; k++) {
+    deepSeaMotes.push(newMote(true));
   }
 }
-function drawUnderwater() {
-  if (!causticPoints) initCaustics();
-  ctx.clearRect(0,0,W,H);
-  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
-  var [ar,ag,ab] = accentRgb;
 
-  // Drift caustic points
-  causticPoints.forEach(function(p) {
-    p.x += p.vx; p.y += p.vy;
-    if (p.x < -0.2) p.x = 1.2; if (p.x > 1.2) p.x = -0.2;
-    if (p.y < -0.2) p.y = 1.2; if (p.y > 1.2) p.y = -0.2;
+function newJelly() {
+  return {
+    x:        0.05 + Math.random() * 0.90,
+    y:        0.10 + Math.random() * 0.85,
+    vy:       (Math.random() > 0.5 ? 1 : -1) * (0.00008 + Math.random() * 0.00012),
+    vx:       (Math.random() - 0.5) * 0.00006,
+    r:        (0.04 + Math.random() * 0.07) * Math.min(W, H),
+    pulse:    Math.random() * Math.PI * 2,
+    pulseSpd: 0.012 + Math.random() * 0.010,
+    tentacles: Math.floor(6 + Math.random() * 6),
+    tentLen:  (0.06 + Math.random() * 0.08) * Math.min(W, H),
+    glow:     0.5 + Math.random() * 0.5,
+    hue:      Math.random() * Math.PI * 2,
+    hueSpd:   0.003 + Math.random() * 0.004,
+    wobble:   Math.random() * Math.PI * 2,
+    wobSpd:   0.008 + Math.random() * 0.008,
+  };
+}
+
+function newDeepParticle(randomPos) {
+  return {
+    x:    Math.random(),
+    y:    randomPos ? Math.random() : 1.05,
+    vy:   -(0.0003 + Math.random() * 0.0005),
+    vx:   (Math.random() - 0.5) * 0.0002,
+    life: randomPos ? Math.random() : 0,
+    maxLife: 1.0 + Math.random() * 2.0,
+    size: (0.002 + Math.random() * 0.004) * Math.min(W, H),
+    alpha: 0.3 + Math.random() * 0.5,
+    phase: Math.random() * Math.PI * 2,
+    twinkle: 0.02 + Math.random() * 0.04,
+  };
+}
+
+function newMote(randomPos) {
+  return {
+    x:    Math.random(),
+    y:    randomPos ? Math.random() : 1.05,
+    vy:   -(0.0001 + Math.random() * 0.0002),
+    vx:   (Math.random() - 0.5) * 0.00008,
+    size: (0.001 + Math.random() * 0.002) * Math.min(W, H),
+    alpha: 0.15 + Math.random() * 0.25,
+    phase: Math.random() * Math.PI * 2,
+    spd: 0.008 + Math.random() * 0.015,
+  };
+}
+
+function drawUnderwater() {
+  if (!deepSeaJellies) initDeepSea();
+  ctx.clearRect(0, 0, W, H);
+
+  var spd = animSpeed > 0 ? animSpeed : 0;
+  var [ar, ag, ab] = accentRgb;
+  var c0 = themeRgbPalette[0] || [ar, ag, ab];
+  var c1 = themeRgbPalette[1] || [ar, ag, ab];
+  var c2 = themeRgbPalette[2] || [ar, ag, ab];
+  var c3 = themeRgbPalette[3] || [ar, ag, ab];
+
+  // ── Deep ocean background ─────────────────────────────────
+  var bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0,   nebulaBackground[0]);
+  bg.addColorStop(0.5, nebulaBackground[1]);
+  bg.addColorStop(1,   nebulaBackground[2]);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Depth rays (faint light from above) ──────────────────
+  for (var ray = 0; ray < 5; ray++) {
+    var rx = W * (0.1 + ray * 0.2 + Math.sin(t * 0.0002 + ray) * 0.04);
+    var ra = 0.018 + Math.sin(t * 0.0004 + ray * 0.7) * 0.008;
+    var rg = ctx.createLinearGradient(rx, 0, rx + H * 0.08, H * 0.7);
+    rg.addColorStop(0,   'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + ra + ')');
+    rg.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.moveTo(rx - 30, 0);
+    ctx.lineTo(rx + 30, 0);
+    ctx.lineTo(rx + H * 0.08 + 120, H * 0.7);
+    ctx.lineTo(rx + H * 0.08 - 120, H * 0.7);
+    ctx.fill();
+  }
+
+  // ── Floating motes (tiny drifting bioluminescent specks) ──
+  deepSeaMotes.forEach(function(m, idx) {
+    m.y  += m.vy * spd;
+    m.x  += m.vx * spd;
+    m.phase += m.spd * spd;
+    if (m.y < -0.02) { deepSeaMotes[idx] = newMote(false); return; }
+    var ma = m.alpha * (0.5 + Math.sin(m.phase) * 0.5);
+    ctx.beginPath();
+    ctx.arc(m.x * W, m.y * H, m.size, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + c2[0] + ',' + c2[1] + ',' + c2[2] + ',' + ma + ')';
+    ctx.fill();
   });
 
-  // Caustic rings
-  causticPoints.forEach(function(p) {
-    var pulse = 0.7 + Math.sin(t * p.speed + p.phase) * 0.3;
-    var cx2 = p.x * W, cy2 = p.y * H;
-    var r2 = p.r * Math.min(W,H) * pulse;
-    for (var ring = 0; ring < 3; ring++) {
-      var rr = r2 * (0.4 + ring * 0.3);
-      var alpha = (0.06 - ring * 0.015) * pulse;
-      var g = ctx.createRadialGradient(cx2,cy2,rr*0.7,cx2,cy2,rr);
-      g.addColorStop(0,'rgba(0,0,0,0)');
-      g.addColorStop(0.8,'rgba('+ar+','+ag+','+ab+','+alpha+')');
-      g.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  // ── Bioluminescent particles ──────────────────────────────
+  deepSeaParticles.forEach(function(p, idx) {
+    p.life += 0.005 * spd;
+    p.y    += p.vy * spd + Math.sin(p.phase + t * 0.0002) * 0.0001;
+    p.x    += p.vx * spd;
+    p.phase += p.twinkle * spd;
+    if (p.life >= p.maxLife || p.y < -0.02) {
+      deepSeaParticles[idx] = newDeepParticle(false); return;
+    }
+    var lf = p.life / p.maxLife;
+    var pa = p.alpha * Math.sin(lf * Math.PI) * (0.6 + Math.sin(p.phase) * 0.4);
+    var pc = lf < 0.5 ? c0 : c1;
+    // Small glow halo
+    var hg = ctx.createRadialGradient(p.x*W, p.y*H, 0, p.x*W, p.y*H, p.size*4);
+    hg.addColorStop(0, 'rgba('+pc[0]+','+pc[1]+','+pc[2]+','+(pa*0.8)+')');
+    hg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(p.x*W - p.size*4, p.y*H - p.size*4, p.size*8, p.size*8);
+    ctx.beginPath();
+    ctx.arc(p.x*W, p.y*H, p.size, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,'+(pa*0.9)+')';
+    ctx.fill();
+  });
+
+  // ── Jellyfish ─────────────────────────────────────────────
+  deepSeaJellies.forEach(function(j) {
+    j.y      += j.vy * spd;
+    j.x      += j.vx * spd + Math.sin(j.wobble) * 0.00008;
+    j.pulse  += j.pulseSpd * spd;
+    j.hue    += j.hueSpd * spd;
+    j.wobble += j.wobSpd * spd;
+
+    if (j.y > 1.15)  { j.vy = -Math.abs(j.vy); j.x = 0.05 + Math.random() * 0.9; }
+    if (j.y < -0.15) { j.vy =  Math.abs(j.vy); j.x = 0.05 + Math.random() * 0.9; }
+    if (j.x < 0) j.x = 1; if (j.x > 1) j.x = 0;
+
+    var jx = j.x * W;
+    var jy = j.y * H;
+    var pr = j.r * (0.85 + Math.sin(j.pulse) * 0.15);  // pulsing radius
+    var pa = j.glow * (0.6 + Math.sin(j.pulse * 0.8) * 0.4);
+
+    // Pick color from palette cycling
+    var ci = Math.floor(Math.abs(Math.sin(j.hue)) * 4);
+    var jc = themeRgbPalette[ci] || c0;
+    var jc2= themeRgbPalette[(ci+2)%4] || c2;
+
+    // Bell outer glow
+    var outerGlow = ctx.createRadialGradient(jx, jy, 0, jx, jy, pr * 2.5);
+    outerGlow.addColorStop(0,   'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+(pa*0.12)+')');
+    outerGlow.addColorStop(0.5, 'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+(pa*0.06)+')');
+    outerGlow.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = outerGlow;
+    ctx.fillRect(jx - pr*2.5, jy - pr*2.5, pr*5, pr*5);
+
+    // Bell dome
+    ctx.beginPath();
+    ctx.ellipse(jx, jy, pr, pr * 0.65, 0, Math.PI, 0, false);
+    var domeGrad = ctx.createRadialGradient(jx, jy - pr*0.2, 0, jx, jy, pr);
+    domeGrad.addColorStop(0,   'rgba(255,255,255,'+(pa*0.55)+')');
+    domeGrad.addColorStop(0.3, 'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+(pa*0.50)+')');
+    domeGrad.addColorStop(0.7, 'rgba('+jc2[0]+','+jc2[1]+','+jc2[2]+','+(pa*0.25)+')');
+    domeGrad.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = domeGrad;
+    ctx.fill();
+
+    // Tentacles hanging below bell
+    for (var tn = 0; tn < j.tentacles; tn++) {
+      var tx = jx + (tn / (j.tentacles-1) - 0.5) * pr * 1.8;
+      var tentWave = Math.sin(t * 0.0008 * spd + tn * 0.9 + j.pulse) * (pr * 0.35);
+      ctx.beginPath();
+      ctx.moveTo(tx, jy);
+      ctx.bezierCurveTo(
+        tx + tentWave, jy + j.tentLen * 0.35,
+        tx - tentWave, jy + j.tentLen * 0.7,
+        tx + tentWave * 0.5, jy + j.tentLen
+      );
+      var ta = pa * (0.5 - tn * 0.02) * 0.6;
+      ctx.strokeStyle = 'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+Math.max(0.05,ta)+')';
+      ctx.lineWidth = Math.max(0.5, pr * 0.04);
+      ctx.stroke();
     }
   });
 
-  // Light rays from top
-  ctx.save();
-  for (var ray = 0; ray < 8; ray++) {
-    var rx = W * (0.1 + ray * 0.12 + Math.sin(t*0.0003 + ray)*0.04);
-    var rAlpha = 0.025 + Math.sin(t*0.0005 + ray*0.8)*0.015;
-    var rayGrad = ctx.createLinearGradient(rx, 0, rx + H*0.15, H);
-    rayGrad.addColorStop(0,'rgba('+ar+','+ag+','+ab+','+rAlpha+')');
-    rayGrad.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle = rayGrad;
-    ctx.beginPath();
-    ctx.moveTo(rx - 20, 0);
-    ctx.lineTo(rx + 20, 0);
-    ctx.lineTo(rx + H*0.15 + 80, H);
-    ctx.lineTo(rx + H*0.15 - 80, H);
-    ctx.fill();
-  }
-  ctx.restore();
-
-  // Floating particles
-  stars.forEach(function(s) {
-    var px = (s.x + Math.sin(t * s.twinkleSpeed + s.phase) * 0.015) * W;
-    var py = ((s.y + (t * s.twinkleSpeed * 0.1) % 1 + 1) % 1) * H;
-    var a = s.baseAlpha * (0.4 + Math.sin(t*s.twinkleSpeed+s.phase)*0.3);
-    ctx.beginPath(); ctx.arc(px, py, s.size*0.7, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba('+ar+','+ag+','+ab+','+a+')'; ctx.fill();
-  });
   drawVignette();
 }
 
-// ── 3. SOLAR WIND ─────────────────────────────────────────
-var solarParticles = null;
-function initSolarParticles() {
-  solarParticles = [];
-  for (var i = 0; i < 180; i++) {
-    solarParticles.push(newSolarParticle());
+// ── 3. AURORA BOREALIS ─────────────────────────────────────
+var auroraCurtains = null;
+
+function initAurora() {
+  auroraCurtains = [];
+  for (var i = 0; i < 6; i++) {
+    auroraCurtains.push({
+      x:         0.05 + i * 0.16 + (Math.random() - 0.5) * 0.08,
+      width:     0.10 + Math.random() * 0.16,
+      height:    0.35 + Math.random() * 0.35,   // fraction of H
+      yTop:      0.02 + Math.random() * 0.15,
+      speed:     0.0003 + Math.random() * 0.0004,
+      phase:     Math.random() * Math.PI * 2,
+      waveFreq:  0.8 + Math.random() * 1.2,
+      waveAmp:   0.015 + Math.random() * 0.025,
+      shimmer:   Math.random() * Math.PI * 2,
+      shimSpd:   0.015 + Math.random() * 0.020,
+      drift:     (Math.random() - 0.5) * 0.00015,
+      palIdx:    i % 4,
+      palIdx2:   (i + 2) % 4,
+    });
   }
 }
-function newSolarParticle() {
-  var side = Math.random() > 0.5;
-  return {
-    x: side ? -0.05 : 1.05,
-    y: Math.random(),
-    vx: (side ? 1 : -1) * (0.0005 + Math.random() * 0.001),
-    vy: (Math.random()-0.5) * 0.0006,
-    life: Math.random(),
-    maxLife: 0.6 + Math.random() * 0.4,
-    size: 0.5 + Math.random() * 2,
-    tail: 0.025 + Math.random() * 0.045
-  };
-}
+
 function drawSolarWind() {
-  if (!solarParticles) initSolarParticles();
-  ctx.clearRect(0,0,W,H);
-  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
-  var [ar,ag,ab] = accentRgb;
+  if (!auroraCurtains) initAurora();
+  ctx.clearRect(0, 0, W, H);
 
-  // Sun glow off-screen left
-  var sunGlow = ctx.createRadialGradient(-W*0.1, H*0.5, 0, -W*0.1, H*0.5, W*0.7);
-  sunGlow.addColorStop(0,'rgba('+ar+','+ag+','+ab+',0.18)');
-  sunGlow.addColorStop(0.5,'rgba('+ar+','+ag+','+ab+',0.05)');
-  sunGlow.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle = sunGlow; ctx.fillRect(0,0,W,H);
+  var spd = animSpeed > 0 ? animSpeed : 0;
+  var [ar, ag, ab] = accentRgb;
 
-  solarParticles.forEach(function(p, idx) {
-    p.x += p.vx; p.y += p.vy; p.life += 0.008;
-    if (p.life > p.maxLife || p.x < -0.1 || p.x > 1.1) {
-      solarParticles[idx] = newSolarParticle();
-      return;
-    }
-    var fade = Math.sin((p.life / p.maxLife) * Math.PI);
-    var px = p.x * W, py = p.y * H;
-    var tailLen = p.tail * W;
-    var grad = ctx.createLinearGradient(px - tailLen * p.vx/Math.abs(p.vx||1), py, px, py);
-    grad.addColorStop(0, 'rgba('+ar+','+ag+','+ab+',0)');
-    grad.addColorStop(1, 'rgba('+ar+','+ag+','+ab+','+(fade*0.7)+')');
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = p.size * fade;
+  // ── Night sky background ──────────────────────────────────
+  var sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0,   nebulaBackground[0]);
+  sky.addColorStop(0.6, nebulaBackground[1]);
+  sky.addColorStop(1,   nebulaBackground[2]);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Stars behind aurora ───────────────────────────────────
+  stars.forEach(function(s) {
+    var sa = s.baseAlpha * (0.5 + Math.sin(t * s.twinkleSpeed + s.phase) * 0.3) * 0.7;
     ctx.beginPath();
-    ctx.moveTo(px - tailLen * (p.vx > 0 ? -1 : 1), py);
-    ctx.lineTo(px, py);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(px, py, p.size * fade * 0.8, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba('+ar+','+ag+','+ab+','+(fade*0.9)+')';
+    ctx.arc(s.x * W, s.y * H, s.size * 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,' + sa + ')';
     ctx.fill();
   });
+
+  // ── Aurora curtains ───────────────────────────────────────
+  auroraCurtains.forEach(function(c) {
+    c.phase   += c.speed * spd;
+    c.shimmer += c.shimSpd * spd;
+    c.x       += c.drift * spd;
+    if (c.x < -0.1) c.x = 1.05;
+    if (c.x >  1.1) c.x = -0.05;
+
+    var cx = c.x * W;
+    var cw = c.width * W;
+    var ch = c.height * H;
+    var yTop = c.yTop * H;
+    var yBot = yTop + ch;
+
+    // Shimmer alpha — curtains breathe in and out
+    var shimAlpha = 0.55 + Math.sin(c.shimmer) * 0.30 + Math.sin(c.shimmer * 0.4) * 0.15;
+
+    // Color from theme palette
+    var col  = themeRgbPalette[c.palIdx]  || [ar, ag, ab];
+    var col2 = themeRgbPalette[c.palIdx2] || [ar, ag, ab];
+
+    // Number of vertical strips — each wiggles independently for curtain wave
+    var strips = 18;
+    for (var s2 = 0; s2 <= strips; s2++) {
+      var sf  = s2 / strips;
+      // Horizontal wave displacement
+      var wx  = Math.sin(sf * c.waveFreq * Math.PI + c.phase) * c.waveAmp * W
+              + Math.sin(sf * c.waveFreq * 1.6 * Math.PI + c.phase * 0.7) * c.waveAmp * 0.4 * W;
+      var sx2 = cx - cw * 0.5 + sf * cw + wx;
+
+      // Strip alpha tapers at edges and top/bottom
+      var edgeFade = Math.sin(sf * Math.PI);      // 0 at edges, 1 at centre
+      var sa2 = shimAlpha * edgeFade;
+
+      // Blend between two palette colors across the curtain width
+      var r = Math.round(col[0]  + (col2[0]-col[0])  * sf);
+      var g = Math.round(col[1]  + (col2[1]-col[1])  * sf);
+      var b = Math.round(col[2]  + (col2[2]-col[2])  * sf);
+
+      // Vertical gradient: transparent top → bright → bright mid → fade bottom
+      var grad = ctx.createLinearGradient(sx2, yTop, sx2, yBot);
+      grad.addColorStop(0,    'rgba(' + r + ',' + g + ',' + b + ',0)');
+      grad.addColorStop(0.08, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.5) + ')');
+      grad.addColorStop(0.25, 'rgba(' + r + ',' + g + ',' + b + ',' + sa2 + ')');
+      grad.addColorStop(0.55, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.85) + ')');
+      grad.addColorStop(0.80, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.35) + ')');
+      grad.addColorStop(1,    'rgba(' + r + ',' + g + ',' + b + ',0)');
+
+      var stripW = cw / strips * 1.5;
+      ctx.fillStyle = grad;
+      ctx.fillRect(sx2 - stripW * 0.5, yTop, stripW, ch);
+    }
+
+    // Bright lower hem — the glowing base of the curtain
+    var hemY = yTop + ch * 0.70;
+    var hem  = ctx.createLinearGradient(cx, hemY - 4, cx, hemY + H * 0.06);
+    hem.addColorStop(0,   'rgba(255,255,255,' + (shimAlpha * 0.25) + ')');
+    hem.addColorStop(0.3, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (shimAlpha * 0.18) + ')');
+    hem.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = hem;
+    ctx.fillRect(cx - cw * 0.55, hemY - 4, cw * 1.1, H * 0.06);
+  });
+
+  // ── Ground glow reflection ────────────────────────────────
+  var gnd = ctx.createLinearGradient(0, H * 0.85, 0, H);
+  gnd.addColorStop(0,   'rgba(0,0,0,0)');
+  gnd.addColorStop(0.5, 'rgba(' + ar + ',' + ag + ',' + ab + ',0.04)');
+  gnd.addColorStop(1,   'rgba(' + ar + ',' + ag + ',' + ab + ',0.08)');
+  ctx.fillStyle = gnd;
+  ctx.fillRect(0, H * 0.85, W, H * 0.15);
+
   drawVignette();
 }
 
@@ -3768,8 +3961,8 @@ document.addEventListener('keydown', function(e) {
           <div class="p-toggle-group">
             <button class="p-toggle" data-pref="animStyle" data-val="nebula"     data-pref-row="1" data-pref-col="0">Nebula</button>
             <button class="p-toggle" data-pref="animStyle" data-val="galaxy"     data-pref-row="1" data-pref-col="1">Galaxy</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="underwater" data-pref-row="1" data-pref-col="2">Ocean</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="solarwind"  data-pref-row="1" data-pref-col="3">Solar Wind</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="underwater" data-pref-row="1" data-pref-col="2">Deep Sea</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="solarwind"  data-pref-row="1" data-pref-col="3">Aurora</button>
             <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="4">Matrix</button>
             <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="1" data-pref-col="5">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">XMB Wave</button>
@@ -3905,6 +4098,7 @@ function applyPrefs(prefs) {
     animMode = newMode;
     galaxyStars = null; causticPoints = null; solarParticles = null;
     matrixCols = null; flameParticles = null; flameEmbers = null;
+    deepSeaJellies = null; auroraCurtains = null;
   }
 }
 
