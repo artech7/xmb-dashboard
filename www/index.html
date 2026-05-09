@@ -710,7 +710,7 @@ function resize() {
   // Reset screen-size-dependent animation states
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
-  deepSeaJellies = null; auroraCurtains = null;
+  auroraCurtains = null;
 }
 
 function drawNebula() {
@@ -982,57 +982,47 @@ function drawGalaxy() {
 }
 
 // ── 2. DEEP SEA BIOLUMINESCENCE ───────────────────────────────
-var deepSeaJellies  = null;
 var deepSeaParticles = null;
-var deepSeaMotes    = null;
+var deepSeaMotes     = null;
+var causticNodes     = null;
 
 function initDeepSea() {
   var U = Math.min(W, H);
-  deepSeaJellies = [];
-  for (var i = 0; i < 8; i++) {
-    deepSeaJellies.push(newJelly());
-  }
   deepSeaParticles = [];
-  for (var j = 0; j < 120; j++) {
+  for (var j = 0; j < 160; j++) {
     deepSeaParticles.push(newDeepParticle(true));
   }
   deepSeaMotes = [];
-  for (var k = 0; k < 60; k++) {
+  for (var k = 0; k < 80; k++) {
     deepSeaMotes.push(newMote(true));
   }
-}
-
-function newJelly() {
-  return {
-    x:        0.05 + Math.random() * 0.90,
-    y:        0.10 + Math.random() * 0.85,
-    vy:       (Math.random() > 0.5 ? 1 : -1) * (0.00008 + Math.random() * 0.00012),
-    vx:       (Math.random() - 0.5) * 0.00006,
-    r:        (0.04 + Math.random() * 0.07) * Math.min(W, H),
-    pulse:    Math.random() * Math.PI * 2,
-    pulseSpd: 0.012 + Math.random() * 0.010,
-    tentacles: Math.floor(6 + Math.random() * 6),
-    tentLen:  (0.06 + Math.random() * 0.08) * Math.min(W, H),
-    glow:     0.5 + Math.random() * 0.5,
-    hue:      Math.random() * Math.PI * 2,
-    hueSpd:   0.003 + Math.random() * 0.004,
-    wobble:   Math.random() * Math.PI * 2,
-    wobSpd:   0.008 + Math.random() * 0.008,
-  };
+  // Caustic nodes — interference points for the water displacement pattern
+  causticNodes = [];
+  for (var n = 0; n < 10; n++) {
+    causticNodes.push({
+      x:     Math.random(),
+      y:     Math.random(),
+      vx:    (Math.random() - 0.5) * 0.00020,
+      vy:    (Math.random() - 0.5) * 0.00015,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.0006 + Math.random() * 0.0006,
+    });
+  }
 }
 
 function newDeepParticle(randomPos) {
   return {
     x:    Math.random(),
     y:    randomPos ? Math.random() : 1.05,
-    vy:   -(0.0003 + Math.random() * 0.0005),
-    vx:   (Math.random() - 0.5) * 0.0002,
-    life: randomPos ? Math.random() : 0,
-    maxLife: 1.0 + Math.random() * 2.0,
-    size: (0.002 + Math.random() * 0.004) * Math.min(W, H),
-    alpha: 0.3 + Math.random() * 0.5,
+    vy:   -(0.0003 + Math.random() * 0.0006),
+    vx:   (Math.random() - 0.5) * 0.00025,
+    life:    randomPos ? Math.random() : 0,
+    maxLife: 1.2 + Math.random() * 2.0,
+    size: (0.0025 + Math.random() * 0.004) * Math.min(W, H),
+    alpha: 0.35 + Math.random() * 0.55,
     phase: Math.random() * Math.PI * 2,
-    twinkle: 0.02 + Math.random() * 0.04,
+    twinkle: 0.018 + Math.random() * 0.030,
+    palIdx: Math.floor(Math.random() * 4),
   };
 }
 
@@ -1040,17 +1030,17 @@ function newMote(randomPos) {
   return {
     x:    Math.random(),
     y:    randomPos ? Math.random() : 1.05,
-    vy:   -(0.0001 + Math.random() * 0.0002),
+    vy:   -(0.00008 + Math.random() * 0.00015),
     vx:   (Math.random() - 0.5) * 0.00008,
-    size: (0.001 + Math.random() * 0.002) * Math.min(W, H),
-    alpha: 0.15 + Math.random() * 0.25,
+    size: (0.0008 + Math.random() * 0.0015) * Math.min(W, H),
+    alpha: 0.12 + Math.random() * 0.20,
     phase: Math.random() * Math.PI * 2,
-    spd: 0.008 + Math.random() * 0.015,
+    spd:   0.006 + Math.random() * 0.012,
   };
 }
 
 function drawUnderwater() {
-  if (!deepSeaJellies) initDeepSea();
+  if (!deepSeaParticles) initDeepSea();
   ctx.clearRect(0, 0, W, H);
 
   var spd = animSpeed > 0 ? animSpeed : 0;
@@ -1068,26 +1058,77 @@ function drawUnderwater() {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // ── Depth rays (faint light from above) ──────────────────
-  for (var ray = 0; ray < 5; ray++) {
-    var rx = W * (0.1 + ray * 0.2 + Math.sin(t * 0.0002 + ray) * 0.04);
-    var ra = 0.018 + Math.sin(t * 0.0004 + ray * 0.7) * 0.008;
-    var rg = ctx.createLinearGradient(rx, 0, rx + H * 0.08, H * 0.7);
-    rg.addColorStop(0,   'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + ra + ')');
-    rg.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = rg;
+  // ── Water surface displacement at top ─────────────────────
+  // Wavy refractive bands across the top ~25% of screen
+  var numWaves = 18;
+  for (var w2 = 0; w2 < numWaves; w2++) {
+    var wFrac  = w2 / numWaves;
+    var wY     = H * wFrac * 0.28;
+    var wAlpha = (1 - wFrac) * 0.09 + Math.sin(t * 0.0006 * spd + w2 * 0.7) * 0.02;
+
     ctx.beginPath();
-    ctx.moveTo(rx - 30, 0);
-    ctx.lineTo(rx + 30, 0);
-    ctx.lineTo(rx + H * 0.08 + 120, H * 0.7);
-    ctx.lineTo(rx + H * 0.08 - 120, H * 0.7);
+    for (var wx = 0; wx <= W; wx += 4) {
+      var wy = wY
+        + Math.sin(wx * 0.009 + t * 0.0007 * spd + w2 * 0.55) * (8 + wFrac * 14)
+        + Math.sin(wx * 0.015 + t * 0.0011 * spd + w2 * 1.20) * (4 + wFrac * 7)
+        + Math.sin(wx * 0.022 + t * 0.0005 * spd + w2 * 0.30) * (2 + wFrac * 4);
+      if (wx === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+    }
+    ctx.strokeStyle = 'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + wAlpha + ')';
+    ctx.lineWidth   = 1.0 + wFrac * 0.5;
+    ctx.stroke();
+  }
+
+  // ── Caustic light patterns — interference of moving nodes ─
+  causticNodes.forEach(function(n) {
+    n.x     += n.vx * spd;
+    n.y     += n.vy * spd;
+    n.phase += n.speed * spd;
+    if (n.x < 0) n.x = 1; if (n.x > 1) n.x = 0;
+    if (n.y < 0) n.y = 1; if (n.y > 1) n.y = 0;
+  });
+
+  // Draw caustic rings — overlapping creates interference pattern
+  for (var cn = 0; cn < causticNodes.length; cn++) {
+    var nd = causticNodes[cn];
+    for (var ring = 0; ring < 3; ring++) {
+      var rScale = 0.06 + ring * 0.10;
+      var rSize  = rScale * Math.min(W, H) * (0.9 + Math.sin(nd.phase + ring) * 0.1);
+      var rAlpha = (0.035 - ring * 0.010) * (0.7 + Math.sin(nd.phase * 0.7 + ring) * 0.3);
+      var rg = ctx.createRadialGradient(
+        nd.x * W, nd.y * H, rSize * 0.6,
+        nd.x * W, nd.y * H, rSize
+      );
+      var rc = cn % 2 === 0 ? c1 : c2;
+      rg.addColorStop(0,   'rgba(0,0,0,0)');
+      rg.addColorStop(0.7, 'rgba(' + rc[0] + ',' + rc[1] + ',' + rc[2] + ',' + rAlpha + ')');
+      rg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = rg;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // ── Light rays filtering down ─────────────────────────────
+  for (var ray = 0; ray < 6; ray++) {
+    var rx  = W * (0.08 + ray * 0.17 + Math.sin(t * 0.00018 * spd + ray) * 0.04);
+    var ra  = 0.022 + Math.sin(t * 0.0004 * spd + ray * 0.8) * 0.010;
+    var rg2 = ctx.createLinearGradient(rx, 0, rx + H * 0.06, H * 0.65);
+    rg2.addColorStop(0,   'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + ra + ')');
+    rg2.addColorStop(0.6, 'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + (ra*0.3) + ')');
+    rg2.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = rg2;
+    ctx.beginPath();
+    ctx.moveTo(rx - 25, 0);
+    ctx.lineTo(rx + 25, 0);
+    ctx.lineTo(rx + H * 0.06 + 100, H * 0.65);
+    ctx.lineTo(rx + H * 0.06 - 100, H * 0.65);
     ctx.fill();
   }
 
-  // ── Floating motes (tiny drifting bioluminescent specks) ──
+  // ── Floating motes ────────────────────────────────────────
   deepSeaMotes.forEach(function(m, idx) {
-    m.y  += m.vy * spd;
-    m.x  += m.vx * spd;
+    m.y     += m.vy * spd;
+    m.x     += m.vx * spd;
     m.phase += m.spd * spd;
     if (m.y < -0.02) { deepSeaMotes[idx] = newMote(false); return; }
     var ma = m.alpha * (0.5 + Math.sin(m.phase) * 0.5);
@@ -1099,89 +1140,30 @@ function drawUnderwater() {
 
   // ── Bioluminescent particles ──────────────────────────────
   deepSeaParticles.forEach(function(p, idx) {
-    p.life += 0.005 * spd;
-    p.y    += p.vy * spd + Math.sin(p.phase + t * 0.0002) * 0.0001;
-    p.x    += p.vx * spd;
+    p.life  += 0.004 * spd;
+    p.y     += p.vy * spd + Math.sin(p.phase + t * 0.00015) * 0.0001;
+    p.x     += p.vx * spd;
     p.phase += p.twinkle * spd;
     if (p.life >= p.maxLife || p.y < -0.02) {
       deepSeaParticles[idx] = newDeepParticle(false); return;
     }
-    var lf = p.life / p.maxLife;
-    var pa = p.alpha * Math.sin(lf * Math.PI) * (0.6 + Math.sin(p.phase) * 0.4);
-    var pc = lf < 0.5 ? c0 : c1;
-    // Small glow halo
-    var hg = ctx.createRadialGradient(p.x*W, p.y*H, 0, p.x*W, p.y*H, p.size*4);
-    hg.addColorStop(0, 'rgba('+pc[0]+','+pc[1]+','+pc[2]+','+(pa*0.8)+')');
-    hg.addColorStop(1, 'rgba(0,0,0,0)');
+    var lf  = p.life / p.maxLife;
+    var pa  = p.alpha * Math.sin(lf * Math.PI) * (0.6 + Math.sin(p.phase) * 0.4);
+    var pc  = themeRgbPalette[p.palIdx] || c0;
+    var hg  = ctx.createRadialGradient(p.x*W, p.y*H, 0, p.x*W, p.y*H, p.size * 5);
+    hg.addColorStop(0,   'rgba(' + pc[0] + ',' + pc[1] + ',' + pc[2] + ',' + (pa*0.8) + ')');
+    hg.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = hg;
-    ctx.fillRect(p.x*W - p.size*4, p.y*H - p.size*4, p.size*8, p.size*8);
+    ctx.fillRect(p.x*W - p.size*5, p.y*H - p.size*5, p.size*10, p.size*10);
     ctx.beginPath();
     ctx.arc(p.x*W, p.y*H, p.size, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,'+(pa*0.9)+')';
+    ctx.fillStyle = 'rgba(255,255,255,' + (pa*0.95) + ')';
     ctx.fill();
-  });
-
-  // ── Jellyfish ─────────────────────────────────────────────
-  deepSeaJellies.forEach(function(j) {
-    j.y      += j.vy * spd;
-    j.x      += j.vx * spd + Math.sin(j.wobble) * 0.00008;
-    j.pulse  += j.pulseSpd * spd;
-    j.hue    += j.hueSpd * spd;
-    j.wobble += j.wobSpd * spd;
-
-    if (j.y > 1.15)  { j.vy = -Math.abs(j.vy); j.x = 0.05 + Math.random() * 0.9; }
-    if (j.y < -0.15) { j.vy =  Math.abs(j.vy); j.x = 0.05 + Math.random() * 0.9; }
-    if (j.x < 0) j.x = 1; if (j.x > 1) j.x = 0;
-
-    var jx = j.x * W;
-    var jy = j.y * H;
-    var pr = j.r * (0.85 + Math.sin(j.pulse) * 0.15);  // pulsing radius
-    var pa = j.glow * (0.6 + Math.sin(j.pulse * 0.8) * 0.4);
-
-    // Pick color from palette cycling
-    var ci = Math.floor(Math.abs(Math.sin(j.hue)) * 4);
-    var jc = themeRgbPalette[ci] || c0;
-    var jc2= themeRgbPalette[(ci+2)%4] || c2;
-
-    // Bell outer glow
-    var outerGlow = ctx.createRadialGradient(jx, jy, 0, jx, jy, pr * 2.5);
-    outerGlow.addColorStop(0,   'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+(pa*0.12)+')');
-    outerGlow.addColorStop(0.5, 'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+(pa*0.06)+')');
-    outerGlow.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = outerGlow;
-    ctx.fillRect(jx - pr*2.5, jy - pr*2.5, pr*5, pr*5);
-
-    // Bell dome
-    ctx.beginPath();
-    ctx.ellipse(jx, jy, pr, pr * 0.65, 0, Math.PI, 0, false);
-    var domeGrad = ctx.createRadialGradient(jx, jy - pr*0.2, 0, jx, jy, pr);
-    domeGrad.addColorStop(0,   'rgba(255,255,255,'+(pa*0.55)+')');
-    domeGrad.addColorStop(0.3, 'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+(pa*0.50)+')');
-    domeGrad.addColorStop(0.7, 'rgba('+jc2[0]+','+jc2[1]+','+jc2[2]+','+(pa*0.25)+')');
-    domeGrad.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = domeGrad;
-    ctx.fill();
-
-    // Tentacles hanging below bell
-    for (var tn = 0; tn < j.tentacles; tn++) {
-      var tx = jx + (tn / (j.tentacles-1) - 0.5) * pr * 1.8;
-      var tentWave = Math.sin(t * 0.0008 * spd + tn * 0.9 + j.pulse) * (pr * 0.35);
-      ctx.beginPath();
-      ctx.moveTo(tx, jy);
-      ctx.bezierCurveTo(
-        tx + tentWave, jy + j.tentLen * 0.35,
-        tx - tentWave, jy + j.tentLen * 0.7,
-        tx + tentWave * 0.5, jy + j.tentLen
-      );
-      var ta = pa * (0.5 - tn * 0.02) * 0.6;
-      ctx.strokeStyle = 'rgba('+jc[0]+','+jc[1]+','+jc[2]+','+Math.max(0.05,ta)+')';
-      ctx.lineWidth = Math.max(0.5, pr * 0.04);
-      ctx.stroke();
-    }
   });
 
   drawVignette();
 }
+
 
 // ── 3. AURORA BOREALIS ─────────────────────────────────────
 var auroraCurtains = null;
@@ -4098,7 +4080,7 @@ function applyPrefs(prefs) {
     animMode = newMode;
     galaxyStars = null; causticPoints = null; solarParticles = null;
     matrixCols = null; flameParticles = null; flameEmbers = null;
-    deepSeaJellies = null; auroraCurtains = null;
+    auroraCurtains = null;
   }
 }
 
