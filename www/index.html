@@ -710,7 +710,6 @@ function resize() {
   // Reset screen-size-dependent animation states
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
-  warpStars = null;
 }
 
 function drawNebula() {
@@ -1117,6 +1116,7 @@ function drawSolarWind() {
 var matrixCols = null;
 var matrixChars = '日ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ012345789Z:·';
 function initMatrix() {
+  var csize = Math.max(12, Math.min(24, Math.round(H * 0.018)));
   var cols = Math.floor(W / csize);
   matrixCols = [];
   for (var i = 0; i < cols; i++) {
@@ -1144,7 +1144,7 @@ function drawMatrix() {
   ctx.fillStyle = 'rgba('+br+','+bg2+','+bb+',0.18)';
   ctx.fillRect(0,0,W,H);
 
-  var csize = 16;
+  var csize = Math.max(12, Math.min(24, Math.round(H * 0.018)));
   matrixCols.forEach(function(col, ci) {
     col.y += col.speed * (animSpeed > 0 ? animSpeed : 0);
     if (col.y > H + col.len * csize) {
@@ -3904,7 +3904,7 @@ function applyPrefs(prefs) {
   if (newMode !== animMode) {
     animMode = newMode;
     galaxyStars = null; causticPoints = null; solarParticles = null;
-    matrixCols = null; warpStars = null; flameParticles = null; flameEmbers = null;
+    matrixCols = null; flameParticles = null; flameEmbers = null;
   }
 }
 
