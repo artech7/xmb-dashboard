@@ -707,6 +707,10 @@ function resize() {
   W = canvas.width  = window.innerWidth;
   H = canvas.height = window.innerHeight;
   initStars();
+  // Reset screen-size-dependent animation states
+  galaxyStars = null; causticPoints = null; solarParticles = null;
+  matrixCols = null; flameParticles = null; flameEmbers = null;
+  warpStars = null;
 }
 
 function drawNebula() {
@@ -1175,51 +1179,54 @@ function drawMatrix() {
 var flameParticles = null;
 var flameEmbers    = null;
 
+function flameUnit() {
+  // All sizes/speeds expressed as fraction of Math.min(W,H) for screen adaptivity
+  return Math.min(W, H);
+}
+
+function newFlameParticle(randomLife) {
+  var U = flameUnit();
+  // Cluster into flame columns spread across width
+  var col   = Math.floor(Math.random() * 7);
+  var baseX = (col / 6) + (Math.random() - 0.5) * 0.18;
+  baseX = Math.max(0.02, Math.min(0.98, baseX));
+  var ml = 0.5 + Math.random() * 0.6;
+  return {
+    x:       baseX,
+    y:       1.04,                                   // start just below screen
+    vy:      -(0.0035 + Math.random() * 0.004),      // rises ~40-75% of screen height per life
+    vx:      (Math.random() - 0.5) * 0.0010,
+    life:    randomLife ? Math.random() * ml : 0,
+    maxLife: ml,
+    // Size as fraction of smaller screen dimension
+    size:    (0.04 + Math.random() * 0.06) * U,
+    wobble:  Math.random() * Math.PI * 2,
+    wobbleSpeed: 0.03 + Math.random() * 0.04,
+  };
+}
+
+function newEmber(randomLife) {
+  var ml = 0.8 + Math.random() * 1.2;
+  var col = Math.floor(Math.random() * 7);
+  return {
+    x:       (col / 6) + (Math.random() - 0.5) * 0.15,
+    y:       0.92 + Math.random() * 0.12,
+    vy:      -(0.0008 + Math.random() * 0.0015),
+    vx:      (Math.random() - 0.5) * 0.0018,
+    life:    randomLife ? Math.random() * ml : 0,
+    maxLife: ml,
+    size:    (0.003 + Math.random() * 0.005) * flameUnit(),
+    twinkle: 0.12 + Math.random() * 0.12,
+    phase:   Math.random() * Math.PI * 2,
+  };
+}
+
 function initFlames() {
+  var count = Math.max(120, Math.floor(W / 8));  // screen-adaptive particle count
   flameParticles = [];
   flameEmbers    = [];
-  // Spawn initial particles spread across bottom
-  for (var i = 0; i < 180; i++) {
-    flameParticles.push(newFlameParticle(true));
-  }
-  for (var j = 0; j < 60; j++) {
-    flameEmbers.push(newEmber(true));
-  }
-}
-
-function newFlameParticle(randomY) {
-  var x = Math.random();
-  // Cluster particles — most concentrated in a few flame columns
-  var cluster = Math.floor(Math.random() * 6);
-  x = (cluster / 5) + (Math.random() - 0.5) * 0.22;
-  x = Math.max(0, Math.min(1, x));
-  return {
-    x:     x,
-    y:     randomY ? Math.random() : 1.0,
-    vy:    -(0.0018 + Math.random() * 0.003),   // rises upward
-    vx:    (Math.random() - 0.5) * 0.0008,
-    life:  randomY ? Math.random() : 0,
-    maxLife: 0.35 + Math.random() * 0.45,
-    size:  18 + Math.random() * 32,
-    // Color phase: 0=deep base, 1=mid flame, 2=tip
-    cluster: cluster,
-    wobble: Math.random() * Math.PI * 2,
-    wobbleSpeed: 0.04 + Math.random() * 0.06,
-  };
-}
-
-function newEmber(randomY) {
-  return {
-    x:    Math.random(),
-    y:    randomY ? 0.7 + Math.random() * 0.3 : 1.0,
-    vy:   -(0.001 + Math.random() * 0.002),
-    vx:   (Math.random() - 0.5) * 0.002,
-    life: randomY ? Math.random() : 0,
-    maxLife: 0.5 + Math.random() * 0.8,
-    size:  1.2 + Math.random() * 2.2,
-    twinkle: Math.random() * 0.08 + 0.03,
-    phase: Math.random() * Math.PI * 2,
-  };
+  for (var i = 0; i < count; i++)  flameParticles.push(newFlameParticle(true));
+  for (var j = 0; j < 80;    j++)  flameEmbers.push(newEmber(true));
 }
 
 function drawFlames() {
@@ -1229,121 +1236,133 @@ function drawFlames() {
 
   var [ar, ag, ab] = accentRgb;
   var spd = animSpeed > 0 ? animSpeed : 0;
-  // Pull flame colors from theme palette
-  // base=blob[0] (hot core), mid=blob[1] (main flame), tip=blob[2] (cool tip)
+
+  // Theme-driven flame colors
   var cBase = themeRgbPalette[0] || [ar, ag, ab];
   var cMid  = themeRgbPalette[1] || [ar, ag, ab];
   var cTip  = themeRgbPalette[2] || [ar, ag, ab];
-  // Boost base toward white-hot
-  var cHot  = [
-    Math.min(255, Math.round(cBase[0] * 0.6 + 255 * 0.4)),
-    Math.min(255, Math.round(cBase[1] * 0.5 + 220 * 0.5)),
-    Math.min(255, Math.round(cBase[2] * 0.3 + 180 * 0.7)),
+  // White-hot core boost
+  var cHot = [
+    Math.min(255, Math.round(cBase[0] * 0.5 + 255 * 0.5)),
+    Math.min(255, Math.round(cBase[1] * 0.4 + 220 * 0.6)),
+    Math.min(255, Math.round(cBase[2] * 0.2 + 200 * 0.8)),
   ];
 
   // ── Ground emitter glow ─────────────────────────────────
-  var groundGrad = ctx.createLinearGradient(0, H * 0.75, 0, H);
-  groundGrad.addColorStop(0, 'rgba(' + cBase[0] + ',' + cBase[1] + ',' + cBase[2] + ',0)');
-  groundGrad.addColorStop(0.6, 'rgba(' + cBase[0] + ',' + cBase[1] + ',' + cBase[2] + ',0.12)');
-  groundGrad.addColorStop(1, 'rgba(' + cHot[0] + ',' + cHot[1] + ',' + cHot[2] + ',0.25)');
+  var groundGrad = ctx.createLinearGradient(0, H * 0.65, 0, H);
+  groundGrad.addColorStop(0,   'rgba('+cMid[0]+','+cMid[1]+','+cMid[2]+',0)');
+  groundGrad.addColorStop(0.5, 'rgba('+cBase[0]+','+cBase[1]+','+cBase[2]+',0.20)');
+  groundGrad.addColorStop(1,   'rgba('+cHot[0]+','+cHot[1]+','+cHot[2]+',0.45)');
   ctx.fillStyle = groundGrad;
   ctx.fillRect(0, 0, W, H);
 
+  // ── Flame columns — wide base glow behind particles ─────
+  for (var col = 0; col < 7; col++) {
+    var cx2 = (col / 6) * W;
+    var colAlpha = 0.10 + Math.sin(t * 0.0012 + col * 1.3) * 0.04;
+    var colGrad  = ctx.createRadialGradient(cx2, H, 0, cx2, H * 0.5, W * 0.14);
+    colGrad.addColorStop(0,   'rgba('+cBase[0]+','+cBase[1]+','+cBase[2]+','+colAlpha+')');
+    colGrad.addColorStop(0.5, 'rgba('+cMid[0]+','+cMid[1]+','+cMid[2]+','+(colAlpha*0.35)+')');
+    colGrad.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = colGrad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   // ── Flame particles ─────────────────────────────────────
   flameParticles.forEach(function(p, idx) {
-    p.life += 0.012 * spd;
-    p.wobble += p.wobbleSpeed * spd;
-    p.x += p.vx * spd + Math.sin(p.wobble) * 0.0006;
-    p.y += p.vy * spd;
+    p.life    += 0.014 * spd;
+    p.wobble  += p.wobbleSpeed * spd;
+    p.x       += p.vx * spd + Math.sin(p.wobble) * 0.0005;
+    p.y       += p.vy * spd;
 
-    if (p.life > p.maxLife) {
+    if (p.life >= p.maxLife || p.y < -0.1) {
       flameParticles[idx] = newFlameParticle(false);
       return;
     }
 
-    var lifeFrac = p.life / p.maxLife;   // 0=birth, 1=death
-    var px = p.x * W;
-    var py = p.y * H;
+    var lf  = p.life / p.maxLife;
+    var px  = p.x * W;
+    var py  = p.y * H;
+    // Size: starts at 70%, peaks at 50% life, shrinks and tapers at tip
+    var sz  = p.size * (0.7 + Math.sin(lf * Math.PI) * 0.6) * (1 - lf * 0.55);
 
-    // Size: grows then shrinks
-    var sz = p.size * Math.sin(lifeFrac * Math.PI) * (1 - lifeFrac * 0.3);
-
-    // Color: hot white-yellow at base → mid color → tip color → transparent
-    // Base (lifeFrac 0-0.25): hot core
-    // Mid (0.25-0.65): main flame color
-    // Tip (0.65-1.0): cool tip, fades out
+    // 3-phase color transition
     var r, g, b, alpha;
-    if (lifeFrac < 0.25) {
-      var t2 = lifeFrac / 0.25;
-      r = Math.round(cHot[0] + (cBase[0]-cHot[0]) * t2);
-      g = Math.round(cHot[1] + (cBase[1]-cHot[1]) * t2);
-      b = Math.round(cHot[2] + (cBase[2]-cHot[2]) * t2);
-      alpha = 0.55 + t2 * 0.25;
-    } else if (lifeFrac < 0.65) {
-      var t3 = (lifeFrac - 0.25) / 0.40;
+    if (lf < 0.20) {
+      var t2 = lf / 0.20;
+      r = Math.round(cHot[0]  + (cBase[0]-cHot[0])  * t2);
+      g = Math.round(cHot[1]  + (cBase[1]-cHot[1])  * t2);
+      b = Math.round(cHot[2]  + (cBase[2]-cHot[2])  * t2);
+      alpha = 0.75 + t2 * 0.15;
+    } else if (lf < 0.60) {
+      var t3 = (lf - 0.20) / 0.40;
       r = Math.round(cBase[0] + (cMid[0]-cBase[0]) * t3);
       g = Math.round(cBase[1] + (cMid[1]-cBase[1]) * t3);
       b = Math.round(cBase[2] + (cMid[2]-cBase[2]) * t3);
-      alpha = 0.80 - t3 * 0.15;
+      alpha = 0.90 - t3 * 0.15;
     } else {
-      var t4 = (lifeFrac - 0.65) / 0.35;
-      r = Math.round(cMid[0] + (cTip[0]-cMid[0]) * t4);
-      g = Math.round(cMid[1] + (cTip[1]-cMid[1]) * t4);
-      b = Math.round(cMid[2] + (cTip[2]-cMid[2]) * t4);
-      alpha = 0.65 * (1 - t4);
+      var t4 = (lf - 0.60) / 0.40;
+      r = Math.round(cMid[0]  + (cTip[0]-cMid[0])  * t4);
+      g = Math.round(cMid[1]  + (cTip[1]-cMid[1])  * t4);
+      b = Math.round(cMid[2]  + (cTip[2]-cMid[2])  * t4);
+      alpha = 0.75 * (1 - t4 * t4);
     }
 
-    // Radial gradient blob — soft flame petal
-    var fg = ctx.createRadialGradient(px, py, 0, px, py, sz);
+    // Elongated flame shape — taller than wide
+    var szW = sz * 0.75;
+    var szH = sz * 1.4;
+    var fg = ctx.createRadialGradient(px, py, 0, px, py + szH*0.2, Math.max(szW,szH));
     fg.addColorStop(0,    'rgba('+r+','+g+','+b+','+alpha+')');
-    fg.addColorStop(0.45, 'rgba('+r+','+g+','+b+','+(alpha*0.55)+')');
-    fg.addColorStop(0.80, 'rgba('+r+','+g+','+b+','+(alpha*0.12)+')');
+    fg.addColorStop(0.40, 'rgba('+r+','+g+','+b+','+(alpha*0.65)+')');
+    fg.addColorStop(0.75, 'rgba('+r+','+g+','+b+','+(alpha*0.18)+')');
     fg.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = fg;
-    ctx.fillRect(px - sz, py - sz, sz * 2, sz * 2);
+    ctx.fillRect(px - szW, py - szH, szW*2, szH*2);
   });
 
   // ── Embers ──────────────────────────────────────────────
   flameEmbers.forEach(function(e, idx) {
-    e.life += 0.006 * spd;
-    e.x += e.vx * spd;
-    e.y += e.vy * spd;
-    if (e.life > e.maxLife || e.y < -0.05) {
+    e.life += 0.007 * spd;
+    e.x    += e.vx * spd + (Math.random()-0.5)*0.0003;
+    e.y    += e.vy * spd;
+    if (e.life >= e.maxLife || e.y < -0.05) {
       flameEmbers[idx] = newEmber(false);
       return;
     }
-    var ef = e.life / e.maxLife;
-    var ea = (1 - ef) * 0.9;
-    var tw = 0.6 + Math.sin(e.life * e.twinkle * 60 + e.phase) * 0.4;
+    var ef  = e.life / e.maxLife;
+    var ea  = (1 - ef) * 0.95;
+    var tw  = 0.5 + Math.sin(e.life / e.maxLife * Math.PI * 8 + e.phase) * 0.5;
+    var ec  = ef < 0.3 ? cHot : (ef < 0.6 ? cBase : cMid);
     ctx.beginPath();
-    ctx.arc(e.x * W, e.y * H, e.size * tw, 0, Math.PI * 2);
-    // Embers glow hot at base, cool as they rise
-    var ec = ef < 0.4 ? cHot : (ef < 0.7 ? cBase : cMid);
+    ctx.arc(e.x*W, e.y*H, e.size*tw, 0, Math.PI*2);
     ctx.fillStyle = 'rgba('+ec[0]+','+ec[1]+','+ec[2]+','+(ea*tw)+')';
     ctx.fill();
   });
 
-  // ── Heat distortion shimmer above flames ─────────────────
-  for (var sh = 0; sh < 3; sh++) {
-    var shY = H * (0.68 - sh * 0.07);
+  // ── Heat shimmer lines above flames ─────────────────────
+  for (var sh = 0; sh < 5; sh++) {
+    var shFrac = sh / 5;
+    var shY    = H * (0.70 - shFrac * 0.20);
+    var shAmp  = (6 - sh) * (1 + shFrac * 0.5);
     ctx.beginPath();
     for (var sx = 0; sx <= W; sx += 3) {
       var sy2 = shY
-        + Math.sin(sx * 0.009 + spd * t * 0.0009 + sh * 1.4) * (4 + sh * 3)
-        + Math.sin(sx * 0.016 + spd * t * 0.0014 + sh * 2.1) * 2.5;
+        + Math.sin(sx * 0.010 + t * 0.0010 * spd + sh * 1.5) * shAmp
+        + Math.sin(sx * 0.018 + t * 0.0016 * spd + sh * 0.9) * (shAmp * 0.5);
       if (sx === 0) ctx.moveTo(sx, sy2); else ctx.lineTo(sx, sy2);
     }
-    ctx.strokeStyle = 'rgba('+cMid[0]+','+cMid[1]+','+cMid[2]+','+(0.06 - sh*0.015)+')';
-    ctx.lineWidth = 1.2;
+    var shAlpha = (0.12 - shFrac * 0.08);
+    ctx.strokeStyle = 'rgba('+cMid[0]+','+cMid[1]+','+cMid[2]+','+shAlpha+')';
+    ctx.lineWidth = 1.5 - shFrac;
     ctx.stroke();
   }
 
-  // ── Stars through smoke in upper sky ─────────────────────
+  // ── Stars in upper sky ───────────────────────────────────
   stars.forEach(function(s) {
     if (s.y > 0.45) return;
-    var sa = s.baseAlpha * (0.4 + Math.sin(t*s.twinkleSpeed+s.phase)*0.25) * (1 - s.y * 1.8);
+    var sa = s.baseAlpha * (0.5 + Math.sin(t*s.twinkleSpeed+s.phase)*0.3) * (1 - s.y * 1.8);
     ctx.beginPath();
-    ctx.arc(s.x*W, s.y*H, s.size*0.7, 0, Math.PI*2);
+    ctx.arc(s.x*W, s.y*H, s.size*0.75, 0, Math.PI*2);
     ctx.fillStyle = 'rgba(255,255,255,'+Math.max(0,sa)+')';
     ctx.fill();
   });
