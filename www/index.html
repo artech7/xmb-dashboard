@@ -1938,77 +1938,93 @@ function updateMobileCatStrip() {
   if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
 }
 
-// ── Swipe between categories ──────────────────────────────────────────────────
-// ── Swipe gesture — velocity + distance based ────────────────────────────────
-var swipeStartX   = 0;
-var swipeStartY   = 0;
-var swipeStartT   = 0;
-var swipeActive   = false;
+// ── Real-time swipe navigation ───────────────────────────────────────────────
+// Tracks finger position live during touchmove for immediate feedback.
+// Category switches mid-swipe when threshold is crossed, then locks
+// until finger lifts so each gesture produces exactly one switch.
 
-function handleSwipe(dx, dy, dt) {
-  if (!isMobile) return;
-  var adx = Math.abs(dx), ady = Math.abs(dy);
-  // Must be more horizontal than vertical
-  if (ady > adx * 0.8) return;
-  // Velocity in px/ms — a natural flick is >0.2px/ms; slow drag needs more distance
-  var vx = adx / (dt || 1);
-  var isFlick = vx > 0.2;
-  // Accept: flick >= 20px  OR  slow swipe >= 40px
-  if (adx < (isFlick ? 20 : 40)) return;
+var swipeStartX    = 0;
+var swipeStartY    = 0;
+var swipeActive    = false;
+var swipeLocked    = false;   // true after a category switch — prevents double-fire
+var swipeIsHoriz   = null;    // determined on first significant move (null = undecided)
+var swipeAxisLock  = 12;      // px of movement before axis is decided
+var swipeTrigger   = 28;      // px horizontal travel to trigger a switch
+
+function doSwitch(dir) {
+  // dir: -1 = next (left swipe), +1 = prev (right swipe)
   var cats = config && config.categories;
   if (!cats) return;
-  if (dx < 0 && catIdx < cats.length - 1) {
+  if (dir < 0 && catIdx < cats.length - 1) {
     catIdx++; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
-  } else if (dx > 0 && catIdx > 0) {
+  } else if (dir > 0 && catIdx > 0) {
     catIdx--; itemIdx = 0; updateCategoryUI(); renderItems(); updateMobileCatStrip();
   }
 }
 
-document.addEventListener('touchstart', function(e) {
-  if (e.target.closest('#settings-overlay, #prefs-overlay, #ip-overlay, #cat-row')) return;
-  swipeStartX = e.touches[0].clientX;
-  swipeStartY = e.touches[0].clientY;
-  swipeStartT = Date.now();
-  swipeActive = true;
-}, { passive: true });
-
-document.addEventListener('touchend', function(e) {
-  if (!swipeActive) return;
-  swipeActive = false;
-  // Ignore taps on the item panel — let the individual item click handle it
-  if (e.target.closest('#item-panel')) return;
-  var dx = e.changedTouches[0].clientX - swipeStartX;
-  var dy = e.changedTouches[0].clientY - swipeStartY;
-  handleSwipe(dx, dy, Date.now() - swipeStartT);
-}, { passive: true });
-
-// ── Item panel: swipe between categories without fighting vertical scroll ─────
-var itemPanelSwipeX = 0;
-var itemPanelSwipeY = 0;
-var itemPanelSwipeT = 0;
-var itemPanelMoved  = false;
-
-document.getElementById('item-panel').addEventListener('touchstart', function(e) {
-  itemPanelSwipeX = e.touches[0].clientX;
-  itemPanelSwipeY = e.touches[0].clientY;
-  itemPanelSwipeT = Date.now();
-  itemPanelMoved  = false;
-}, { passive: true });
-
-document.getElementById('item-panel').addEventListener('touchmove', function(e) {
-  itemPanelMoved = true;
-}, { passive: true });
-
-document.getElementById('item-panel').addEventListener('touchend', function(e) {
+function onSwipeTouchStart(e) {
   if (!isMobile) return;
-  var dx  = e.changedTouches[0].clientX - itemPanelSwipeX;
-  var dy  = e.changedTouches[0].clientY - itemPanelSwipeY;
-  var dt  = Date.now() - itemPanelSwipeT;
+  if (e.target.closest('#settings-overlay, #prefs-overlay, #ip-overlay, #cat-row, #s-sidebar, #prefs-body')) return;
+  swipeStartX   = e.touches[0].clientX;
+  swipeStartY   = e.touches[0].clientY;
+  swipeActive   = true;
+  swipeLocked   = false;
+  swipeIsHoriz  = null;
+}
+
+function onSwipeTouchMove(e) {
+  if (!swipeActive || swipeLocked) return;
+  var dx  = e.touches[0].clientX - swipeStartX;
+  var dy  = e.touches[0].clientY - swipeStartY;
   var adx = Math.abs(dx), ady = Math.abs(dy);
-  // If there was significant vertical movement, it was a scroll — ignore
-  if (ady > 20) return;
-  handleSwipe(dx, dy, dt);
-}, { passive: true });
+
+  // Decide axis on first significant movement
+  if (swipeIsHoriz === null) {
+    if (adx < swipeAxisLock && ady < swipeAxisLock) return;  // still deciding
+    swipeIsHoriz = adx >= ady;
+  }
+
+  // Vertical swipe — let scroll happen, abort tracking
+  if (!swipeIsHoriz) {
+    swipeActive = false;
+    return;
+  }
+
+  // Prevent page scroll while we're handling a horizontal swipe
+  e.preventDefault();
+
+  // Trigger switch when threshold crossed, then lock until touchend
+  if (adx >= swipeTrigger) {
+    doSwitch(dx < 0 ? -1 : 1);
+    swipeLocked  = true;
+    swipeStartX  = e.touches[0].clientX;   // reset origin so next gesture starts fresh
+    swipeStartY  = e.touches[0].clientY;
+  }
+}
+
+function onSwipeTouchEnd(e) {
+  // Handle short fast flicks that didn't hit swipeTrigger during move
+  if (swipeActive && !swipeLocked && swipeIsHoriz) {
+    var dx  = e.changedTouches[0].clientX - swipeStartX;
+    var dy  = e.changedTouches[0].clientY - swipeStartY;
+    var dt  = 1;  // treat as instant — velocity check passed implicitly
+    var adx = Math.abs(dx), ady = Math.abs(dy);
+    if (adx > 12 && adx > ady) {
+      doSwitch(dx < 0 ? -1 : 1);
+    }
+  }
+  swipeActive  = false;
+  swipeLocked  = false;
+  swipeIsHoriz = null;
+}
+
+// Attach to both document (for cat bar area) and item-panel separately
+document.addEventListener('touchstart',  onSwipeTouchStart, { passive: true });
+document.addEventListener('touchmove',   onSwipeTouchMove,  { passive: false });
+document.addEventListener('touchend',    onSwipeTouchEnd,   { passive: true });
+
+// Item panel needs its own listeners so vertical scroll still works
+// The shared handlers above handle axis locking correctly for both areas
 
 // ── Patch renderItems to call updateMobileCatStrip after render ───────────────
 var _origRenderItems = renderItems;
