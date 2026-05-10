@@ -113,37 +113,13 @@ html, body {
   width: 64px; height: 64px;
   display: flex; align-items: center; justify-content: center;
   transition: filter var(--transition-speed);
-  position: relative;
-}
-
-/* Blur lives on ::before so we can mask it independently of the icon.
-   mask-image fades from opaque at centre → transparent at edge = soft falloff.
-   inset: -16px makes the blur zone larger than the icon for a wider soft halo. */
-.cat-icon-wrap::before {
-  content: '';
-  position: absolute;
-  inset: -28px;
-  border-radius: 50%;
-  backdrop-filter: blur(32px) saturate(1.5);
-  -webkit-backdrop-filter: blur(32px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
   background: radial-gradient(ellipse at center,
-    rgba(255,255,255,0.10) 0%,
-    rgba(255,255,255,0.04) 50%,
-    transparent 80%);
-  /* Larger opaque centre zone so blur is clearly visible before falloff */
-  mask-image: radial-gradient(ellipse at center,
-    black 35%,
-    rgba(0,0,0,0.85) 52%,
-    rgba(0,0,0,0.50) 68%,
-    rgba(0,0,0,0.15) 84%,
-    transparent 98%);
-  -webkit-mask-image: radial-gradient(ellipse at center,
-    black 35%,
-    rgba(0,0,0,0.85) 52%,
-    rgba(0,0,0,0.50) 68%,
-    rgba(0,0,0,0.15) 84%,
-    transparent 98%);
-  pointer-events: none;
+    rgba(255,255,255,0.07) 0%,
+    rgba(255,255,255,0.03) 55%,
+    transparent 100%);
+  border-radius: 50%;
 }
 
 .cat-label {
@@ -447,9 +423,6 @@ html, body {
   .cat-icon-wrap {
     width: 22px; height: 22px;
     filter: none !important;
-  }
-  .cat-icon-wrap::before {
-    inset: -8px; /* tighter halo on mobile */
   }
   .cat-icon-wrap svg { width: 22px; height: 22px; }
   .cat-label {
