@@ -496,6 +496,7 @@ html, body {
 <body>
 
 <canvas id="bg-canvas"></canvas>
+<canvas id="gl-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none"></canvas>
 <div id="loading">
   <div id="loading-title">Homelab</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
@@ -707,6 +708,8 @@ function resize() {
   W = canvas.width  = window.innerWidth;
   H = canvas.height = window.innerHeight;
   initStars();
+  if (glCanvas) { glCanvas.width = W; glCanvas.height = H; }
+  if (gl) gl.viewport(0, 0, W, H);
   // Reset screen-size-dependent animation states
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
@@ -775,16 +778,19 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink');
+  canvas.style.display    = useGL ? 'none' : '';
+  if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
-    case 'galaxy':    drawGalaxy();    break;
-    case 'underwater':drawUnderwater();break;
-    case 'solarwind': drawSolarWind(); break;
-    case 'matrix':    drawMatrix();    break;
-    case 'warp':      drawFlames();    break;
-    case 'lava':      drawWavePS3();   break;
-    case 'bokeh':     drawBokeh();     break;
-    case 'ink':       drawInkWater();  break;
-    default:          drawNebula();    break;
+    case 'galaxy':    drawGalaxy();                              break;
+    case 'underwater':drawUnderwater();                          break;
+    case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
+    case 'matrix':    drawMatrix();                              break;
+    case 'warp':      drawFlames();                              break;
+    case 'lava':      drawWavePS3();                             break;
+    case 'bokeh':     drawBokeh();                               break;
+    case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
+    default:          drawNebula();                              break;
   }
   requestAnimationFrame(animLoop);
 }
@@ -1940,6 +1946,366 @@ function drawInkWater() {
 
   drawVignette();
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEBGL RENDERER — Aurora Borealis + Ink in Water
+// Falls back to Canvas 2D if WebGL unavailable
+// ═══════════════════════════════════════════════════════════════════════════
+
+var glCanvas    = document.getElementById('gl-canvas');
+var gl          = null;
+var glSupported = false;
+var glProgAurora = null;
+var glProgInk    = null;
+var glAuroraLocs = {};
+var glInkLocs    = {};
+var glQuadBuf    = null;
+
+// ── Vertex shader (shared by both effects) ────────────────────────────────
+var GL_VERT = [
+  'attribute vec2 a_pos;',
+  'void main(){gl_Position=vec4(a_pos,0.0,1.0);}'
+].join('\n');
+
+// ── Aurora Borealis fragment shader ───────────────────────────────────────
+var GL_AURORA_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+
+  'float hash2(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
+
+  'float noise(vec2 p){',
+  '  vec2 i=floor(p),f=fract(p);',
+  '  f=f*f*(3.0-2.0*f);',
+  '  float a=hash2(i),b=hash2(i+vec2(1,0)),c=hash2(i+vec2(0,1)),d=hash2(i+vec2(1,1));',
+  '  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);',
+  '}',
+
+  'float fbm(vec2 p){',
+  '  float v=0.0,a=0.5;',
+  '  for(int i=0;i<6;i++){v+=a*noise(p);p=p*2.1+vec2(1.7,9.2);a*=0.5;}',
+  '  return v;',
+  '}',
+
+  // Palette: smoothly interpolates across all 6 theme colors
+  'vec3 pal(float t){',
+  '  float f=clamp(t,0.0,1.0)*5.0;',
+  '  float fr=fract(f);',
+  '  vec3 c0,c1;',
+  '  if(f<1.0){c0=u_c0;c1=u_c1;}',
+  '  else if(f<2.0){c0=u_c1;c1=u_c2;}',
+  '  else if(f<3.0){c0=u_c2;c1=u_c3;}',
+  '  else if(f<4.0){c0=u_c3;c1=u_c4;}',
+  '  else{c0=u_c4;c1=u_c5;}',
+  '  return mix(c0,c1,fr);',
+  '}',
+
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  '  float t=u_time*0.00022;',
+
+  // Background gradient
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*uv.y+uv.y*0.5);',
+
+  // Stars behind curtains
+  '  for(int i=0;i<3;i++){',
+  '    float sc=120.0+float(i)*90.0;',
+  '    vec2 sp=floor(uv*sc);',
+  '    float s=hash2(sp+float(i)*17.3);',
+  '    if(s>0.993){',
+  '      vec2 sf=fract(uv*sc)-0.5;',
+  '      float d=length(sf)*2.0;',
+  '      float tw=0.45+0.55*sin(u_time*(0.002+s*0.008)+s*6.28);',
+  '      col+=(1.0-smoothstep(0.0,0.6,d))*tw*0.55*mix(vec3(0.85,0.92,1.0),vec3(1.0),s);',
+  '    }',
+  '  }',
+
+  // Five aurora curtains
+  '  for(int k=0;k<5;k++){',
+  '    float fk=float(k);',
+
+  // Curtain centre drifts slowly
+  '    float cx=0.06+fk*0.21+fbm(vec2(fk*2.8,t*0.35))*0.09;',
+
+  // The curtain waves/folds as it hangs — key aurora look
+  '    float fold=fbm(vec2(uv.y*1.1+fk*1.6,t+fk*0.55))*0.16',
+  '              +fbm(vec2(uv.y*2.8+fk*3.1,t*1.4+fk*0.8))*0.055;',
+  '    float dx=uv.x-(cx+fold);',
+
+  // Gaussian horizontal falloff — curtain width breathes
+  '    float w=0.048+0.022*sin(t*0.9+fk*1.7);',
+  '    float horiz=exp(-dx*dx/(w*w));',
+
+  // Vertical extent — each curtain has different height
+  '    float ytop=0.03+fk*0.025;',
+  '    float ybot=0.48+fbm(vec2(fk*3.1,t*0.28))*0.20;',
+  '    float vert=smoothstep(ytop-0.015,ytop+0.06,uv.y)',
+  '              *smoothstep(ybot+0.09,ybot-0.03,uv.y);',
+
+  // Ray structure: vertical striations within curtain
+  '    float rayX=dx/(w*2.0);',
+  '    float rays=fbm(vec2(rayX*5.0+fk*2.3,uv.y*0.4+t*0.18));',
+  '    rays=0.45+0.55*rays;',
+
+  // Rapid shimmer — the aurora flicker
+  '    float shim=0.60+0.40*sin(t*18.0+fk*4.1+uv.y*12.0+dx*25.0);',
+
+  '    float intens=horiz*vert*rays*shim*u_intensity;',
+
+  // Color: theme palette varies by height + white at brightest core
+  '    float hfrac=(uv.y-ytop)/max(0.01,ybot-ytop);',
+  '    vec3 ck=pal(fk/5.0+hfrac*0.45);',
+  // Brightest parts bleach toward white
+  '    ck=mix(ck,vec3(1.0),horiz*intens*0.45);',
+
+  '    col+=ck*intens*0.95;',
+  '  }',
+
+  // Horizon glow
+  '  float gnd=smoothstep(0.82,1.0,uv.y)*0.07;',
+  '  col+=u_c0*gnd+u_c2*gnd*0.5;',
+
+  // Vignette
+  '  vec2 vc=uv-0.5;',
+  '  col*=1.0-dot(vc,vc)*1.6;',
+
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}'
+].join('\n');
+
+// ── Ink in Water fragment shader (domain-warped FBM) ──────────────────────
+var GL_INK_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+
+  'float hash2(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
+
+  'float noise(vec2 p){',
+  '  vec2 i=floor(p),f=fract(p);',
+  '  f=f*f*(3.0-2.0*f);',
+  '  float a=hash2(i),b=hash2(i+vec2(1,0)),c=hash2(i+vec2(0,1)),d=hash2(i+vec2(1,1));',
+  '  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);',
+  '}',
+
+  'float fbm(vec2 p){',
+  '  float v=0.0,a=0.5;',
+  '  for(int i=0;i<6;i++){v+=a*noise(p);p=p*2.0+vec2(1.7,9.2);a*=0.5;}',
+  '  return v;',
+  '}',
+  'vec2 fbm2(vec2 p){return vec2(fbm(p),fbm(p+vec2(5.2,1.3)));}',
+
+  'vec3 inkPal(float t){',
+  '  float f=mod(t,1.0)*5.0;',
+  '  float fr=fract(f);',
+  '  vec3 c0,c1;',
+  '  if(f<1.0){c0=u_c0;c1=u_c1;}',
+  '  else if(f<2.0){c0=u_c1;c1=u_c2;}',
+  '  else if(f<3.0){c0=u_c2;c1=u_c3;}',
+  '  else if(f<4.0){c0=u_c3;c1=u_c4;}',
+  '  else{c0=u_c4;c1=u_c5;}',
+  '  return mix(c0,c1,fr);',
+  '}',
+
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  // Aspect-correct coordinates
+  '  vec2 p=uv*vec2(u_res.x/u_res.y,1.0);',
+  '  float t=u_time*0.000028;', // Very slow — ink barely moves
+
+  // ── Domain warp level 1 ────────────────────────────────
+  '  vec2 q=fbm2(p*1.6+vec2(t,t*0.71));',
+  // ── Domain warp level 2 (adds fine tendrils) ──────────
+  '  vec2 r=fbm2(p*1.6+3.5*q+vec2(1.7,9.2)+vec2(0.14*t,0.10*t));',
+  // ── Final warp ─────────────────────────────────────────
+  '  float f1=fbm(p*1.6+3.0*r);',
+
+  // Second ink layer — different scale, offset, and warp chain
+  '  vec2 p2=p*2.3+vec2(2.31,1.17);',
+  '  vec2 q2=fbm2(p2+vec2(t*0.78,t*1.23));',
+  '  vec2 r2=fbm2(p2+2.8*q2+vec2(3.1,0.9));',
+  '  float f2=fbm(p2+2.5*r2);',
+
+  // Fine detail layer — high frequency
+  '  vec2 p3=p*4.1+vec2(-1.53,3.27);',
+  '  float f3=fbm(p3+fbm2(p3+t*0.45)*1.8);',
+
+  // Background
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
+
+  // Layer 1: primary ink clouds — large, billowing
+  '  float ink1=smoothstep(0.22,0.68,f1);',
+  '  vec3 inkC1=inkPal(f1);',
+  // Mix white at peak density for the bright pigment look
+  '  inkC1=mix(inkC1,vec3(1.0),ink1*ink1*0.18);',
+  '  col=mix(col,inkC1,ink1*u_intensity*0.88);',
+
+  // Layer 2: secondary clouds — different colors, adds depth
+  '  float ink2=smoothstep(0.28,0.66,f2);',
+  '  col+=inkPal(f2+0.42)*ink2*u_intensity*0.38;',
+
+  // Layer 3: fine wisps and tendrils
+  '  float ink3=smoothstep(0.42,0.60,f3);',
+  '  col+=inkPal(f3+0.71)*ink3*u_intensity*0.16;',
+
+  // Dark water in gaps — areas of low f1 stay very dark
+  '  float water=smoothstep(0.48,0.18,f1);',
+  '  col=mix(col,col*0.18,water*0.75);',
+
+  // Subtle brightness at high-density centres
+  '  col+=vec3(smoothstep(0.68,0.88,f1)*0.10)*u_intensity;',
+
+  // Very faint water surface ripple lines at top
+  '  for(int sh=0;sh<2;sh++){',
+  '    float sy=0.04+float(sh)*0.055;',
+  '    float ripple=abs(uv.y-sy-sin(uv.x*8.0+t*20.0)*0.008-sin(uv.x*13.0+t*14.0)*0.005);',
+  '    col+=u_c1*max(0.0,0.025-ripple*5.0)*(1.0-float(sh)*0.4);',
+  '  }',
+
+  // Vignette
+  '  vec2 vc=uv-0.5;',
+  '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.25;',
+
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}'
+].join('\n');
+
+// ── Compile a shader ──────────────────────────────────────────────────────
+function glCompileShader(type, src) {
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error('Shader compile error:', gl.getShaderInfoLog(s));
+    console.error('Source:', src.split('\n').map(function(l,i){return (i+1)+': '+l;}).join('\n'));
+    gl.deleteShader(s);
+    return null;
+  }
+  return s;
+}
+
+function glCompileProgram(vsrc, fsrc) {
+  var vs = glCompileShader(gl.VERTEX_SHADER, vsrc);
+  var fs = glCompileShader(gl.FRAGMENT_SHADER, fsrc);
+  if (!vs || !fs) return null;
+  var p = gl.createProgram();
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(p));
+    gl.deleteProgram(p);
+    return null;
+  }
+  return p;
+}
+
+function glCacheUniforms(prog) {
+  var names = ['u_time','u_res','u_intensity','u_c0','u_c1','u_c2','u_c3','u_c4','u_c5','u_bg0','u_bg1','u_bg2'];
+  var locs = {};
+  names.forEach(function(n){ locs[n] = gl.getUniformLocation(prog, n); });
+  return locs;
+}
+
+// ── Initialise WebGL ──────────────────────────────────────────────────────
+function initWebGL() {
+  if (!glCanvas) return false;
+  try {
+    gl = glCanvas.getContext('webgl') || glCanvas.getContext('experimental-webgl');
+    if (!gl) { console.log('WebGL not available — using Canvas 2D fallback'); return false; }
+
+    glCanvas.width  = W;
+    glCanvas.height = H;
+    gl.viewport(0, 0, W, H);
+
+    // Fullscreen quad (2 triangles)
+    glQuadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,
+      new Float32Array([-1,-1, 1,-1, -1,1,  -1,1, 1,-1, 1,1]),
+      gl.STATIC_DRAW
+    );
+
+    glProgAurora = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
+    glProgInk    = glCompileProgram(GL_VERT, GL_INK_FRAG);
+
+    if (!glProgAurora || !glProgInk) { gl = null; return false; }
+
+    glAuroraLocs = glCacheUniforms(glProgAurora);
+    glInkLocs    = glCacheUniforms(glProgInk);
+
+    // Handle context loss gracefully
+    glCanvas.addEventListener('webglcontextlost', function(e) {
+      e.preventDefault();
+      glSupported = false;
+      gl = null;
+      console.warn('WebGL context lost — switching to Canvas 2D');
+    });
+
+    console.log('WebGL initialised successfully');
+    return true;
+  } catch(e) {
+    console.error('WebGL init error:', e);
+    return false;
+  }
+}
+
+// ── Helper: convert hex bg color to 0-1 vec3 ─────────────────────────────
+function hexToVec3(hex) {
+  hex = (hex || '#030305').replace('#','');
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  return [
+    parseInt(hex.slice(0,2),16)/255,
+    parseInt(hex.slice(2,4),16)/255,
+    parseInt(hex.slice(4,6),16)/255
+  ];
+}
+
+// ── Set all uniforms for a GL program ────────────────────────────────────
+function glSetUniforms(locs) {
+  gl.uniform1f(locs.u_time,      t);
+  gl.uniform2f(locs.u_res,       glCanvas.width, glCanvas.height);
+  gl.uniform1f(locs.u_intensity, blobOpacityMult);
+
+  for (var i = 0; i < 6; i++) {
+    var col = themeRgbPalette[i] || [0,100,200];
+    gl.uniform3f(locs['u_c'+i], col[0]/255, col[1]/255, col[2]/255);
+  }
+
+  var bg0 = hexToVec3(nebulaBackground[0]);
+  var bg1 = hexToVec3(nebulaBackground[1]);
+  var bg2 = hexToVec3(nebulaBackground[2]);
+  gl.uniform3fv(locs.u_bg0, bg0);
+  gl.uniform3fv(locs.u_bg1, bg1);
+  gl.uniform3fv(locs.u_bg2, bg2);
+}
+
+// ── Render one frame with a GL program ───────────────────────────────────
+function glRenderFrame(prog, locs) {
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
+  var pos = gl.getAttribLocation(prog, 'a_pos');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  glSetUniforms(locs);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+function renderGLAurora() { glRenderFrame(glProgAurora, glAuroraLocs); }
+function renderGLInk()    { glRenderFrame(glProgInk,    glInkLocs);    }
+
+// ── Init on load ──────────────────────────────────────────────────────────
+glSupported = initWebGL();
 
 // ─── CLOCK ────────────────────────────────────────────────────────────────────
 function updateClock(format24h) {
