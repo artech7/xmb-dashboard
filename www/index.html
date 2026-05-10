@@ -790,6 +790,7 @@ function animLoop() {
     case 'lava':      drawWavePS3();                             break;
     case 'bokeh':     drawBokeh();                               break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
+    case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
     default:          drawNebula();                              break;
   }
   requestAnimationFrame(animLoop);
