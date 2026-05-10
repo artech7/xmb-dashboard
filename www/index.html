@@ -778,7 +778,7 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'warp');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
@@ -786,7 +786,7 @@ function animLoop() {
     case 'underwater':drawUnderwater();                          break;
     case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
-    case 'warp':      drawFlames();                              break;
+    case 'warp':      useGL ? renderGLFlames() : drawFlames();   break;
     case 'lava':      drawWavePS3();                             break;
     case 'bokeh':     drawBokeh();                               break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
@@ -1962,6 +1962,8 @@ var glSupported = false;
 var glProgAurora  = null;
 var glProgInk     = null;
 var glProgNebula  = null;
+var glProgFlames  = null;
+var glFlameLocs   = {};
 var glNebLocs     = {};
 var glAuroraLocs = {};
 var glInkLocs    = {};
@@ -2228,6 +2230,70 @@ var GL_NEBULA_FRAG = [
   '}',
 ].join('\n');
 
+var GL_FLAMES_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vn(vec2 p){',
+  '  vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),',
+  '             mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float fbm(vec2 p){',
+  '  float v=0.0,a=0.5;',
+  '  v+=a*vn(p);p=p*2.2+vec2(1.7,9.2);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.2+vec2(3.5,4.4);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.2+vec2(7.1,2.8);a*=0.5;',
+  '  v+=a*vn(p);return v;}',
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  '  float t=u_time*0.00055;',
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.6+0.4)*0.15;',
+  '  vec3 cHot=mix(u_c0,vec3(1.0),0.55);',
+  '  vec3 cMid=u_c0;',
+  '  vec3 cTip=mix(u_c1,u_c2,0.4);',
+  '  float flameTop=0.72;',
+  '  float fy=1.0-uv.y/flameTop;',
+  '  float baseMask=smoothstep(flameTop+0.05,flameTop-0.08,uv.y);',
+  '  float windX=sin(t*2.2+uv.y*3.5)*0.04+sin(t*3.7+uv.y*5.8)*0.018;',
+  '  float fx=uv.x+windX*(1.0-fy*0.5);',
+  '  float rA=vn(vec2(fx*6.0+t*0.3,  fy*3.2-t*1.8));',
+  '  float rB=vn(vec2(fx*12.0+t*0.6, fy*5.5-t*2.4));',
+  '  float rC=vn(vec2(fx*3.0+t*0.15, fy*1.8-t*1.1));',
+  '  float flame=rA*0.52+rB*0.28+rC*0.20;',
+  '  float shape=flame*pow(fy,0.55)*baseMask;',
+  '  float f=max(0.0,shape-0.22)/0.78;',
+  '  f=pow(f,0.7);',
+  '  float hf=clamp(fy,0.0,1.0);',
+  '  vec3 flameCol=mix(cTip,mix(cMid,cHot,hf*hf*1.3),smoothstep(0.0,0.6,hf));',
+  '  col=mix(col,flameCol,f*u_intensity*0.98);',
+  '  float glow=exp(-pow((uv.y-0.0)*12.0,2.0))*0.6;',
+  '  col+=cHot*glow*u_intensity*0.55;',
+  '  for(int ei=0;ei<3;ei++){',
+  '    float ef=float(ei);',
+  '    vec2 ec=vec2(h2(vec2(ef*7.3,13.1)),h2(vec2(ef*3.7,7.9)));',
+  '    float ex=ec.x+sin(t*1.2+ef*2.3)*0.04;',
+  '    float ey=fract(ec.y+t*(0.18+ec.x*0.12));',
+  '    float ed=length(uv-vec2(ex,ey));',
+  '    float eb=exp(-ed*ed*2200.0)*(1.0-ey)*0.9;',
+  '    col+=mix(cMid,vec3(1.0),0.6)*eb*u_intensity;',
+  '  }',
+  '  for(int si=0;si<3;si++){',
+  '    float sf=float(si);',
+  '    float sy=flameTop+0.02+sf*0.04;',
+  '    float sd=abs(uv.y-sy-sin(uv.x*9.0+t*3.5+sf)*0.008);',
+  '    col+=cTip*max(0.0,0.018-sd*8.0)*u_intensity;',
+  '  }',
+  '  vec2 vc=uv-0.5;',
+  '  col*=1.0-dot(vc*vec2(0.8,1.0),vc*vec2(0.8,1.0))*1.0;',
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}',
+].join('\n');
+
+
 
 
 // ── Compile a shader ──────────────────────────────────────────────────────
@@ -2293,15 +2359,17 @@ function initWebGL() {
     glProgAurora = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
     glProgInk    = glCompileProgram(GL_VERT, GL_INK_FRAG);
     glProgNebula = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
+    glProgFlames = glCompileProgram(GL_VERT, GL_FLAMES_FRAG);
 
     // Independent failures — one bad shader doesn't kill the rest
-    if (!glProgAurora && !glProgInk && !glProgNebula) { gl = null; return false; }
+    if (!glProgAurora && !glProgInk && !glProgNebula && !glProgFlames) { gl = null; return false; }
     if (!glProgAurora) console.warn('Aurora shader failed');
     if (!glProgNebula) console.warn('Nebula shader failed');
 
     glAuroraLocs = glCacheUniforms(glProgAurora);
     glInkLocs    = glCacheUniforms(glProgInk);
     glNebLocs    = glCacheUniforms(glProgNebula);
+    if (glProgFlames) glFlameLocs = glCacheUniforms(glProgFlames);
 
     // Handle context loss gracefully
     glCanvas.addEventListener('webglcontextlost', function(e) {
@@ -2368,6 +2436,7 @@ function glRenderFrame(prog, locs, useAccentForC0) {
 }
 
 function renderGLAurora()  { glRenderFrame(glProgAurora, glAuroraLocs); }
+function renderGLFlames()  { if (glProgFlames) glRenderFrame(glProgFlames, glFlameLocs); else drawFlames(); }
 function renderGLInk()     { glRenderFrame(glProgInk, glInkLocs); }
 function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
