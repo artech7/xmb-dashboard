@@ -778,7 +778,7 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'warp');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
@@ -786,7 +786,7 @@ function animLoop() {
     case 'underwater':drawUnderwater();                          break;
     case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
-    case 'warp':      useGL ? renderGLFlames() : drawFlames();   break;
+    case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
     case 'bokeh':     drawBokeh();                               break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
@@ -1386,7 +1386,7 @@ function newFlameParticle(randomLife) {
     life:    randomLife ? Math.random() * ml : 0,
     maxLife: ml,
     // Size as fraction of smaller screen dimension
-    size:    (0.04 + Math.random() * 0.06) * U,
+    size:    (0.055 + Math.random() * 0.075) * U,
     wobble:  Math.random() * Math.PI * 2,
     wobbleSpeed: 0.03 + Math.random() * 0.04,
   };
@@ -1409,11 +1409,11 @@ function newEmber(randomLife) {
 }
 
 function initFlames() {
-  var count = Math.max(120, Math.floor(W / 8));  // screen-adaptive particle count
+  var count = Math.max(180, Math.floor(W / 6));  // more particles
   flameParticles = [];
   flameEmbers    = [];
   for (var i = 0; i < count; i++)  flameParticles.push(newFlameParticle(true));
-  for (var j = 0; j < 80;    j++)  flameEmbers.push(newEmber(true));
+  for (var j = 0; j < 120;   j++)  flameEmbers.push(newEmber(true));
 }
 
 function drawFlames() {
@@ -1438,15 +1438,23 @@ function drawFlames() {
   // ── Ground emitter glow ─────────────────────────────────
   var groundGrad = ctx.createLinearGradient(0, H * 0.65, 0, H);
   groundGrad.addColorStop(0,   'rgba('+cMid[0]+','+cMid[1]+','+cMid[2]+',0)');
-  groundGrad.addColorStop(0.5, 'rgba('+cBase[0]+','+cBase[1]+','+cBase[2]+',0.20)');
-  groundGrad.addColorStop(1,   'rgba('+cHot[0]+','+cHot[1]+','+cHot[2]+',0.45)');
+  groundGrad.addColorStop(0.5, 'rgba('+cBase[0]+','+cBase[1]+','+cBase[2]+',0.35)');
+  groundGrad.addColorStop(1,   'rgba('+cHot[0]+','+cHot[1]+','+cHot[2]+',0.70)');
   ctx.fillStyle = groundGrad;
   ctx.fillRect(0, 0, W, H);
 
+  // ── Bright base line — intense emitter row at screen bottom ─────
+  var baseLine = ctx.createLinearGradient(0, H * 0.92, 0, H);
+  baseLine.addColorStop(0, 'rgba('+cHot[0]+','+cHot[1]+','+cHot[2]+',0)');
+  baseLine.addColorStop(0.6, 'rgba('+cHot[0]+','+cHot[1]+','+cHot[2]+',0.55)');
+  baseLine.addColorStop(1,   'rgba(255,255,255,0.35)');
+  ctx.fillStyle = baseLine;
+  ctx.fillRect(0, H * 0.92, W, H * 0.08);
+
   // ── Flame columns — wide base glow behind particles ─────
-  for (var col = 0; col < 7; col++) {
-    var cx2 = (col / 6) * W;
-    var colAlpha = 0.10 + Math.sin(t * 0.0012 + col * 1.3) * 0.04;
+  for (var col = 0; col < 9; col++) {
+    var cx2 = (col / 8) * W;
+    var colAlpha = 0.16 + Math.sin(t * 0.0012 + col * 1.3) * 0.06;
     var colGrad  = ctx.createRadialGradient(cx2, H, 0, cx2, H * 0.5, W * 0.14);
     colGrad.addColorStop(0,   'rgba('+cBase[0]+','+cBase[1]+','+cBase[2]+','+colAlpha+')');
     colGrad.addColorStop(0.5, 'rgba('+cMid[0]+','+cMid[1]+','+cMid[2]+','+(colAlpha*0.35)+')');
@@ -1480,13 +1488,13 @@ function drawFlames() {
       r = Math.round(cHot[0]  + (cBase[0]-cHot[0])  * t2);
       g = Math.round(cHot[1]  + (cBase[1]-cHot[1])  * t2);
       b = Math.round(cHot[2]  + (cBase[2]-cHot[2])  * t2);
-      alpha = 0.75 + t2 * 0.15;
+      alpha = 0.88 + t2 * 0.12;
     } else if (lf < 0.60) {
       var t3 = (lf - 0.20) / 0.40;
       r = Math.round(cBase[0] + (cMid[0]-cBase[0]) * t3);
       g = Math.round(cBase[1] + (cMid[1]-cBase[1]) * t3);
       b = Math.round(cBase[2] + (cMid[2]-cBase[2]) * t3);
-      alpha = 0.90 - t3 * 0.15;
+      alpha = 0.95 - t3 * 0.12;
     } else {
       var t4 = (lf - 0.60) / 0.40;
       r = Math.round(cMid[0]  + (cTip[0]-cMid[0])  * t4);
@@ -1962,8 +1970,6 @@ var glSupported = false;
 var glProgAurora  = null;
 var glProgInk     = null;
 var glProgNebula  = null;
-var glProgFlames  = null;
-var glFlameLocs   = {};
 var glNebLocs     = {};
 var glAuroraLocs = {};
 var glInkLocs    = {};
@@ -2230,62 +2236,6 @@ var GL_NEBULA_FRAG = [
   '}',
 ].join('\n');
 
-var GL_FLAMES_FRAG = [
-  'precision mediump float;',
-  'uniform float u_time;',
-  'uniform vec2  u_res;',
-  'uniform float u_intensity;',
-  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
-  'uniform vec3  u_bg0,u_bg1,u_bg2;',
-  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-  'float vn(vec2 p){',
-  '  vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
-  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),',
-  '             mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
-  'void main(){',
-  '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float yy=1.0-uv.y;',
-  '  float t=u_time*0.00060;',
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y)*0.12;',
-  '  vec3 cHot=vec3(1.0,0.98,0.88);',
-  '  vec3 cBody=mix(u_c0/255.0,vec3(1.0,0.5,0.0),0.55);',
-  '  vec3 cTip=mix(u_c1/255.0,vec3(0.8,0.1,0.0),0.55);',
-  '  float wind=sin(t*1.8+yy*2.5)*0.055+sin(t*3.1+yy*4.2)*0.025;',
-  '  float fx=uv.x+wind;',
-  '  float n1=vn(vec2(fx*5.5,         yy*2.8-t*2.2));',
-  '  float n2=vn(vec2(fx*11.0+0.4,    yy*5.2-t*3.8));',
-  '  float n3=vn(vec2(fx*22.0+0.9,    yy*9.5-t*5.5));',
-  '  float noise=n1*0.55+n2*0.28+n3*0.17;',
-  '  float shape=noise*pow(yy,0.42);',
-  '  float f=clamp((shape-0.18)/0.55,0.0,1.0);',
-  '  f=pow(f,0.55);',
-  '  vec3 flameCol=mix(cTip,mix(cBody,cHot,yy*yy*1.6),smoothstep(0.0,0.7,yy));',
-  '  col=mix(col,flameCol,f*u_intensity*0.98);',
-  '  float baseGlow=exp(-yy*yy*18.0);',
-  '  col+=cHot*baseGlow*0.75*u_intensity;',
-  '  col+=cBody*exp(-yy*yy*6.0)*0.35*u_intensity;',
-  '  float e1x=h2(vec2(0.3,1.7));',
-  '  float e1y=fract(h2(vec2(1.1,0.3))+t*0.22);',
-  '  float e1d=length(uv-vec2(e1x,e1y));',
-  '  col+=mix(cBody,cHot,0.7)*exp(-e1d*e1d*3500.0)*(1.0-e1y)*u_intensity;',
-  '  float e2x=h2(vec2(2.1,0.9));',
-  '  float e2y=fract(h2(vec2(0.7,2.3))+t*0.17);',
-  '  float e2d=length(uv-vec2(e2x,e2y));',
-  '  col+=mix(cBody,cHot,0.6)*exp(-e2d*e2d*4200.0)*(1.0-e2y)*u_intensity;',
-  '  float e3x=h2(vec2(1.5,3.1));',
-  '  float e3y=fract(h2(vec2(3.1,1.5))+t*0.28);',
-  '  float e3d=length(uv-vec2(e3x,e3y));',
-  '  col+=mix(cBody,cHot,0.5)*exp(-e3d*e3d*2800.0)*(1.0-e3y)*u_intensity;',
-  '  float shY1=0.28;float sr1=abs(uv.y-shY1-sin(uv.x*8.0+t*4.0)*0.009);',
-  '  col+=cTip*max(0.0,0.022-sr1*9.0)*u_intensity;',
-  '  float shY2=0.38;float sr2=abs(uv.y-shY2-sin(uv.x*6.0+t*3.2)*0.007);',
-  '  col+=cTip*max(0.0,0.015-sr2*7.0)*u_intensity;',
-  '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(0.6,0.9),vc*vec2(0.6,0.9))*0.9;',
-  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
-  '}',
-].join('\n');
-
 
 
 
@@ -2352,17 +2302,15 @@ function initWebGL() {
     glProgAurora = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
     glProgInk    = glCompileProgram(GL_VERT, GL_INK_FRAG);
     glProgNebula = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
-    glProgFlames = glCompileProgram(GL_VERT, GL_FLAMES_FRAG);
 
     // Independent failures — one bad shader doesn't kill the rest
-    if (!glProgAurora && !glProgInk && !glProgNebula && !glProgFlames) { gl = null; return false; }
+    if (!glProgAurora && !glProgInk && !glProgNebula) { gl = null; return false; }
     if (!glProgAurora) console.warn('Aurora shader failed');
     if (!glProgNebula) console.warn('Nebula shader failed');
 
     glAuroraLocs = glCacheUniforms(glProgAurora);
     glInkLocs    = glCacheUniforms(glProgInk);
     glNebLocs    = glCacheUniforms(glProgNebula);
-    if (glProgFlames) glFlameLocs = glCacheUniforms(glProgFlames);
 
     // Handle context loss gracefully
     glCanvas.addEventListener('webglcontextlost', function(e) {
@@ -2429,7 +2377,6 @@ function glRenderFrame(prog, locs, useAccentForC0) {
 }
 
 function renderGLAurora()  { glRenderFrame(glProgAurora, glAuroraLocs); }
-function renderGLFlames()  { if (glProgFlames) glRenderFrame(glProgFlames, glFlameLocs); else drawFlames(); }
 function renderGLInk()     { glRenderFrame(glProgInk, glInkLocs); }
 function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
