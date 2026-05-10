@@ -2533,21 +2533,21 @@ function fluidInject() {
   for (var i = 0; i < streams; i++) {
     var base = (i + 1) / (streams + 1);
     var y = Math.max(0.08, Math.min(0.92, base + Math.sin(fluidPhase * 0.5 + i * 1.3) * 0.07));
-    var spd = 0.28 + Math.sin(fluidPhase * 0.3 + i * 1.5) * 0.05;
+    var spd = 0.10 + Math.sin(fluidPhase * 0.3 + i * 1.5) * 0.02;
 
     // Get theme palette colors — cool for left, warm for right
     var ci = (Math.floor(fluidPhase * 0.2 + i) % 3);
     var colL = themeRgbPalette[ci] || [0, 120, 255];
     var colR = themeRgbPalette[ci + 3] || [255, 80, 0];
-    var scL = 0.55 / (Math.max(colL[0],colL[1],colL[2]) || 1);
-    var scR = 0.55 / (Math.max(colR[0],colR[1],colR[2]) || 1);
+    var scL = 0.30 / (Math.max(colL[0],colL[1],colL[2]) || 1);
+    var scR = 0.30 / (Math.max(colR[0],colR[1],colR[2]) || 1);
 
     // Velocity: left shoots right (+x), right shoots left (-x)
-    fSplat(0.02, y,  spd, 0, null, 0.07, true);
-    fSplat(0.02, y,  0,   0, [colL[0]*scL, colL[1]*scL, colL[2]*scL], 0.07, false);
+    fSplat(0.02, y,  spd, 0, null, 0.05, true);
+    fSplat(0.02, y,  0,   0, [colL[0]*scL, colL[1]*scL, colL[2]*scL], 0.05, false);
 
-    fSplat(0.98, y, -spd, 0, null, 0.07, true);
-    fSplat(0.98, y,  0,   0, [colR[0]*scR, colR[1]*scR, colR[2]*scR], 0.07, false);
+    fSplat(0.98, y, -spd, 0, null, 0.05, true);
+    fSplat(0.98, y,  0,   0, [colR[0]*scR, colR[1]*scR, colR[2]*scR], 0.05, false);
   }
 }
 
@@ -2561,7 +2561,7 @@ function stepFluid() {
   try {
     fluidFrame++;
     // Inject every 5 frames
-    if (fluidFrame % 5 === 0) fluidInject();
+    if (fluidFrame % 8 === 0) fluidInject();
 
     var locs;
 
@@ -2577,7 +2577,7 @@ function stepFluid() {
     gl.uniform1i(locs.u_vel,  fluidBindTex(0, sim.vel.read));
     gl.uniform1i(locs.u_curl, fluidBindTex(1, sim.curl));
     gl.uniform2f(locs.u_px,   1/SIM_RES, 1/SIM_RES);
-    gl.uniform1f(locs.u_str,  20.0);
+    gl.uniform1f(locs.u_str,  12.0);
     gl.uniform1f(locs.u_dt,   dt);
     gl.uniform1f(locs.u_bias, sim.useBias);
     fluidBlit(sim.vel.write, SIM_RES, SIM_RES);
@@ -2588,7 +2588,7 @@ function stepFluid() {
     gl.uniform1i(locs.u_vel,   fluidBindTex(0, sim.vel.read));
     gl.uniform1i(locs.u_src,   fluidBindTex(1, sim.vel.read));
     gl.uniform1f(locs.u_dt,    dt);
-    gl.uniform1f(locs.u_decay, 0.990);
+    gl.uniform1f(locs.u_decay, 0.955);  // faster decay prevents velocity buildup
     gl.uniform1f(locs.u_bias,  sim.useBias);
     fluidBlit(sim.vel.write, SIM_RES, SIM_RES);
     sim.vel.swap();
@@ -2598,7 +2598,7 @@ function stepFluid() {
     gl.uniform1i(locs.u_vel,   fluidBindTex(0, sim.vel.read));
     gl.uniform1i(locs.u_src,   fluidBindTex(1, sim.dye.read));
     gl.uniform1f(locs.u_dt,    dt);
-    gl.uniform1f(locs.u_decay, 0.992);
+    gl.uniform1f(locs.u_decay, 0.984);
     gl.uniform1f(locs.u_bias,  0.0);
     fluidBlit(sim.dye.write, DYE_RES, DYE_RES);
     sim.dye.swap();
