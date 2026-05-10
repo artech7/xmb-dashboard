@@ -710,7 +710,7 @@ function resize() {
   // Reset screen-size-dependent animation states
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
-  auroraCurtains = null;
+  auroraCurtains = null; bokehCircles = null; inkBlobs = null;
 }
 
 function drawNebula() {
@@ -782,6 +782,8 @@ function animLoop() {
     case 'matrix':    drawMatrix();    break;
     case 'warp':      drawFlames();    break;
     case 'lava':      drawWavePS3();   break;
+    case 'bokeh':     drawBokeh();     break;
+    case 'ink':       drawInkWater();  break;
     default:          drawNebula();    break;
   }
   requestAnimationFrame(animLoop);
@@ -1665,6 +1667,243 @@ function drawWavePS3() {
     var a = s.baseAlpha * (0.3 + Math.sin(t*s.twinkleSpeed+s.phase)*0.2) * (1 - s.y*2.5);
     ctx.beginPath(); ctx.arc(s.x*W, s.y*H, s.size*0.7, 0, Math.PI*2);
     ctx.fillStyle = 'rgba(255,255,255,'+Math.max(0,a)+')'; ctx.fill();
+  });
+
+  drawVignette();
+}
+
+// ── 7. BOKEH ──────────────────────────────────────────────────────────────────
+var bokehCircles = null;
+
+function initBokeh() {
+  var count = Math.max(40, Math.floor(W * H / 18000));
+  bokehCircles = [];
+  for (var i = 0; i < count; i++) {
+    bokehCircles.push(newBokehCircle(true));
+  }
+}
+
+function newBokehCircle(randomPos) {
+  var U = Math.min(W, H);
+  var depth = Math.random();   // 0=far (small, slow, dim), 1=near (large, fast, bright)
+  return {
+    x:       Math.random(),
+    y:       randomPos ? Math.random() : 1.05,
+    vx:      (Math.random() - 0.5) * (0.00008 + depth * 0.00014),
+    vy:      -(0.00006 + depth * 0.00018 + Math.random() * 0.00010),
+    r:       (0.018 + depth * 0.065 + Math.random() * 0.030) * U,
+    depth:   depth,
+    alpha:   0.06 + depth * 0.22 + Math.random() * 0.08,
+    palIdx:  Math.floor(Math.random() * 4),
+    shimmer: Math.random() * Math.PI * 2,
+    shimSpd: 0.008 + Math.random() * 0.012,
+    // Bokeh highlight — bright edge ring and central flare
+    flare:   Math.random() > 0.55,
+  };
+}
+
+function drawBokeh() {
+  if (!bokehCircles) initBokeh();
+  ctx.clearRect(0, 0, W, H);
+  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
+
+  var spd = animSpeed > 0 ? animSpeed : 0;
+  var [ar, ag, ab] = accentRgb;
+
+  // Sort back-to-front by depth so near circles draw over far ones
+  bokehCircles.sort(function(a, b) { return a.depth - b.depth; });
+
+  bokehCircles.forEach(function(c, idx) {
+    c.x       += c.vx * spd;
+    c.y       += c.vy * spd;
+    c.shimmer += c.shimSpd * spd;
+    if (c.y + c.r / Math.min(W,H) < -0.08) {
+      bokehCircles[idx] = newBokehCircle(false); return;
+    }
+    if (c.x < -0.1) c.x = 1.1;
+    if (c.x >  1.1) c.x = -0.1;
+
+    var cx = c.x * W;
+    var cy = c.y * H;
+    var r  = c.r;
+    var shimA = 0.85 + Math.sin(c.shimmer) * 0.15;
+    var alpha = c.alpha * shimA;
+    var col   = themeRgbPalette[c.palIdx] || [ar, ag, ab];
+
+    // Outer soft glow (very diffuse)
+    var outerG = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 2.2);
+    outerG.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(alpha*0.18)+')');
+    outerG.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(alpha*0.06)+')');
+    outerG.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = outerG;
+    ctx.fillRect(cx - r*2.2, cy - r*2.2, r*4.4, r*4.4);
+
+    // Main bokeh disc — bright edge, dim centre (out-of-focus look)
+    var discG = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    discG.addColorStop(0,    'rgba('+col[0]+','+col[1]+','+col[2]+','+(alpha*0.08)+')');
+    discG.addColorStop(0.65, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(alpha*0.18)+')');
+    discG.addColorStop(0.88, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(alpha*0.55)+')');
+    discG.addColorStop(0.96, 'rgba(255,255,255,'+(alpha*0.35)+')');
+    discG.addColorStop(1,    'rgba(0,0,0,0)');
+    ctx.fillStyle = discG;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner flare on some circles (like a light source point)
+    if (c.flare) {
+      var flareG = ctx.createRadialGradient(cx - r*0.18, cy - r*0.18, 0, cx, cy, r * 0.45);
+      flareG.addColorStop(0,   'rgba(255,255,255,'+(alpha*0.70)+')');
+      flareG.addColorStop(0.4, 'rgba(255,255,255,'+(alpha*0.20)+')');
+      flareG.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = flareG;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  drawVignette();
+}
+
+// ── 8. INK IN WATER ───────────────────────────────────────────────────────────
+var inkBlobs = null;
+var inkAge   = 0;
+
+function initInk() {
+  inkBlobs = [];
+  inkAge   = 0;
+  // Spawn initial ink drops spread around
+  for (var i = 0; i < 12; i++) {
+    inkBlobs.push(newInkDrop(true));
+  }
+}
+
+function newInkDrop(randomAge) {
+  var U    = Math.min(W, H);
+  var maxA = 0.8 + Math.random() * 1.5;
+  return {
+    x:      0.15 + Math.random() * 0.70,
+    y:      0.15 + Math.random() * 0.70,
+    // Ink spreads outward from drop point
+    r:      (0.01 + Math.random() * 0.02) * U,
+    maxR:   (0.12 + Math.random() * 0.20) * U,
+    vr:     (0.003 + Math.random() * 0.004) * U,   // expansion speed (px/frame)
+    // Tendrils — multiple arms spreading outward
+    arms:   Math.floor(3 + Math.random() * 4),
+    armPhases: Array.from({length:7}, function() { return Math.random() * Math.PI * 2; }),
+    armSpeeds: Array.from({length:7}, function() { return 0.004 + Math.random() * 0.006; }),
+    age:    randomAge ? Math.random() * maxA : 0,
+    maxAge: maxA,
+    alpha:  0.55 + Math.random() * 0.35,
+    palIdx: Math.floor(Math.random() * 6),
+    // Drift — ink slowly moves in water
+    vx:    (Math.random() - 0.5) * 0.00012,
+    vy:    (Math.random() - 0.5) * 0.00008,
+    // Rotation of the whole drop
+    rot:   Math.random() * Math.PI * 2,
+    rotSpd: (Math.random() - 0.5) * 0.002,
+  };
+}
+
+function drawInkWater() {
+  if (!inkBlobs) initInk();
+  ctx.clearRect(0, 0, W, H);
+  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
+
+  var spd = animSpeed > 0 ? animSpeed : 0;
+  var [ar, ag, ab] = accentRgb;
+  inkAge += 0.008 * spd;
+
+  // Periodically spawn new drops
+  if (spd > 0 && Math.random() < 0.004 * spd) {
+    inkBlobs.push(newInkDrop(false));
+    // Remove old expired blobs
+    inkBlobs = inkBlobs.filter(function(b) { return b.age < b.maxAge + 0.5; });
+    if (inkBlobs.length > 20) inkBlobs.splice(0, inkBlobs.length - 20);
+  }
+
+  inkBlobs.forEach(function(blob) {
+    blob.age += 0.006 * spd;
+    blob.r    = Math.min(blob.maxR, blob.r + blob.vr * spd);
+    blob.x   += blob.vx * spd;
+    blob.y   += blob.vy * spd;
+    blob.rot += blob.rotSpd * spd;
+    blob.armPhases = blob.armPhases.map(function(p, i) {
+      return p + blob.armSpeeds[i] * spd;
+    });
+
+    var ageFrac  = blob.age / blob.maxAge;
+    if (ageFrac > 1) return;   // fading out
+
+    // Fade in then slowly fade out
+    var fadeAlpha = blob.alpha * Math.min(1, ageFrac * 4) * Math.max(0, 1 - Math.pow(ageFrac - 0.7, 2) * 5);
+    if (fadeAlpha <= 0.01) return;
+
+    var cx  = blob.x * W;
+    var cy  = blob.y * H;
+    var r   = blob.r;
+    var col = themeRgbPalette[blob.palIdx] || [ar, ag, ab];
+
+    // ── Core blob ──────────────────────────────────────────
+    var coreG = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.9);
+    coreG.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.80)+')');
+    coreG.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.50)+')');
+    coreG.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = coreG;
+    ctx.fillRect(cx - r, cy - r, r*2, r*2);
+
+    // ── Ink tendrils spreading outward ─────────────────────
+    for (var arm = 0; arm < blob.arms; arm++) {
+      var baseAngle = (arm / blob.arms) * Math.PI * 2 + blob.rot;
+      var ap        = blob.armPhases[arm];
+      var tendLen   = r * (1.6 + Math.sin(ap) * 0.5);
+      var tendW     = r * (0.28 - ageFrac * 0.12);
+
+      // Bezier tendril curling outward
+      var tipX = cx + Math.cos(baseAngle + Math.sin(ap*0.7)*0.4) * tendLen;
+      var tipY = cy + Math.sin(baseAngle + Math.sin(ap*0.7)*0.4) * tendLen;
+      var cp1X = cx + Math.cos(baseAngle - 0.4) * tendLen * 0.45;
+      var cp1Y = cy + Math.sin(baseAngle - 0.4) * tendLen * 0.45;
+      var cp2X = cx + Math.cos(baseAngle + 0.5 + Math.sin(ap)*0.3) * tendLen * 0.80;
+      var cp2Y = cy + Math.sin(baseAngle + 0.5 + Math.sin(ap)*0.3) * tendLen * 0.80;
+
+      var tendGrad = ctx.createLinearGradient(cx, cy, tipX, tipY);
+      tendGrad.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.65)+')');
+      tendGrad.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.35)+')');
+      tendGrad.addColorStop(1,   'rgba(0,0,0,0)');
+
+      ctx.strokeStyle = tendGrad;
+      ctx.lineWidth   = Math.max(0.5, tendW * (1 - ageFrac * 0.6));
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, tipX, tipY);
+      ctx.stroke();
+
+      // Secondary feathered micro-tendrils at tip
+      if (ageFrac < 0.75 && r > Math.min(W,H) * 0.03) {
+        for (var ft = 0; ft < 2; ft++) {
+          var ftAngle = baseAngle + (ft === 0 ? 0.35 : -0.35) + Math.sin(ap + ft) * 0.2;
+          var ftLen   = tendLen * (0.25 + Math.sin(ap * 1.3 + ft) * 0.12);
+          var ftX     = tipX + Math.cos(ftAngle) * ftLen;
+          var ftY     = tipY + Math.sin(ftAngle) * ftLen;
+          ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.25)+')';
+          ctx.lineWidth   = Math.max(0.3, tendW * 0.25);
+          ctx.beginPath();
+          ctx.moveTo(tipX, tipY);
+          ctx.lineTo(ftX, ftY);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // ── Outer diffuse halo ─────────────────────────────────
+    var haloG = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.0);
+    haloG.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.18)+')');
+    haloG.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = haloG;
+    ctx.fillRect(cx - r*2, cy - r*2, r*4, r*4);
   });
 
   drawVignette();
@@ -3964,6 +4203,8 @@ document.addEventListener('keydown', function(e) {
             <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="4">Matrix</button>
             <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="1" data-pref-col="5">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">XMB Wave</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="1" data-pref-col="7">Bokeh</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="1" data-pref-col="8">Ink</button>
           </div>
         </div>
       </div>
@@ -4096,14 +4337,14 @@ function applyPrefs(prefs) {
     animMode = newMode;
     galaxyStars = null; causticPoints = null; solarParticles = null;
     matrixCols = null; flameParticles = null; flameEmbers = null;
-    auroraCurtains = null;
+    auroraCurtains = null; bokehCircles = null; inkBlobs = null;
   }
 }
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
 var THEME_KEYS = Object.keys(NEBULA_THEMES);
-var ROW_COLS   = [THEME_KEYS.length, 7, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=stars, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
+var ROW_COLS   = [THEME_KEYS.length, 9, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=stars, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
