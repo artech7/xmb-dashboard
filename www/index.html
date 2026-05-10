@@ -2049,177 +2049,8 @@ var GL_AURORA_FRAG = [
   '}'
 ].join('\n');
 
-// ── FLUID SIM SHADERS ────────────────────────────────────────────────────────
-
-// Shared vertex shader (fullscreen quad)
-var FL_VERT = [
-  'attribute vec2 a_pos;',
-  'varying vec2 v_uv;',
-  'void main(){v_uv=(a_pos+1.0)*0.5;gl_Position=vec4(a_pos,0,1);}'
-].join('\n');
-
-// Advection: move quantity along velocity field
-// Velocity stored as (v*0.5+0.5) to allow signed values in UNSIGNED_BYTE textures
-var FL_ADVECT = [
-  'precision highp float;',
-  'uniform sampler2D u_vel;',
-  'uniform sampler2D u_src;',
-  'uniform vec2 u_res;',
-  'uniform float u_dt;',
-  'uniform float u_decay;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec2 vel=(texture2D(u_vel,v_uv).xy-0.5)*2.0;',// decode signed velocity
-  '  vec2 pos=v_uv-vel*u_dt;',// velocity in UV space — no /u_res
-  '  gl_FragColor=texture2D(u_src,pos)*u_decay;',
-  '}'
-].join('\n');
-
-// Splat: add gaussian blob; u_isVel=1 for velocity (signed), 0 for dye
-var FL_SPLAT = [
-  'precision highp float;',
-  'uniform sampler2D u_src;',
-  'uniform vec2 u_res;',
-  'uniform vec2 u_point;',
-  'uniform vec3 u_color;',
-  'uniform float u_radius;',
-  'uniform float u_isVel;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec2 p=v_uv-u_point/u_res;',
-  '  p.x*=u_res.x/u_res.y;',
-  '  float splat=exp(-dot(p,p)/(u_radius*u_radius));',
-  '  vec3 base=texture2D(u_src,v_uv).rgb;',
-  '  if(u_isVel>0.5){',
-  // Velocity stored as 0.5+v*0.5, base already encoded, add scaled splat
-  '    vec3 baseDecoded=(base-0.5)*2.0;',
-  '    vec3 result=baseDecoded+u_color*splat;',
-  '    result=clamp(result,-1.0,1.0);',
-  '    gl_FragColor=vec4(result*0.5+0.5,1.0);',
-  '  } else {',
-  '    gl_FragColor=vec4(clamp(base+u_color*splat,0.0,1.0),1.0);',
-  '  }',
-  '}'
-].join('\n');
-
-// Divergence of velocity field (decode signed velocity first)
-var FL_DIV = [
-  'precision highp float;',
-  'uniform sampler2D u_vel;',
-  'uniform vec2 u_res;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec2 e=1.0/u_res;',
-  '  float l=(texture2D(u_vel,v_uv-vec2(e.x,0)).x-0.5)*2.0;',
-  '  float r=(texture2D(u_vel,v_uv+vec2(e.x,0)).x-0.5)*2.0;',
-  '  float b=(texture2D(u_vel,v_uv-vec2(0,e.y)).y-0.5)*2.0;',
-  '  float t=(texture2D(u_vel,v_uv+vec2(0,e.y)).y-0.5)*2.0;',
-  '  gl_FragColor=vec4(0.5*(r-l+t-b)*0.5+0.5,0.5,0.5,1.0);',// store encoded
-  '}'
-].join('\n');
-
-// Pressure solve (Jacobi) — signed values encoded as 0.5+v*0.5
-var FL_PRESSURE = [
-  'precision highp float;',
-  'uniform sampler2D u_pressure;',
-  'uniform sampler2D u_div;',
-  'uniform vec2 u_res;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec2 e=1.0/u_res;',
-  '  float l=(texture2D(u_pressure,v_uv-vec2(e.x,0)).x-0.5)*2.0;',
-  '  float r=(texture2D(u_pressure,v_uv+vec2(e.x,0)).x-0.5)*2.0;',
-  '  float b=(texture2D(u_pressure,v_uv-vec2(0,e.y)).x-0.5)*2.0;',
-  '  float t=(texture2D(u_pressure,v_uv+vec2(0,e.y)).x-0.5)*2.0;',
-  '  float d=(texture2D(u_div,v_uv).x-0.5)*2.0;',
-  '  float p=(l+r+b+t-d)*0.25;',
-  '  gl_FragColor=vec4(p*0.5+0.5,0.5,0.5,1.0);',
-  '}'
-].join('\n');
-
-// Subtract pressure gradient from velocity (decode/encode signed values)
-var FL_GRAD = [
-  'precision highp float;',
-  'uniform sampler2D u_vel;',
-  'uniform sampler2D u_pressure;',
-  'uniform vec2 u_res;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec2 e=1.0/u_res;',
-  '  float pl=(texture2D(u_pressure,v_uv-vec2(e.x,0)).x-0.5)*2.0;',
-  '  float pr=(texture2D(u_pressure,v_uv+vec2(e.x,0)).x-0.5)*2.0;',
-  '  float pb=(texture2D(u_pressure,v_uv-vec2(0,e.y)).x-0.5)*2.0;',
-  '  float pt=(texture2D(u_pressure,v_uv+vec2(0,e.y)).x-0.5)*2.0;',
-  '  vec2 vel=(texture2D(u_vel,v_uv).xy-0.5)*2.0;',
-  '  vel-=vec2(pr-pl,pt-pb)*0.5;',
-  '  vel=clamp(vel,-1.0,1.0);',
-  '  gl_FragColor=vec4(vel*0.5+0.5,0.5,1.0);',// encode back
-  '}'
-].join('\n');
-
-// Curl (vorticity) — decode signed velocity first
-var FL_CURL = [
-  'precision highp float;',
-  'uniform sampler2D u_vel;',
-  'uniform vec2 u_res;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec2 e=1.0/u_res;',
-  '  float l=(texture2D(u_vel,v_uv-vec2(e.x,0)).y-0.5)*2.0;',
-  '  float r=(texture2D(u_vel,v_uv+vec2(e.x,0)).y-0.5)*2.0;',
-  '  float b=(texture2D(u_vel,v_uv-vec2(0,e.y)).x-0.5)*2.0;',
-  '  float t=(texture2D(u_vel,v_uv+vec2(0,e.y)).x-0.5)*2.0;',
-  '  float curl=(r-l-t+b)*0.5;',
-  '  gl_FragColor=vec4(curl*0.5+0.5,0.5,0.5,1.0);',
-  '}'
-].join('\n');
-
-// Vorticity confinement — decode/encode signed values
-var FL_VORTICITY = [
-  'precision highp float;',
-  'uniform sampler2D u_vel;',
-  'uniform sampler2D u_curl;',
-  'uniform vec2 u_res;',
-  'uniform float u_strength;',
-  'uniform float u_dt;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec2 e=1.0/u_res;',
-  '  float l=abs((texture2D(u_curl,v_uv-vec2(e.x,0)).x-0.5)*2.0);',
-  '  float r=abs((texture2D(u_curl,v_uv+vec2(e.x,0)).x-0.5)*2.0);',
-  '  float b=abs((texture2D(u_curl,v_uv-vec2(0,e.y)).x-0.5)*2.0);',
-  '  float t=abs((texture2D(u_curl,v_uv+vec2(0,e.y)).x-0.5)*2.0);',
-  '  float c=(texture2D(u_curl,v_uv).x-0.5)*2.0;',
-  '  vec2 force=vec2(t-b,r-l);',
-  '  float len=max(length(force),0.0001);',
-  '  force=(force/len)*u_strength*c;',
-  '  vec2 vel=(texture2D(u_vel,v_uv).xy-0.5)*2.0+force*u_dt;',
-  '  vel=clamp(vel,-1.0,1.0);',
-  '  gl_FragColor=vec4(vel*0.5+0.5,0.5,1.0);',
-  '}'
-].join('\n');
-
-// Display: render dye field with background + vignette
-var FL_DISPLAY = [
-  'precision highp float;',
-  'uniform sampler2D u_dye;',
-  'uniform vec2 u_res;',
-  'uniform vec3 u_bg0,u_bg1,u_bg2;',
-  'varying vec2 v_uv;',
-  'void main(){',
-  '  vec3 dye=texture2D(u_dye,v_uv).rgb;',
-  '  vec3 bg=mix(u_bg0,mix(u_bg1,u_bg2,v_uv.y),v_uv.y*0.7+0.3);',
-  // Dark water background + vivid ink on top
-  '  float dyeLen=length(dye);',
-  '  vec3 col=mix(bg*0.55,dye*1.1,smoothstep(0.03,0.30,dyeLen));',
-  '  vec2 vc=v_uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.20;',
-  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
-  '}'
-].join('\n');
-
-// Fallback ink shader — used if fluid sim fails to init
-// Must work with GL_VERT (which uses gl_FragCoord, no v_uv varying)
+// ── INK IN WATER (WebGL domain-warp FBM) ─────────────────────────────────────
+// Reliable, vivid, no fluid sim complexity
 var GL_INK_FRAG = [
   'precision mediump float;',
   'uniform float u_time;',
@@ -2227,41 +2058,7 @@ var GL_INK_FRAG = [
   'uniform float u_intensity;',
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
-  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-  'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
-  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
-  'float fbm(vec2 p){float v=0.0,a=0.5;',
-  '  v+=a*vn(p);p=p*2.0+vec2(1.7,9.2);a*=0.5;',
-  '  v+=a*vn(p);p=p*2.0+vec2(3.5,4.4);a*=0.5;',
-  '  v+=a*vn(p);p=p*2.0+vec2(7.1,2.8);a*=0.5;',
-  '  v+=a*vn(p);p=p*2.0+vec2(2.3,6.7);a*=0.5;',
-  '  v+=a*vn(p);return v;}',
-  'vec2 fbm2(vec2 p){return vec2(fbm(p),fbm(p+vec2(5.2,1.3)));}',
-  'void main(){',
-  '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  vec2 p=uv*vec2(u_res.x/u_res.y,1.0);',
-  '  float t=u_time*0.000048;',
-  '  vec2 q=fbm2(p*1.8+vec2(t,t*0.71));',
-  '  vec2 r=fbm2(p*1.8+7.5*q+vec2(1.7,9.2));',
-  '  float f1=fbm(p*1.8+6.5*r);',
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
-  '  float ink1=smoothstep(0.26,0.64,f1);',
-  '  col=mix(col,u_c0,ink1*u_intensity*0.90);',
-  '  vec2 vc=uv-0.5;col*=1.0-dot(vc,vc)*1.25;',
-  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
-  '}'
-].join('\n');
 
-
-
-// ── WebGL NEBULA shader ──────────────────────────────────────────────────────
-var GL_NEBULA_FRAG = [
-  'precision mediump float;',
-  'uniform float u_time;',
-  'uniform vec2  u_res;',
-  'uniform float u_intensity;',
-  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
-  'uniform vec3  u_bg0,u_bg1,u_bg2;',
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
@@ -2271,73 +2068,65 @@ var GL_NEBULA_FRAG = [
   '  v+=a*vn(p);p=p*2.1+vec2(7.13,2.84);a*=0.5;',
   '  v+=a*vn(p);p=p*2.1+vec2(2.29,6.71);a*=0.5;',
   '  v+=a*vn(p);return v;}',
-  'float cloudBlob(vec2 uv,vec2 pos,float r,float asp,float warpStr){',
-  '  vec2 d=uv-pos;d.x*=asp;',
-  '  vec2 wp=uv*3.5+vec2(1.7,9.2);',
-  '  vec2 warp=vec2(fbm(wp),fbm(wp+vec2(5.2,1.3)))*warpStr;',
-  '  vec2 dw=d+warp;',
-  '  float rClean=exp(-dot(d,d)/(r*r*0.38));',
-  '  float rWispy=exp(-dot(dw,dw)/(r*r*0.55));',
-  '  return mix(rClean,rWispy,0.65);}',
-  'float sf(vec2 uv,float sc,vec2 off){',
-  '  vec2 g=floor(uv*sc+off);float v=h2(g);',
-  '  float isStar=step(0.988,v);',
-  '  float sz=0.04+h2(g+vec2(41.2,73.1))*0.07;',
-  '  float d=length(fract(uv*sc+off)-0.5)*2.0;',
-  '  float shim=0.84+0.12*sin(u_time*0.0016*(0.5+v)+v*43.7);',
-  '  return isStar*(1.0-smoothstep(0.0,sz,d))*(0.45+v*0.50)*shim;}',
+  'vec2 fbm2(vec2 p){return vec2(fbm(p),fbm(p+vec2(5.2,1.3)));}',
+
+  'vec3 inkPal(float t){',
+  '  float f=mod(t,1.0)*5.0;float fr=fract(f);vec3 c0,c1;',
+  '  if(f<1.0){c0=u_c0;c1=u_c1;}',
+  '  else if(f<2.0){c0=u_c1;c1=u_c2;}',
+  '  else if(f<3.0){c0=u_c2;c1=u_c3;}',
+  '  else if(f<4.0){c0=u_c3;c1=u_c4;}',
+  '  else{c0=u_c4;c1=u_c5;}',
+  '  return mix(c0,c1,fr);}',
+
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float t=u_time*0.000040;',
-  '  float asp=u_res.x/u_res.y;',
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
-  '  float p=0.88+0.12*sin(u_time*0.00015);',
-  '  vec2 b0=vec2(0.18+sin(t*0.70)*0.055,0.28+cos(t*0.50)*0.048);',
-  '  vec2 b1=vec2(0.72+sin(t*0.50+1.1)*0.055,0.22+cos(t*0.36+1.1)*0.048);',
-  '  vec2 b2=vec2(0.55+sin(t*0.60+2.3)*0.055,0.63+cos(t*0.43+2.3)*0.048);',
-  '  vec2 b3=vec2(0.12+sin(t*0.80+0.7)*0.055,0.66+cos(t*0.57+0.7)*0.048);',
-  '  vec2 b4=vec2(0.82+sin(t*0.55+3.1)*0.055,0.68+cos(t*0.39+3.1)*0.048);',
-  '  vec2 b5=vec2(0.40+sin(t*0.30+1.8)*0.055,0.42+cos(t*0.21+1.8)*0.048);',
-  '  float g0=cloudBlob(uv,b0,0.58,asp,0.11)*0.40;',
-  '  float g1=cloudBlob(uv,b1,0.52,asp,0.09)*0.34;',
-  '  float g2=cloudBlob(uv,b2,0.62,asp,0.13)*0.30;',
-  '  float g3=cloudBlob(uv,b3,0.47,asp,0.10)*0.24;',
-  '  float g4=cloudBlob(uv,b4,0.52,asp,0.12)*0.32;',
-  '  float g5=cloudBlob(uv,b5,0.68,asp,0.08)*0.20;',
-  '  float density=g0+g1+g2+g3+g4+g5;',
-  '  col+=u_c0*g0*p*u_intensity;',
-  '  col+=u_c1*g1*p*u_intensity;',
-  '  col+=u_c2*g2*p*u_intensity;',
-  '  col+=u_c3*g3*p*u_intensity;',
-  '  col+=u_c4*g4*p*u_intensity;',
-  '  col+=u_c5*g5*p*u_intensity;',
-  '  float wispTime=u_time*0.000025;',
-  '  vec2 wuv=uv*2.8+vec2(wispTime,wispTime*0.7);',
-  '  vec2 wq=vec2(fbm(wuv+vec2(1.7,9.2)),fbm(wuv+vec2(9.2,1.7)));',
-  '  float wisp=fbm(wuv+2.5*wq);',
-  '  wisp=max(0.0,wisp-0.42)*density*1.8;',
-  '  vec3 wispCol=mix(mix(u_c0,u_c2,0.4),u_c4,0.3);',
-  '  col+=wispCol*wisp*0.35*u_intensity;',
-  '  col+=u_c0*exp(-dot(uv-0.5,uv-0.5)*3.2)*0.06*u_intensity;',
-  '  col+=sf(uv,280.0,vec2(0.0,0.0))*0.60;',
-  '  col+=sf(uv,160.0,vec2(57.3,83.7))*0.75;',
-  '  col+=sf(uv,90.0,vec2(31.1,47.9))*0.90;',
-  '  float bh=h2(floor(uv*60.0)+vec2(89.3,13.5));',
-  '  vec3 bTint=mix(vec3(1.0),vec3(0.75,0.88,1.0),step(0.55,bh));',
-  '  col+=bTint*sf(uv,60.0,vec2(89.3,13.5))*1.0;',
-  '  float cloudStars=sf(uv,220.0,vec2(13.7,52.1))*density*3.5;',
-  '  float cloudStars2=sf(uv,140.0,vec2(71.3,28.9))*density*2.8;',
-  '  vec3 embeddedCol=mix(vec3(1.0),mix(u_c0,u_c2,0.5),0.35);',
-  '  col+=embeddedCol*cloudStars;',
-  '  col+=embeddedCol*cloudStars2;',
-  '  vec2 dustUV=uv*1.9+vec2(u_time*0.000008,0.0);',
-  '  float dust=fbm(dustUV+vec2(fbm(dustUV+vec2(2.1,4.7))*0.5,0.0));',
-  '  float dustMask=smoothstep(0.52,0.42,dust)*density*0.22;',
-  '  col*=1.0-dustMask;',
+  '  vec2 p=uv*vec2(u_res.x/u_res.y,1.0);',
+  '  float t=u_time*0.000055;',
+
+  // Three-level domain warp — creates organic billowing ink shapes
+  '  vec2 q=fbm2(p*1.8+vec2(t,t*0.71));',
+  '  vec2 r=fbm2(p*1.8+5.5*q+vec2(1.7,9.2)+vec2(0.20*t,0.14*t));',
+  '  float f1=fbm(p*1.8+5.0*r);',
+
+  '  vec2 p2=p*2.5+vec2(2.31,1.17);',
+  '  vec2 q2=fbm2(p2+vec2(t*0.85,t*1.30));',
+  '  vec2 r2=fbm2(p2+4.5*q2+vec2(3.1,0.9));',
+  '  float f2=fbm(p2+4.0*r2);',
+
+  '  vec2 p3=p*4.8+vec2(-1.53,3.27);',
+  '  float f3=fbm(p3+fbm2(p3+t*0.65)*3.2);',
+
+  // Dark water background
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.5+0.5)*0.28;',
+
+  // Layer 1: large billowing clouds — core of the effect
+  '  float ink1=smoothstep(0.26,0.62,f1);',
+  '  float ink1s=pow(ink1,0.70);',
+  '  vec3 inkC1=inkPal(f1*1.3);',
+  '  inkC1=mix(inkC1,vec3(1.0),ink1*ink1*0.22);',
+  '  col=mix(col,inkC1,ink1s*u_intensity*0.94);',
+
+  // Layer 2: secondary swirls — different color
+  '  float ink2=smoothstep(0.30,0.63,f2);',
+  '  col=mix(col,inkPal(f2+0.40)*1.05,pow(ink2,0.75)*u_intensity*0.60);',
+
+  // Layer 3: fine wisps and tendrils
+  '  float ink3=smoothstep(0.40,0.58,f3);',
+  '  col+=mix(inkPal(f3+0.70),vec3(1.0),ink3*0.20)*ink3*u_intensity*0.28;',
+
+  // Dark water gaps
+  '  float water=smoothstep(0.44,0.18,f1)*(1.0-ink2*0.6);',
+  '  col=mix(col,col*0.35,water*0.60);',
+
+  // Bright pigment cores at peak density
+  '  col+=vec3(smoothstep(0.66,0.86,f1)*0.12)*u_intensity;',
+
+  // Vignette
   '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc,vc)*1.55;',
+  '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.18;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
-  '}',
+  '}'
 ].join('\n');
 
 
@@ -2381,70 +2170,186 @@ function glCacheUniforms(prog) {
 }
 
 // ── Initialise WebGL ──────────────────────────────────────────────────────
-// ── FLUID SIMULATION STATE ───────────────────────────────────────────────────
-var fluidReady    = false;
-var fluidSim      = null;   // holds all fluid sim state
 
-var SIM_W = 128;  // simulation resolution (lower = faster, still looks great)
-var SIM_H = 128;
-var DYE_W = 512;  // dye field at higher res for crisp colors
-var DYE_H = 512;
+// ══════════════════════════════════════════════════════════════
+// FLUID SIMULATION — Stable Fluids (no pressure, advect + vorticity)
+// ══════════════════════════════════════════════════════════════
 
-function fluidCompile(vsrc, fsrc) {
-  var vs = gl.createShader(gl.VERTEX_SHADER);
-  gl.shaderSource(vs, vsrc); gl.compileShader(vs);
-  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
-    console.error('Fluid VS error:', gl.getShaderInfoLog(vs)); return null;
-  }
-  var fs = gl.createShader(gl.FRAGMENT_SHADER);
-  gl.shaderSource(fs, fsrc); gl.compileShader(fs);
-  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
-    console.error('Fluid FS error:', gl.getShaderInfoLog(fs)); return null;
+var fluidReady = false;
+var fluidSim   = null;
+var fluidFrame = 0;
+var fluidPhase = 0;
+var SIM_RES    = 128;
+var DYE_RES    = 512;
+
+// ── Fluid shaders (use FL_VERT — has v_uv varying) ────────────────
+
+var FL_VERT_SRC = [
+  'attribute vec2 a_pos;',
+  'varying vec2 v_uv;',
+  'void main(){v_uv=(a_pos+1.0)*0.5;gl_Position=vec4(a_pos,0,1);}'
+].join('\n');
+
+// Advect: sample src at position moved back along velocity
+// u_bias=1 → velocity stored as (v*0.5+0.5), decode before use
+// u_bias=0 → velocity stored raw (half-float)
+var FL_ADVECT_SRC = [
+  'precision highp float;',
+  'uniform sampler2D u_vel;',
+  'uniform sampler2D u_src;',
+  'uniform float u_dt;',
+  'uniform float u_decay;',
+  'uniform float u_bias;',
+  'varying vec2 v_uv;',
+  'void main(){',
+  '  vec2 raw=texture2D(u_vel,v_uv).xy;',
+  '  vec2 vel=u_bias>0.5?(raw-0.5)*2.0:raw;',
+  '  vec2 pos=clamp(v_uv-vel*u_dt,0.001,0.999);',
+  '  gl_FragColor=texture2D(u_src,pos)*u_decay;',
+  '}'
+].join('\n');
+
+// Splat: add gaussian impulse of velocity or dye
+var FL_SPLAT_SRC = [
+  'precision highp float;',
+  'uniform sampler2D u_src;',
+  'uniform vec2 u_pt;',
+  'uniform vec3 u_val;',
+  'uniform float u_r;',
+  'uniform float u_isVel;',
+  'uniform float u_bias;',
+  'varying vec2 v_uv;',
+  'void main(){',
+  '  vec2 d=v_uv-u_pt;',
+  '  float s=exp(-dot(d,d)/(u_r*u_r));',
+  '  vec4 base=texture2D(u_src,v_uv);',
+  '  if(u_isVel>0.5){',
+  '    vec2 cur=u_bias>0.5?(base.xy-0.5)*2.0:base.xy;',
+  '    vec2 nv=clamp(cur+u_val.xy*s,-1.0,1.0);',
+  '    vec2 st=u_bias>0.5?nv*0.5+0.5:nv;',
+  '    gl_FragColor=vec4(st,0.5,1.0);',
+  '  } else {',
+  '    gl_FragColor=vec4(clamp(base.rgb+u_val*s,0.0,1.0),1.0);',
+  '  }',
+  '}'
+].join('\n');
+
+// Curl: compute vorticity of velocity field
+var FL_CURL_SRC = [
+  'precision highp float;',
+  'uniform sampler2D u_vel;',
+  'uniform vec2 u_px;',
+  'uniform float u_bias;',
+  'varying vec2 v_uv;',
+  'void main(){',
+  '  float b=u_bias>0.5?0.5:0.0;float sc=u_bias>0.5?2.0:1.0;',
+  '  float vl=(texture2D(u_vel,v_uv-vec2(u_px.x,0)).y-b)*sc;',
+  '  float vr=(texture2D(u_vel,v_uv+vec2(u_px.x,0)).y-b)*sc;',
+  '  float vb=(texture2D(u_vel,v_uv-vec2(0,u_px.y)).x-b)*sc;',
+  '  float vt=(texture2D(u_vel,v_uv+vec2(0,u_px.y)).x-b)*sc;',
+  '  gl_FragColor=vec4((vr-vl-vt+vb)*0.5,0,0,1);',
+  '}'
+].join('\n');
+
+// Vorticity confinement: amplify existing swirls
+var FL_VORT_SRC = [
+  'precision highp float;',
+  'uniform sampler2D u_vel;',
+  'uniform sampler2D u_curl;',
+  'uniform vec2 u_px;',
+  'uniform float u_str;',
+  'uniform float u_dt;',
+  'uniform float u_bias;',
+  'varying vec2 v_uv;',
+  'void main(){',
+  '  float cl=abs(texture2D(u_curl,v_uv-vec2(u_px.x,0)).x);',
+  '  float cr=abs(texture2D(u_curl,v_uv+vec2(u_px.x,0)).x);',
+  '  float cb=abs(texture2D(u_curl,v_uv-vec2(0,u_px.y)).x);',
+  '  float ct=abs(texture2D(u_curl,v_uv+vec2(0,u_px.y)).x);',
+  '  float c=texture2D(u_curl,v_uv).x;',
+  '  vec2 eta=vec2(ct-cb,cr-cl);',
+  '  float len=max(length(eta),0.0001);',
+  '  vec2 force=vec2(eta.y,-eta.x)/len*c*u_str;',
+  '  float b=u_bias>0.5?0.5:0.0;float sc=u_bias>0.5?2.0:1.0;',
+  '  vec2 cur=(texture2D(u_vel,v_uv).xy-b)*sc;',
+  '  vec2 nv=clamp(cur+force*u_dt,-1.0,1.0);',
+  '  vec2 st=u_bias>0.5?nv*0.5+0.5:nv;',
+  '  gl_FragColor=vec4(st,0.5,1.0);',
+  '}'
+].join('\n');
+
+// Display: render dye field to screen
+var FL_DISP_SRC = [
+  'precision mediump float;',
+  'uniform sampler2D u_dye;',
+  'uniform vec3 u_bg;',
+  'varying vec2 v_uv;',
+  'void main(){',
+  '  vec3 dye=texture2D(u_dye,v_uv).rgb;',
+  '  float lum=length(dye);',
+  '  vec3 col=mix(u_bg*0.18,dye*1.10,smoothstep(0.018,0.22,lum));',
+  '  vec2 vc=v_uv-0.5;',
+  '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.20;',
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}'
+].join('\n');
+
+// ── Fluid GL helpers ──────────────────────────────────────────────
+function fluidCompileProg(vsrc, fsrc) {
+  function sh(type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+      console.error('Fluid shader error:', gl.getShaderInfoLog(s));
+    return s;
   }
   var p = gl.createProgram();
-  gl.attachShader(p, vs); gl.attachShader(p, fs);
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vsrc));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fsrc));
   gl.linkProgram(p);
-  gl.deleteShader(vs); gl.deleteShader(fs);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    console.error('Fluid link error:', gl.getProgramInfoLog(p)); return null;
-  }
-  // Cache all uniform locations
-  var n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
   p.locs = {};
+  var n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
   for (var i = 0; i < n; i++) {
-    var info = gl.getActiveUniform(p, i);
-    p.locs[info.name] = gl.getUniformLocation(p, info.name);
+    var inf = gl.getActiveUniform(p, i);
+    p.locs[inf.name] = gl.getUniformLocation(p, inf.name);
   }
   return p;
 }
 
-function fluidFBO(w, h, type) {
+function fluidMakeFBO(w, h, type) {
   var tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, type || gl.UNSIGNED_BYTE, null);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, type, null);
   var fbo = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.bindTexture(gl.TEXTURE_2D, null);
   return { fbo: fbo, tex: tex, w: w, h: h };
 }
 
-function fluidPing(a, b) { return { read: a, write: b, swap: function(){ var t=this.read; this.read=this.write; this.write=t; } }; }
+function fluidPingPong(w, h, type) {
+  return {
+    read: fluidMakeFBO(w, h, type),
+    write: fluidMakeFBO(w, h, type),
+    swap: function() { var t=this.read; this.read=this.write; this.write=t; }
+  };
+}
 
-function fluidBlit(target) {
-  if (target) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
-    gl.viewport(0, 0, target.w, target.h);
-  } else {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, glCanvas.width, glCanvas.height);
-  }
+function fluidBindTex(unit, fbo) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, fbo.tex);
+  return unit;
+}
+
+function fluidBlit(target, w, h) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
+  gl.viewport(0, 0, w, h);
   gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
+  var pos = gl.getAttribLocation(fluidSim.progs.display, 'a_pos');
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
@@ -2452,246 +2357,199 @@ function fluidUse(prog) {
   gl.useProgram(prog);
   var pos = gl.getAttribLocation(prog, 'a_pos');
   gl.enableVertexAttribArray(pos);
+  gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
   gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
   return prog.locs;
 }
 
+// ── Init fluid sim ────────────────────────────────────────────────
 function initFluidSim() {
   if (!gl) return false;
-
-  // Use UNSIGNED_BYTE by default — most compatible across all devices
-  // Float textures require WEBGL_color_buffer_float to render to, not just OES_texture_float
-  var texType = gl.UNSIGNED_BYTE;
   try {
-    var halfExt = gl.getExtension('OES_texture_half_float');
-    var halfLinear = gl.getExtension('OES_texture_half_float_linear');
-    var colorBuf = gl.getExtension('WEBGL_color_buffer_float') ||
-                   gl.getExtension('EXT_color_buffer_half_float');
-    if (halfExt && halfLinear && colorBuf) {
-      // Verify we can actually render to half-float by testing a small FBO
+    // Detect best texture type
+    var texType = gl.UNSIGNED_BYTE;
+    var useBias = 1.0; // byte needs 0.5 bias encoding
+    var hfExt = gl.getExtension('OES_texture_half_float');
+    var hfLin = gl.getExtension('OES_texture_half_float_linear');
+    var cbExt = gl.getExtension('EXT_color_buffer_half_float') ||
+                gl.getExtension('WEBGL_color_buffer_float');
+    if (hfExt && hfLin && cbExt) {
       var testTex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, testTex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, halfExt.HALF_FLOAT_OES, null);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, hfExt.HALF_FLOAT_OES, null);
       var testFBO = gl.createFramebuffer();
       gl.bindFramebuffer(gl.FRAMEBUFFER, testFBO);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, testTex, 0);
-      var status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.deleteTexture(testTex);
-      gl.deleteFramebuffer(testFBO);
-      if (status === gl.FRAMEBUFFER_COMPLETE) {
-        texType = halfExt.HALF_FLOAT_OES;
-        console.log('Fluid sim: using half-float textures');
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+        texType = hfExt.HALF_FLOAT_OES;
+        useBias = 0.0; // half-float stores signed natively
       }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteTexture(testTex); gl.deleteFramebuffer(testFBO);
     }
-  } catch(e) {}
-  if (texType === gl.UNSIGNED_BYTE) console.log('Fluid sim: using UNSIGNED_BYTE textures');
 
-  try { // wrap rest of init in try/catch
+    var progs = {
+      advect:  fluidCompileProg(FL_VERT_SRC, FL_ADVECT_SRC),
+      splat:   fluidCompileProg(FL_VERT_SRC, FL_SPLAT_SRC),
+      curl:    fluidCompileProg(FL_VERT_SRC, FL_CURL_SRC),
+      vort:    fluidCompileProg(FL_VERT_SRC, FL_VORT_SRC),
+      display: fluidCompileProg(FL_VERT_SRC, FL_DISP_SRC),
+    };
 
-  // Compile all fluid programs
-  var progs = {
-    advect:    fluidCompile(FL_VERT, FL_ADVECT),
-    splat:     fluidCompile(FL_VERT, FL_SPLAT),
-    div:       fluidCompile(FL_VERT, FL_DIV),
-    pressure:  fluidCompile(FL_VERT, FL_PRESSURE),
-    grad:      fluidCompile(FL_VERT, FL_GRAD),
-    curl:      fluidCompile(FL_VERT, FL_CURL),
-    vorticity: fluidCompile(FL_VERT, FL_VORTICITY),
-    display:   fluidCompile(FL_VERT, FL_DISPLAY),
-  };
+    var vel  = fluidPingPong(SIM_RES, SIM_RES, texType);
+    var dye  = fluidPingPong(DYE_RES, DYE_RES, gl.UNSIGNED_BYTE); // dye always byte
+    var curl = fluidMakeFBO(SIM_RES, SIM_RES, texType);
 
-  for (var k in progs) {
-    if (!progs[k]) { console.error('Fluid sim: failed to compile', k); return false; }
-  }
+    // Init velocity to neutral (0.5 if biased, 0.0 if raw)
+    var neutral = useBias > 0.5 ? 0.5 : 0.0;
+    [vel.read, vel.write, curl].forEach(function(f) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+      gl.clearColor(neutral, neutral, neutral, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-  // Framebuffers
-  var velocity = fluidPing(fluidFBO(SIM_W, SIM_H, texType), fluidFBO(SIM_W, SIM_H, texType));
-  var pressure = fluidPing(fluidFBO(SIM_W, SIM_H, texType), fluidFBO(SIM_W, SIM_H, texType));
-  var divergence = fluidFBO(SIM_W, SIM_H, texType);
-  var curl      = fluidFBO(SIM_W, SIM_H, texType);
-  var dye       = fluidPing(fluidFBO(DYE_W, DYE_H, texType), fluidFBO(DYE_W, DYE_H, texType));
-
-  // Initialize velocity to 0.5 (neutral = zero velocity in encoded format)
-  [velocity.read, velocity.write, pressure.read, pressure.write, divergence, curl].forEach(function(fbo) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
-    gl.clearColor(0.5, 0.5, 0.5, 1.0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-  });
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-  fluidSim = { progs: progs, velocity: velocity, pressure: pressure,
-               divergence: divergence, curl: curl, dye: dye, texType: texType };
-
-  // Seed initial ink splats
-  for (var s = 0; s < 6; s++) {
-    fluidSplatRandom();
-  }
-
-  // Verify framebuffer is working
-  var check = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-  fluidReady = true;
-  console.log('Fluid sim ready — texType:', texType === gl.UNSIGNED_BYTE ? 'byte' : 'half');
-  return true;
-  } catch(err) {
-    console.error('Fluid sim init error:', err);
-    fluidReady = false;
+    fluidSim = { progs: progs, vel: vel, dye: dye, curl: curl,
+                 texType: texType, useBias: useBias };
+    fluidReady = true;
+    console.log('Fluid sim ready, useBias:', useBias, 'texType:', texType === gl.UNSIGNED_BYTE ? 'byte' : 'half');
+    return true;
+  } catch(e) {
+    console.error('Fluid init failed:', e);
     return false;
   }
 }
 
-function fluidBind(unit, fbo) {
-  gl.activeTexture(gl.TEXTURE0 + unit);
-  gl.bindTexture(gl.TEXTURE_2D, fbo.tex);
-  return unit;
-}
-
-function fluidSplat(x, y, dx, dy, color, radius) {
+// ── Splat helper ─────────────────────────────────────────────────
+function fSplat(x, y, vx, vy, color, r, isVel) {
   var sim = fluidSim;
-  var lv;
+  var locs = fluidUse(sim.progs.splat);
+  gl.uniform1f(locs.u_bias,  sim.useBias);
+  gl.uniform1f(locs.u_isVel, isVel ? 1.0 : 0.0);
 
-  // Velocity splat (signed, encoded as 0.5 + v*0.5)
-  lv = fluidUse(sim.progs.splat);
-  gl.uniform2f(lv.u_res,    SIM_W, SIM_H);
-  gl.uniform2f(lv.u_point,  x * SIM_W, y * SIM_H);
-  gl.uniform3f(lv.u_color,  dx, dy, 0.0);  // raw signed velocity
-  gl.uniform1f(lv.u_radius, radius * 0.5);
-  gl.uniform1f(lv.u_isVel,  1.0);
-  gl.uniform1i(lv.u_src,    fluidBind(0, sim.velocity.read));
-  fluidBlit(sim.velocity.write);
-  sim.velocity.swap();
-
-  // Dye splat (unsigned 0-1 color)
-  lv = fluidUse(sim.progs.splat);
-  gl.uniform2f(lv.u_res,    DYE_W, DYE_H);
-  gl.uniform2f(lv.u_point,  x * DYE_W, y * DYE_H);
-  gl.uniform3f(lv.u_color,  color[0], color[1], color[2]);
-  gl.uniform1f(lv.u_radius, radius);
-  gl.uniform1f(lv.u_isVel,  0.0);
-  gl.uniform1i(lv.u_src,    fluidBind(0, sim.dye.read));
-  fluidBlit(sim.dye.write);
-  sim.dye.swap();
+  if (isVel) {
+    gl.uniform2f(locs.u_pt,  x, y);
+    gl.uniform3f(locs.u_val, vx, vy, 0);
+    gl.uniform1f(locs.u_r,   r);
+    gl.uniform1i(locs.u_src, fluidBindTex(0, sim.vel.read));
+    fluidBlit(sim.vel.write, SIM_RES, SIM_RES);
+    sim.vel.swap();
+  } else {
+    gl.uniform2f(locs.u_pt,  x, y);
+    gl.uniform3f(locs.u_val, color[0], color[1], color[2]);
+    gl.uniform1f(locs.u_r,   r);
+    gl.uniform1i(locs.u_src, fluidBindTex(0, sim.dye.read));
+    fluidBlit(sim.dye.write, DYE_RES, DYE_RES);
+    sim.dye.swap();
+  }
 }
 
-// Continuous side injection state
-var fluidSplatIdx    = 0;
-var fluidStreamPhase = 0; // oscillates stream injection points
-
-function fluidGetColor(idx) {
-  var palIdx = idx % 6;
-  var col = themeRgbPalette[palIdx] || [80, 120, 255];
-  var mx = Math.max(col[0], col[1], col[2]) || 1;
-  var sc = 0.38 / mx;
-  return [col[0] * sc, col[1] * sc, col[2] * sc];
-}
-
-var fluidInjectFrame = 0;
-function fluidInjectSides() {
-  fluidInjectFrame++;
-  if (fluidInjectFrame % 6 !== 0) return;
-  fluidStreamPhase += 0.015;
-
+// ── Inject from sides ────────────────────────────────────────────
+function fluidInject() {
+  fluidPhase += 0.012;
   var streams = 3;
   for (var i = 0; i < streams; i++) {
     var base = (i + 1) / (streams + 1);
-    var yOff = Math.sin(fluidStreamPhase * 0.5 + i * 1.2) * 0.07;
-    var y    = Math.max(0.08, Math.min(0.92, base + yOff));
+    var y = Math.max(0.08, Math.min(0.92, base + Math.sin(fluidPhase * 0.5 + i * 1.3) * 0.07));
+    var spd = 0.28 + Math.sin(fluidPhase * 0.3 + i * 1.5) * 0.05;
 
-    var spd = 0.28 + Math.sin(fluidStreamPhase * 0.3 + i * 1.5) * 0.05;
+    // Get theme palette colors — cool for left, warm for right
+    var ci = (Math.floor(fluidPhase * 0.2 + i) % 3);
+    var colL = themeRgbPalette[ci] || [0, 120, 255];
+    var colR = themeRgbPalette[ci + 3] || [255, 80, 0];
+    var scL = 0.4 / (Math.max(colL[0],colL[1],colL[2]) || 1);
+    var scR = 0.4 / (Math.max(colR[0],colR[1],colR[2]) || 1);
 
-    // LEFT side: positive x velocity → flows toward screen centre (rightward)
-    var colL = fluidGetColor(fluidSplatIdx + i);
-    fluidSplat(0.02, y, spd, 0.0, colL, 0.038);
+    // Velocity: left shoots right (+x), right shoots left (-x)
+    fSplat(0.02, y,  spd, 0, null, 0.07, true);
+    fSplat(0.02, y,  0,   0, [colL[0]*scL/255, colL[1]*scL/255, colL[2]*scL/255], 0.07, false);
 
-    // RIGHT side: negative x velocity → flows toward screen centre (leftward)
-    var colR = fluidGetColor(fluidSplatIdx + i + 3);
-    fluidSplat(0.98, y, -spd, 0.0, colR, 0.038);
+    fSplat(0.98, y, -spd, 0, null, 0.07, true);
+    fSplat(0.98, y,  0,   0, [colR[0]*scR/255, colR[1]*scR/255, colR[2]*scR/255], 0.07, false);
   }
-  fluidSplatIdx += 2;
 }
 
-// Legacy: called on init for initial seeding
-function fluidSplatRandom() {
-  var x = 0.15 + Math.random() * 0.70;
-  var y = 0.15 + Math.random() * 0.70;
-  var dx = (Math.random() - 0.5) * 0.3;
-  var dy = (Math.random() - 0.5) * 0.1;
-  var col = fluidGetColor(fluidSplatIdx++);
-  fluidSplat(x, y, dx, dy, col, 0.12);
-}
-
-function stepFluidSim() {
+// ── Step the sim one frame ────────────────────────────────────────
+function stepFluid() {
   if (!fluidReady || !fluidSim || !gl) return;
   var sim = fluidSim;
-  var locs;
-  var dt = 0.016 * (animSpeed > 0 ? Math.min(animSpeed, 2) : 0);
+  var dt  = 0.016 * (animSpeed > 0 ? Math.min(animSpeed, 2.0) : 0);
   if (dt <= 0) return;
 
-  // ── 1. Inject from sides FIRST (before advection) ────────────────────────
-  fluidInjectSides();
+  try {
+    fluidFrame++;
+    // Inject every 5 frames
+    if (fluidFrame % 5 === 0) fluidInject();
 
-  // ── 2. Vorticity curl ─────────────────────────────────────────────────────
-  locs = fluidUse(sim.progs.curl);
-  gl.uniform2f(locs.u_res, SIM_W, SIM_H);
-  gl.uniform1i(locs.u_vel, fluidBind(0, sim.velocity.read));
-  fluidBlit(sim.curl);
+    var locs;
 
-  // ── 3. Vorticity confinement (amplify swirls) ─────────────────────────────
-  locs = fluidUse(sim.progs.vorticity);
-  gl.uniform2f(locs.u_res,      SIM_W, SIM_H);
-  gl.uniform1f(locs.u_strength, 22.0);
-  gl.uniform1f(locs.u_dt,       dt);
-  gl.uniform1i(locs.u_vel,      fluidBind(0, sim.velocity.read));
-  gl.uniform1i(locs.u_curl,     fluidBind(1, sim.curl));
-  fluidBlit(sim.velocity.write);
-  sim.velocity.swap();
+    // 1. Curl
+    locs = fluidUse(sim.progs.curl);
+    gl.uniform1i(locs.u_vel,  fluidBindTex(0, sim.vel.read));
+    gl.uniform2f(locs.u_px,   1/SIM_RES, 1/SIM_RES);
+    gl.uniform1f(locs.u_bias, sim.useBias);
+    fluidBlit(sim.curl, SIM_RES, SIM_RES);
 
-  // ── 4. Advect velocity (self-advection gives inertia) ─────────────────────
-  locs = fluidUse(sim.progs.advect);
-  gl.uniform2f(locs.u_res,   SIM_W, SIM_H);
-  gl.uniform1f(locs.u_dt,    dt);
-  gl.uniform1f(locs.u_decay, 0.990);  // velocity damps over time
-  gl.uniform1i(locs.u_vel,   fluidBind(0, sim.velocity.read));
-  gl.uniform1i(locs.u_src,   fluidBind(1, sim.velocity.read));
-  fluidBlit(sim.velocity.write);
-  sim.velocity.swap();
+    // 2. Vorticity confinement
+    locs = fluidUse(sim.progs.vort);
+    gl.uniform1i(locs.u_vel,  fluidBindTex(0, sim.vel.read));
+    gl.uniform1i(locs.u_curl, fluidBindTex(1, sim.curl));
+    gl.uniform2f(locs.u_px,   1/SIM_RES, 1/SIM_RES);
+    gl.uniform1f(locs.u_str,  20.0);
+    gl.uniform1f(locs.u_dt,   dt);
+    gl.uniform1f(locs.u_bias, sim.useBias);
+    fluidBlit(sim.vel.write, SIM_RES, SIM_RES);
+    sim.vel.swap();
 
-  // ── 5. Advect dye through velocity field ──────────────────────────────────
-  locs = fluidUse(sim.progs.advect);
-  gl.uniform2f(locs.u_res,   DYE_W, DYE_H);
-  gl.uniform1f(locs.u_dt,    dt);
-  gl.uniform1f(locs.u_decay, 0.991);
-  gl.uniform1i(locs.u_vel,   fluidBind(0, sim.velocity.read));
-  gl.uniform1i(locs.u_src,   fluidBind(1, sim.dye.read));
-  fluidBlit(sim.dye.write);
-  sim.dye.swap();
+    // 3. Self-advect velocity
+    locs = fluidUse(sim.progs.advect);
+    gl.uniform1i(locs.u_vel,   fluidBindTex(0, sim.vel.read));
+    gl.uniform1i(locs.u_src,   fluidBindTex(1, sim.vel.read));
+    gl.uniform1f(locs.u_dt,    dt);
+    gl.uniform1f(locs.u_decay, 0.990);
+    gl.uniform1f(locs.u_bias,  sim.useBias);
+    fluidBlit(sim.vel.write, SIM_RES, SIM_RES);
+    sim.vel.swap();
+
+    // 4. Advect dye (dye has no bias — always [0,1])
+    locs = fluidUse(sim.progs.advect);
+    gl.uniform1i(locs.u_vel,   fluidBindTex(0, sim.vel.read));
+    gl.uniform1i(locs.u_src,   fluidBindTex(1, sim.dye.read));
+    gl.uniform1f(locs.u_dt,    dt);
+    gl.uniform1f(locs.u_decay, 0.992);
+    gl.uniform1f(locs.u_bias,  0.0);
+    fluidBlit(sim.dye.write, DYE_RES, DYE_RES);
+    sim.dye.swap();
+
+  } catch(e) {
+    console.error('Fluid step error:', e.message);
+    fluidReady = false;
+  }
 }
 
+// ── Render fluid to screen ────────────────────────────────────────
 function renderGLInkFluid() {
   if (!fluidReady || !fluidSim) {
+    // Fallback
     if (glProgInk) glRenderFrame(glProgInk, glInkLocs);
     return;
   }
   try {
-  stepFluidSim();
-  var sim = fluidSim;
-
-  // Display dye on screen
-  var locs = fluidUse(sim.progs.display);
-  gl.uniform2f(locs.u_res, glCanvas.width, glCanvas.height);
-  var bg0 = hexToVec3(nebulaBackground[0]);
-  var bg1 = hexToVec3(nebulaBackground[1]);
-  var bg2 = hexToVec3(nebulaBackground[2]);
-  gl.uniform3fv(locs.u_bg0, bg0);
-  gl.uniform3fv(locs.u_bg1, bg1);
-  gl.uniform3fv(locs.u_bg2, bg2);
-  gl.uniform1i(locs.u_dye, fluidBind(0, sim.dye.read));
-  fluidBlit(null);
-  } catch(err) {
-    console.error('Fluid render error:', err.message);
-    fluidReady = false; // stop trying, fall back silently
+    stepFluid();
+    var sim  = fluidSim;
+    var locs = fluidUse(sim.progs.display);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+    var bg = nebulaBackground[1] || '#03010e';
+    var br = parseInt(bg.slice(1,3),16)/255;
+    var bg2= parseInt(bg.slice(3,5),16)/255;
+    var bb = parseInt(bg.slice(5,7),16)/255;
+    gl.uniform3f(locs.u_bg, br, bg2, bb);
+    gl.uniform1i(locs.u_dye, fluidBindTex(0, sim.dye.read));
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  } catch(e) {
+    console.error('Fluid render error:', e.message);
+    fluidReady = false;
     if (glProgInk) glRenderFrame(glProgInk, glInkLocs);
   }
 }
@@ -2721,7 +2579,6 @@ function initWebGL() {
     // Independent failures — one bad shader doesn't kill the rest
     if (!glProgAurora && !glProgInk && !glProgNebula) { gl = null; return false; }
     if (!glProgAurora) console.warn('Aurora shader failed');
-    if (!glProgInk)    console.warn('Ink shader failed');
     if (!glProgNebula) console.warn('Nebula shader failed');
 
     glAuroraLocs = glCacheUniforms(glProgAurora);
@@ -2798,7 +2655,7 @@ function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
 // ── Init on load ──────────────────────────────────────────────────────────
 glSupported = initWebGL();
-if (glSupported) { if (!initFluidSim()) console.warn("Fluid sim init failed"); }
+if (glSupported) initFluidSim();
 
 // ─── CLOCK ────────────────────────────────────────────────────────────────────
 function updateClock(format24h) {
