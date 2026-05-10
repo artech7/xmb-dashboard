@@ -801,6 +801,8 @@ resize();
 animLoop();
 
 
+
+
 // ═══════════════════════════════════════════════════════════
 // ANIMATION MODES
 // Each draw function uses: ctx, W, H, t, accentRgb, nebulaBackground
@@ -2128,6 +2130,82 @@ var GL_INK_FRAG = [
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
   '}'
 ].join('\n');
+
+var GL_NEBULA_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float fbm(vec2 p){float v=0.0,a=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(1.70,9.20);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(3.51,4.37);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(7.13,2.84);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(2.29,6.71);a*=0.5;',
+  '  v+=a*vn(p);return v;}',
+  'vec2 fbm2(vec2 p){return vec2(fbm(p),fbm(p+vec2(5.2,1.3)));}',
+  'float cloudBlob(vec2 uv,vec2 pos,float r,float asp,float ws){',
+  '  vec2 d=uv-pos;d.x*=asp;',
+  '  vec2 wp=uv*3.5+vec2(1.7,9.2);',
+  '  vec2 warp=vec2(fbm(wp),fbm(wp+vec2(5.2,1.3)))*ws;',
+  '  vec2 dw=d+warp;',
+  '  float rC=exp(-dot(d,d)/(r*r*0.38));',
+  '  float rW=exp(-dot(dw,dw)/(r*r*0.55));',
+  '  return mix(rC,rW,0.65);}',
+  'float sf(vec2 uv,float sc,vec2 off){',
+  '  vec2 g=floor(uv*sc+off);float v=h2(g);',
+  '  float isStar=step(0.988,v);',
+  '  float sz=0.04+h2(g+vec2(41.2,73.1))*0.07;',
+  '  float d=length(fract(uv*sc+off)-0.5)*2.0;',
+  '  float shim=0.84+0.12*sin(u_time*0.0016*(0.5+v)+v*43.7);',
+  '  return isStar*(1.0-smoothstep(0.0,sz,d))*(0.45+v*0.50)*shim;}',
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  '  float t=u_time*0.000040;',
+  '  float asp=u_res.x/u_res.y;',
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
+  '  float p=0.88+0.12*sin(u_time*0.00015);',
+  '  float g0=cloudBlob(uv,vec2(0.18+sin(t*0.70)*0.055,0.28+cos(t*0.50)*0.048),0.58,asp,0.11)*0.40;',
+  '  float g1=cloudBlob(uv,vec2(0.72+sin(t*0.50+1.1)*0.055,0.22+cos(t*0.36+1.1)*0.048),0.52,asp,0.09)*0.34;',
+  '  float g2=cloudBlob(uv,vec2(0.55+sin(t*0.60+2.3)*0.055,0.63+cos(t*0.43+2.3)*0.048),0.62,asp,0.13)*0.30;',
+  '  float g3=cloudBlob(uv,vec2(0.12+sin(t*0.80+0.7)*0.055,0.66+cos(t*0.57+0.7)*0.048),0.47,asp,0.10)*0.24;',
+  '  float g4=cloudBlob(uv,vec2(0.82+sin(t*0.55+3.1)*0.055,0.68+cos(t*0.39+3.1)*0.048),0.52,asp,0.12)*0.32;',
+  '  float g5=cloudBlob(uv,vec2(0.40+sin(t*0.30+1.8)*0.055,0.42+cos(t*0.21+1.8)*0.048),0.68,asp,0.08)*0.20;',
+  '  float density=g0+g1+g2+g3+g4+g5;',
+  '  col+=u_c0*g0*p*u_intensity;',
+  '  col+=u_c1*g1*p*u_intensity;',
+  '  col+=u_c2*g2*p*u_intensity;',
+  '  col+=u_c3*g3*p*u_intensity;',
+  '  col+=u_c4*g4*p*u_intensity;',
+  '  col+=u_c5*g5*p*u_intensity;',
+  '  float wt=u_time*0.000025;',
+  '  vec2 wuv=uv*2.8+vec2(wt,wt*0.7);',
+  '  vec2 wq=vec2(fbm(wuv+vec2(1.7,9.2)),fbm(wuv+vec2(9.2,1.7)));',
+  '  float wisp=max(0.0,fbm(wuv+2.5*wq)-0.42)*density*1.8;',
+  '  col+=mix(mix(u_c0,u_c2,0.4),u_c4,0.3)*wisp*0.35*u_intensity;',
+  '  col+=u_c0*exp(-dot(uv-0.5,uv-0.5)*3.2)*0.06*u_intensity;',
+  '  col+=sf(uv,280.0,vec2(0.0,0.0))*0.60;',
+  '  col+=sf(uv,160.0,vec2(57.3,83.7))*0.75;',
+  '  col+=sf(uv,90.0,vec2(31.1,47.9))*0.90;',
+  '  float bh=h2(floor(uv*60.0)+vec2(89.3,13.5));',
+  '  col+=mix(vec3(1.0),vec3(0.75,0.88,1.0),step(0.55,bh))*sf(uv,60.0,vec2(89.3,13.5))*1.0;',
+  '  float cs1=sf(uv,220.0,vec2(13.7,52.1))*density*3.5;',
+  '  float cs2=sf(uv,140.0,vec2(71.3,28.9))*density*2.8;',
+  '  col+=mix(vec3(1.0),mix(u_c0,u_c2,0.5),0.35)*(cs1+cs2);',
+  '  float dustT=u_time*0.000008;',
+  '  vec2 duv=uv*1.9+vec2(dustT,0.0);',
+  '  float dust=fbm(duv+vec2(fbm(duv+vec2(2.1,4.7))*0.5,0.0));',
+  '  col*=1.0-smoothstep(0.52,0.42,dust)*density*0.22;',
+  '  vec2 vc=uv-0.5;',
+  '  col*=1.0-dot(vc,vc)*1.55;',
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}',
+].join('\n');
+
 
 
 // ── Compile a shader ──────────────────────────────────────────────────────
