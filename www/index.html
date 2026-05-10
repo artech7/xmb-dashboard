@@ -1977,97 +1977,104 @@ var GL_AURORA_FRAG = [
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
 
-  'float hash2(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
-  'float noise(vec2 p){',
-  '  vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
-  '  return mix(mix(hash2(i),hash2(i+vec2(1,0)),f.x),',
-  '             mix(hash2(i+vec2(0,1)),hash2(i+vec2(1,1)),f.x),f.y);',
-  '}',
-  'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p=p*2.1+vec2(1.7,9.2);a*=0.5;}return v;}',
+  // Hash + value noise
+  'float h2(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
+  'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
 
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float t=u_time*0.00025;',
+  '  float t=u_time*0.00022;',
 
-  // ── Night sky background ─────────────────────────────────
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.4),uv.y);',
+  // Background
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.3),uv.y*0.8+0.2);',
 
-  // ── Stars ───────────────────────────────────────────────
-  '  for(int i=0;i<3;i++){',
-  '    float sc=180.0+float(i)*110.0;',
-  '    vec2 sp=floor(uv*sc);float s=hash2(sp+float(i)*19.3);',
-  '    if(s>0.991){',
-  '      float d=length(fract(uv*sc)-0.5)*2.0;',
-  '      float tw=0.4+0.6*sin(u_time*(0.002+s*0.009)+s*6.28);',
-  '      col+=(1.0-smoothstep(0.0,0.55,d))*tw*0.6;',
-  '    }',
-  '  }',
+  // Stars — manually unrolled, no loop, no diagonal artifacts
+  // Fine stars
+  '  vec2 sg1=floor(uv*190.0);float sv1=h2(sg1+vec2(3.71,11.23));',
+  '  float sd1=length(fract(uv*190.0)-0.5)*2.0;',
+  '  float st1=step(0.991,sv1)*(1.0-smoothstep(0.0,0.55,sd1))*(0.4+0.6*sin(u_time*0.0025+sv1*20.0));',
+  // Medium stars
+  '  vec2 sg2=floor(uv*110.0);float sv2=h2(sg2+vec2(17.31,5.87));',
+  '  float sd2=length(fract(uv*110.0)-0.5)*2.0;',
+  '  float st2=step(0.989,sv2)*(1.0-smoothstep(0.0,0.5,sd2))*(0.5+0.5*sin(u_time*0.0038+sv2*15.0));',
+  // Bright stars with tiny halo
+  '  vec2 sg3=floor(uv*60.0);float sv3=h2(sg3+vec2(8.13,23.47));',
+  '  float sd3=length(fract(uv*60.0)-0.5)*2.0;',
+  '  float st3=step(0.994,sv3)*(1.0-smoothstep(0.0,0.45,sd3))*(0.7+0.3*sin(u_time*0.005+sv3*12.0));',
+  '  col+=vec3(st1*0.7+st2*0.9+st3*1.1);',
 
-  // ── Aurora: broad continuous field ──────────────────────
-  // The aurora fills the upper 70% of screen
-  // Key insight: sample noise with LOW x-freq, HIGH y-freq → vertical rays
-  '  float ATOP=0.04,ABOT=0.76;',
-  '  float av=(uv.y-ATOP)/(ABOT-ATOP);', // 0=top 1=bottom hem
-  '  float vMask=smoothstep(-0.04,0.12,av)*smoothstep(1.12,0.82,av);',
+  // ── AURORA ───────────────────────────────────────────────
+  // Correct approach:
+  // 1. Compute horizontal fold displacement from uv.y alone
+  // 2. Apply fold to uv.x to get displaced x
+  // 3. Sample ray noise at HIGH x-frequency using displaced x
+  // 4. This keeps rays vertical — no diagonal artifacts
 
-  // ── Layer 1: primary curtain ─────────────────────────────
-  // Horizontal wave — the curtain folding in the wind
-  '  float wx1=sin(uv.y*2.8+t*5.5)*0.09',
-  '           +sin(uv.y*6.5+t*9.0)*0.035',
-  '           +sin(uv.y*13.0+t*6.0)*0.012;',
-  // Ray texture: HIGH x-frequency (many narrow rays), LOW y-frequency
-  '  vec2 rUV1=vec2((uv.x+wx1)*3.2,uv.y*0.18+t*0.14);',
-  '  float rays1=fbm(rUV1);',
-  // Large-scale fold bands (horizontal variation in curtain position)
-  '  float fold1=fbm(vec2(uv.x*1.1+t*0.40,t*0.22))*0.38',
-  '             +fbm(vec2(uv.x*2.5+t*0.65,uv.y*0.9+t*0.18))*0.18;',
-  '  float d1=pow(max(0.0,rays1*(0.55+fold1)),0.75)*vMask;',
-  '  float sh1=0.60+0.40*sin(t*16.0+uv.x*22.0+uv.y*7.0);',
-  '  d1*=sh1;',
+  // Vertical mask: aurora fills top portion of screen
+  '  float av=(uv.y-0.05)/0.70;', // 0=top, 1=bottom hem at 75% height
+  '  float vMask=smoothstep(-0.06,0.14,av)*smoothstep(1.10,0.78,av);',
+  '  float hemBoost=pow(clamp(av,0.0,1.0),0.6);', // brighter toward bottom hem
 
-  // ── Layer 2: secondary curtain (different speed+offset) ──
-  '  float wx2=sin(uv.y*2.2+t*4.2+1.8)*0.11',
-  '           +sin(uv.y*5.8+t*7.5+0.9)*0.042;',
-  '  vec2 rUV2=vec2((uv.x+wx2+0.28)*2.8,uv.y*0.15+t*0.095);',
-  '  float rays2=fbm(rUV2);',
-  '  float fold2=fbm(vec2(uv.x*1.4+t*0.30+2.1,t*0.17+1.3))*0.30;',
-  '  float d2=pow(max(0.0,rays2*(0.45+fold2)),0.82)*vMask*0.72;',
-  '  float sh2=0.65+0.35*sin(t*13.0+uv.x*17.0+uv.y*5.0+2.5);',
-  '  d2*=sh2;',
+  // Fold displacement — the curtain waves in the wind
+  // IMPORTANT: only depends on uv.y and t, NOT uv.x
+  // This keeps rays vertical
+  '  float fold=sin(uv.y*2.4+t*5.0)*0.10',
+  '            +sin(uv.y*5.5+t*7.5)*0.040',
+  '            +sin(uv.y*11.0+t*11.0)*0.015;',
+  '  float fx=uv.x+fold;', // displaced x coordinate
 
-  // ── Layer 3: deep background glow ───────────────────────
-  '  float d3=fbm(vec2(uv.x*0.9+t*0.22,uv.y*0.5+t*0.12))*vMask*0.45;',
+  // Second layer fold (different speed)
+  '  float fold2=sin(uv.y*2.0+t*4.2+1.8)*0.11',
+  '             +sin(uv.y*4.8+t*6.8+0.9)*0.045;',
+  '  float fx2=uv.x+fold2;',
 
-  // ── Color: height-based gradient like real aurora ────────
-  // hf=1 at bottom hem (bright primary), hf=0 at top (dim secondary/purple)
-  '  float hf=1.0-av;',
-  // Bottom hem = primary theme color (usually the most vivid)
-  // Mid = blend to secondary
-  // Top = tertiary/purple/dim
-  '  vec3 hemCol =u_c0;',                // bright hem color
-  '  vec3 midCol =mix(u_c1,u_c2,0.5);', // mid curtain
-  '  vec3 tipCol =mix(u_c3,u_c4,0.5);', // tips (usually dimmer/purple)
-  '  vec3 aCol=mix(tipCol,mix(midCol,hemCol,hf*hf),hf);',
+  // Ray texture layer 1: sample at high x-freq, low y-freq
+  // fx*8 gives ~8 rays across screen width, y*0.5 makes them tall
+  '  float r1a=vnoise(vec2(fx*8.0+t*0.55, uv.y*0.5+t*0.15));',
+  '  float r1b=vnoise(vec2(fx*16.0+t*0.9, uv.y*1.0+t*0.25));',
+  '  float r1c=vnoise(vec2(fx*32.0+t*1.4, uv.y*2.0+t*0.40));',
+  '  float rays1=r1a*0.55+r1b*0.30+r1c*0.15;',
+  '  rays1=pow(max(0.0,rays1),0.85);',
 
-  // Bleach toward white at peak brightness (real aurora has white cores)
-  '  vec3 bright1=mix(aCol,vec3(1.0),d1*d1*0.55);',
-  '  vec3 bright2=mix(aCol*0.8,mix(u_c1,u_c5,0.4),d2*0.4);',
+  // Ray texture layer 2
+  '  float r2a=vnoise(vec2(fx2*7.0+t*0.40+3.1, uv.y*0.5+t*0.11));',
+  '  float r2b=vnoise(vec2(fx2*14.0+t*0.70, uv.y*1.0+t*0.20));',
+  '  float rays2=r2a*0.60+r2b*0.40;',
+  '  rays2=pow(max(0.0,rays2),0.90);',
 
-  '  col+=bright1*d1*u_intensity*1.55;',
-  '  col+=bright2*d2*u_intensity*0.70;',
-  '  col+=midCol*d3*u_intensity*0.28;',
+  // Overall brightness modulation (slow large-scale pulsing)
+  '  float pulse=0.70+0.30*sin(t*7.0+uv.x*4.0);',
+  '  float pulse2=0.75+0.25*sin(t*5.5+uv.x*3.0+1.5);',
 
-  // ── Pulsing glow: whole aurora breathes ─────────────────
-  '  float pulse=0.85+0.15*sin(t*8.0+uv.x*3.0);',
-  '  col*=1.0+0.12*(d1+d2*0.5)*pulse*u_intensity;',
+  // Final intensity per layer
+  '  float d1=rays1*vMask*hemBoost*pulse;',
+  '  float d2=rays2*vMask*hemBoost*pulse2*0.70;',
 
-  // ── Horizon glow reflected from aurora ──────────────────
-  '  float gnd=smoothstep(0.80,1.0,uv.y)*(d1*0.5+d3)*0.18;',
-  '  col+=hemCol*gnd*u_intensity;',
+  // Background aurora glow (broad, no ray detail — fills gaps)
+  '  float bgGlow=vnoise(vec2(uv.x*1.8+t*0.3,uv.y*0.4+t*0.1))*vMask*0.35;',
 
-  // ── Vignette ────────────────────────────────────────────
+  // Color: height-based
+  // Bottom hem: primary (c0), Mid: secondary (c1/c2), Tips: c3/c4
+  '  float hf=1.0-av;', // 1 at bottom, 0 at top
+  '  vec3 hemCol=u_c0;',
+  '  vec3 midCol=mix(u_c1,u_c2,0.4);',
+  '  vec3 tipCol=mix(u_c3,u_c4,0.5);',
+  '  vec3 aCol=mix(tipCol,mix(midCol,hemCol,hf*hf*1.2),smoothstep(0.0,0.6,hf));',
+  // White bleaching at the brightest ray cores
+  '  vec3 bright1=mix(aCol,vec3(1.0),d1*d1*0.60);',
+  '  vec3 bright2=mix(mix(aCol,u_c1,0.4),vec3(1.0),d2*d2*0.35);',
+
+  '  col+=bright1*d1*u_intensity*1.65;',
+  '  col+=bright2*d2*u_intensity*0.75;',
+  '  col+=aCol*bgGlow*u_intensity*0.30;',
+
+  // Horizon glow from aurora reflection
+  '  col+=hemCol*smoothstep(0.82,1.0,uv.y)*(d1*0.6+bgGlow)*u_intensity*0.20;',
+
+  // Vignette
   '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(1.0,0.75),vc*vec2(1.0,0.75))*1.3;',
+  '  col*=1.0-dot(vc*vec2(1.0,0.72),vc*vec2(1.0,0.72))*1.25;',
 
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
   '}'
