@@ -2059,6 +2059,7 @@ var FL_VERT = [
 ].join('\n');
 
 // Advection: move quantity along velocity field
+// Velocity stored as (v*0.5+0.5) to allow signed values in UNSIGNED_BYTE textures
 var FL_ADVECT = [
   'precision highp float;',
   'uniform sampler2D u_vel;',
@@ -2068,13 +2069,13 @@ var FL_ADVECT = [
   'uniform float u_decay;',
   'varying vec2 v_uv;',
   'void main(){',
-  '  vec2 vel=texture2D(u_vel,v_uv).xy;',
+  '  vec2 vel=(texture2D(u_vel,v_uv).xy-0.5)*2.0;',// decode signed velocity
   '  vec2 pos=v_uv-vel*u_dt/u_res;',
   '  gl_FragColor=texture2D(u_src,pos)*u_decay;',
   '}'
 ].join('\n');
 
-// Splat: add a gaussian blob of velocity or dye
+// Splat: add gaussian blob; u_isVel=1 for velocity (signed), 0 for dye
 var FL_SPLAT = [
   'precision highp float;',
   'uniform sampler2D u_src;',
@@ -2082,17 +2083,26 @@ var FL_SPLAT = [
   'uniform vec2 u_point;',
   'uniform vec3 u_color;',
   'uniform float u_radius;',
+  'uniform float u_isVel;',
   'varying vec2 v_uv;',
   'void main(){',
   '  vec2 p=v_uv-u_point/u_res;',
   '  p.x*=u_res.x/u_res.y;',
   '  float splat=exp(-dot(p,p)/(u_radius*u_radius));',
   '  vec3 base=texture2D(u_src,v_uv).rgb;',
-  '  gl_FragColor=vec4(base+u_color*splat,1.0);',
+  '  if(u_isVel>0.5){',
+  // Velocity stored as 0.5+v*0.5, base already encoded, add scaled splat
+  '    vec3 baseDecoded=(base-0.5)*2.0;',
+  '    vec3 result=baseDecoded+u_color*splat;',
+  '    result=clamp(result,-1.0,1.0);',
+  '    gl_FragColor=vec4(result*0.5+0.5,1.0);',
+  '  } else {',
+  '    gl_FragColor=vec4(clamp(base+u_color*splat,0.0,1.0),1.0);',
+  '  }',
   '}'
 ].join('\n');
 
-// Divergence of velocity field
+// Divergence of velocity field (decode signed velocity first)
 var FL_DIV = [
   'precision highp float;',
   'uniform sampler2D u_vel;',
@@ -2100,15 +2110,15 @@ var FL_DIV = [
   'varying vec2 v_uv;',
   'void main(){',
   '  vec2 e=1.0/u_res;',
-  '  float l=texture2D(u_vel,v_uv-vec2(e.x,0)).x;',
-  '  float r=texture2D(u_vel,v_uv+vec2(e.x,0)).x;',
-  '  float b=texture2D(u_vel,v_uv-vec2(0,e.y)).y;',
-  '  float t=texture2D(u_vel,v_uv+vec2(0,e.y)).y;',
-  '  gl_FragColor=vec4(0.5*(r-l+t-b),0,0,1);',
+  '  float l=(texture2D(u_vel,v_uv-vec2(e.x,0)).x-0.5)*2.0;',
+  '  float r=(texture2D(u_vel,v_uv+vec2(e.x,0)).x-0.5)*2.0;',
+  '  float b=(texture2D(u_vel,v_uv-vec2(0,e.y)).y-0.5)*2.0;',
+  '  float t=(texture2D(u_vel,v_uv+vec2(0,e.y)).y-0.5)*2.0;',
+  '  gl_FragColor=vec4(0.5*(r-l+t-b)*0.5+0.5,0.5,0.5,1.0);',// store encoded
   '}'
 ].join('\n');
 
-// Pressure solve (Jacobi iteration)
+// Pressure solve (Jacobi) — signed values encoded as 0.5+v*0.5
 var FL_PRESSURE = [
   'precision highp float;',
   'uniform sampler2D u_pressure;',
@@ -2117,16 +2127,17 @@ var FL_PRESSURE = [
   'varying vec2 v_uv;',
   'void main(){',
   '  vec2 e=1.0/u_res;',
-  '  float l=texture2D(u_pressure,v_uv-vec2(e.x,0)).x;',
-  '  float r=texture2D(u_pressure,v_uv+vec2(e.x,0)).x;',
-  '  float b=texture2D(u_pressure,v_uv-vec2(0,e.y)).x;',
-  '  float t=texture2D(u_pressure,v_uv+vec2(0,e.y)).x;',
-  '  float d=texture2D(u_div,v_uv).x;',
-  '  gl_FragColor=vec4((l+r+b+t-d)*0.25,0,0,1);',
+  '  float l=(texture2D(u_pressure,v_uv-vec2(e.x,0)).x-0.5)*2.0;',
+  '  float r=(texture2D(u_pressure,v_uv+vec2(e.x,0)).x-0.5)*2.0;',
+  '  float b=(texture2D(u_pressure,v_uv-vec2(0,e.y)).x-0.5)*2.0;',
+  '  float t=(texture2D(u_pressure,v_uv+vec2(0,e.y)).x-0.5)*2.0;',
+  '  float d=(texture2D(u_div,v_uv).x-0.5)*2.0;',
+  '  float p=(l+r+b+t-d)*0.25;',
+  '  gl_FragColor=vec4(p*0.5+0.5,0.5,0.5,1.0);',
   '}'
 ].join('\n');
 
-// Subtract pressure gradient from velocity
+// Subtract pressure gradient from velocity (decode/encode signed values)
 var FL_GRAD = [
   'precision highp float;',
   'uniform sampler2D u_vel;',
@@ -2135,17 +2146,18 @@ var FL_GRAD = [
   'varying vec2 v_uv;',
   'void main(){',
   '  vec2 e=1.0/u_res;',
-  '  float pl=texture2D(u_pressure,v_uv-vec2(e.x,0)).x;',
-  '  float pr=texture2D(u_pressure,v_uv+vec2(e.x,0)).x;',
-  '  float pb=texture2D(u_pressure,v_uv-vec2(0,e.y)).x;',
-  '  float pt=texture2D(u_pressure,v_uv+vec2(0,e.y)).x;',
-  '  vec2 vel=texture2D(u_vel,v_uv).xy;',
+  '  float pl=(texture2D(u_pressure,v_uv-vec2(e.x,0)).x-0.5)*2.0;',
+  '  float pr=(texture2D(u_pressure,v_uv+vec2(e.x,0)).x-0.5)*2.0;',
+  '  float pb=(texture2D(u_pressure,v_uv-vec2(0,e.y)).x-0.5)*2.0;',
+  '  float pt=(texture2D(u_pressure,v_uv+vec2(0,e.y)).x-0.5)*2.0;',
+  '  vec2 vel=(texture2D(u_vel,v_uv).xy-0.5)*2.0;',
   '  vel-=vec2(pr-pl,pt-pb)*0.5;',
-  '  gl_FragColor=vec4(vel,0,1);',
+  '  vel=clamp(vel,-1.0,1.0);',
+  '  gl_FragColor=vec4(vel*0.5+0.5,0.5,1.0);',// encode back
   '}'
 ].join('\n');
 
-// Curl (vorticity) — adds swirl to the velocity field
+// Curl (vorticity) — decode signed velocity first
 var FL_CURL = [
   'precision highp float;',
   'uniform sampler2D u_vel;',
@@ -2153,15 +2165,16 @@ var FL_CURL = [
   'varying vec2 v_uv;',
   'void main(){',
   '  vec2 e=1.0/u_res;',
-  '  float l=texture2D(u_vel,v_uv-vec2(e.x,0)).y;',
-  '  float r=texture2D(u_vel,v_uv+vec2(e.x,0)).y;',
-  '  float b=texture2D(u_vel,v_uv-vec2(0,e.y)).x;',
-  '  float t=texture2D(u_vel,v_uv+vec2(0,e.y)).x;',
-  '  gl_FragColor=vec4((r-l-t+b)*0.5,0,0,1);',
+  '  float l=(texture2D(u_vel,v_uv-vec2(e.x,0)).y-0.5)*2.0;',
+  '  float r=(texture2D(u_vel,v_uv+vec2(e.x,0)).y-0.5)*2.0;',
+  '  float b=(texture2D(u_vel,v_uv-vec2(0,e.y)).x-0.5)*2.0;',
+  '  float t=(texture2D(u_vel,v_uv+vec2(0,e.y)).x-0.5)*2.0;',
+  '  float curl=(r-l-t+b)*0.5;',
+  '  gl_FragColor=vec4(curl*0.5+0.5,0.5,0.5,1.0);',
   '}'
 ].join('\n');
 
-// Vorticity confinement — amplifies existing vortices
+// Vorticity confinement — decode/encode signed values
 var FL_VORTICITY = [
   'precision highp float;',
   'uniform sampler2D u_vel;',
@@ -2172,16 +2185,17 @@ var FL_VORTICITY = [
   'varying vec2 v_uv;',
   'void main(){',
   '  vec2 e=1.0/u_res;',
-  '  float l=abs(texture2D(u_curl,v_uv-vec2(e.x,0)).x);',
-  '  float r=abs(texture2D(u_curl,v_uv+vec2(e.x,0)).x);',
-  '  float b=abs(texture2D(u_curl,v_uv-vec2(0,e.y)).x);',
-  '  float t=abs(texture2D(u_curl,v_uv+vec2(0,e.y)).x);',
-  '  float c=texture2D(u_curl,v_uv).x;',
-  '  vec2 force=vec2(abs(t)-abs(b),abs(r)-abs(l));',
+  '  float l=abs((texture2D(u_curl,v_uv-vec2(e.x,0)).x-0.5)*2.0);',
+  '  float r=abs((texture2D(u_curl,v_uv+vec2(e.x,0)).x-0.5)*2.0);',
+  '  float b=abs((texture2D(u_curl,v_uv-vec2(0,e.y)).x-0.5)*2.0);',
+  '  float t=abs((texture2D(u_curl,v_uv+vec2(0,e.y)).x-0.5)*2.0);',
+  '  float c=(texture2D(u_curl,v_uv).x-0.5)*2.0;',
+  '  vec2 force=vec2(t-b,r-l);',
   '  float len=max(length(force),0.0001);',
   '  force=(force/len)*u_strength*c;',
-  '  vec2 vel=texture2D(u_vel,v_uv).xy+force*u_dt;',
-  '  gl_FragColor=vec4(vel,0,1);',
+  '  vec2 vel=(texture2D(u_vel,v_uv).xy-0.5)*2.0+force*u_dt;',
+  '  vel=clamp(vel,-1.0,1.0);',
+  '  gl_FragColor=vec4(vel*0.5+0.5,0.5,1.0);',
   '}'
 ].join('\n');
 
@@ -2497,6 +2511,14 @@ function initFluidSim() {
   var curl      = fluidFBO(SIM_W, SIM_H, texType);
   var dye       = fluidPing(fluidFBO(DYE_W, DYE_H, texType), fluidFBO(DYE_W, DYE_H, texType));
 
+  // Initialize velocity to 0.5 (neutral = zero velocity in encoded format)
+  [velocity.read, velocity.write, pressure.read, pressure.write, divergence, curl].forEach(function(fbo) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
+    gl.clearColor(0.5, 0.5, 0.5, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
   fluidSim = { progs: progs, velocity: velocity, pressure: pressure,
                divergence: divergence, curl: curl, dye: dye, texType: texType };
 
@@ -2527,51 +2549,75 @@ function fluidBind(unit, fbo) {
 
 function fluidSplat(x, y, dx, dy, color, radius) {
   var sim = fluidSim;
-  // Add velocity
-  var lv = fluidUse(sim.progs.splat);
+  var lv;
+
+  // Velocity splat (signed, encoded as 0.5 + v*0.5)
+  lv = fluidUse(sim.progs.splat);
   gl.uniform2f(lv.u_res,    SIM_W, SIM_H);
   gl.uniform2f(lv.u_point,  x * SIM_W, y * SIM_H);
-  gl.uniform3f(lv.u_color,  dx, dy, 0.0);
-  gl.uniform1f(lv.u_radius, radius * 0.6);
+  gl.uniform3f(lv.u_color,  dx, dy, 0.0);  // raw signed velocity
+  gl.uniform1f(lv.u_radius, radius * 0.5);
+  gl.uniform1f(lv.u_isVel,  1.0);
   gl.uniform1i(lv.u_src,    fluidBind(0, sim.velocity.read));
   fluidBlit(sim.velocity.write);
   sim.velocity.swap();
 
-  // Add dye
+  // Dye splat (unsigned 0-1 color)
   lv = fluidUse(sim.progs.splat);
   gl.uniform2f(lv.u_res,    DYE_W, DYE_H);
   gl.uniform2f(lv.u_point,  x * DYE_W, y * DYE_H);
   gl.uniform3f(lv.u_color,  color[0], color[1], color[2]);
   gl.uniform1f(lv.u_radius, radius);
+  gl.uniform1f(lv.u_isVel,  0.0);
   gl.uniform1i(lv.u_src,    fluidBind(0, sim.dye.read));
   fluidBlit(sim.dye.write);
   sim.dye.swap();
 }
 
-// Auto-splat state
-var fluidSplatTimer    = 0;
-var fluidSplatInterval = 90;   // frames between splats
-var fluidSplatIdx      = 0;
+// Continuous side injection state
+var fluidSplatIdx    = 0;
+var fluidStreamPhase = 0; // oscillates stream injection points
 
+function fluidGetColor(idx) {
+  var palIdx = idx % 6;
+  var col = themeRgbPalette[palIdx] || [80, 120, 255];
+  var mx = Math.max(col[0], col[1], col[2]) || 1;
+  var sc = 1.1 / mx;
+  return [col[0] * sc, col[1] * sc, col[2] * sc];
+}
+
+function fluidInjectSides() {
+  fluidStreamPhase += 0.018;
+
+  // 3 streams from each side — y positions oscillate gently
+  var streams = 4;
+  for (var i = 0; i < streams; i++) {
+    var base = (i + 1) / (streams + 1);
+    var yOff = Math.sin(fluidStreamPhase * 0.7 + i * 1.4) * 0.08;
+    var y    = base + yOff;
+
+    // Speed varies slightly per stream for asymmetry
+    var spd  = 0.25 + Math.sin(fluidStreamPhase * 0.5 + i * 2.1) * 0.08;
+
+    // Left side → shooting right (+x velocity)
+    var colL = fluidGetColor(fluidSplatIdx + i);
+    fluidSplat(0.02, y, spd, 0.0, colL, 0.055);
+
+    // Right side → shooting left (-x velocity)
+    var colR = fluidGetColor(fluidSplatIdx + i + 3);
+    fluidSplat(0.98, y, -spd, 0.0, colR, 0.055);
+  }
+  fluidSplatIdx += 2;
+}
+
+// Legacy: called on init for initial seeding
 function fluidSplatRandom() {
   var x = 0.15 + Math.random() * 0.70;
   var y = 0.15 + Math.random() * 0.70;
-  var angle = Math.random() * Math.PI * 2;
-  var speed = 120 + Math.random() * 180;
-  var dx = Math.cos(angle) * speed;
-  var dy = Math.sin(angle) * speed;
-  var radius = 0.08 + Math.random() * 0.10;
-
-  // Pick color from theme palette
-  var palIdx = fluidSplatIdx % 6;
-  fluidSplatIdx++;
-  var col = themeRgbPalette[palIdx] || [80, 120, 255];
-  // Boost saturation for vivid ink
-  var mx = Math.max(col[0], col[1], col[2]) || 1;
-  var sc = 1.2 / mx;
-  var color = [col[0] * sc, col[1] * sc, col[2] * sc];
-
-  fluidSplat(x, y, dx, dy, color, radius);
+  var dx = (Math.random() - 0.5) * 0.3;
+  var dy = (Math.random() - 0.5) * 0.1;
+  var col = fluidGetColor(fluidSplatIdx++);
+  fluidSplat(x, y, dx, dy, col, 0.12);
 }
 
 function stepFluidSim() {
@@ -2631,13 +2677,8 @@ function stepFluidSim() {
   fluidBlit(sim.velocity.write);
   sim.velocity.swap();
 
-  // ── 7. Auto splat ─────────────────────────────────────────────────────────
-  fluidSplatTimer++;
-  if (fluidSplatTimer >= fluidSplatInterval) {
-    fluidSplatTimer = 0;
-    fluidSplatInterval = 60 + Math.floor(Math.random() * 120);
-    fluidSplatRandom();
-  }
+  // ── 7. Continuous side injection ─────────────────────────────────────────
+  fluidInjectSides();
 
   // ── 8. Advect dye ─────────────────────────────────────────────────────────
   locs = fluidUse(sim.progs.advect);
