@@ -1977,13 +1977,29 @@ var GL_AURORA_FRAG = [
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
 
-  // Classic sin-dot hash — far better distribution than fract(x*y)
-  // No grid-line artifacts
+  // Good hash with no grid artifacts
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float vnoise(vec2 p){',
   '  vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),',
   '             mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+
+  // Star: returns brightness for a star field at given scale and offset
+  // Stars are steady — only very subtle shimmer (like the nebula Canvas stars)
+  'float starField(vec2 uv, float scale, vec2 offset){',
+  '  vec2 g=floor(uv*scale+offset);',
+  '  float v=h2(g);',
+  '  if(v<0.986) return 0.0;',// only top 1.4% of cells have a star
+  '  float size=0.3+h2(g+vec2(41.2,73.1))*0.5;',// vary star size
+  // Circular soft disc — no hard edges
+  '  float d=length(fract(uv*scale+offset)-0.5)*2.0;',
+  '  float disc=1.0-smoothstep(0.0,size,d);',
+  // Very subtle shimmer — base is 0.85, shimmer adds ±0.12 only
+  // Much gentler than before (was 0.4+0.6*sin which went near 0)
+  '  float shimmer=0.85+0.12*sin(u_time*0.0018*(0.5+v)+v*40.0);',
+  '  float brightness=0.45+v*0.55;',// base brightness from hash — some dim, some bright
+  '  return disc*brightness*shimmer;',
+  '}',
 
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
@@ -1992,55 +2008,51 @@ var GL_AURORA_FRAG = [
   // Background
   '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.3),uv.y*0.7+0.3);',
 
-  // Stars — sin-dot hash, offset each field so they don't overlap
-  '  vec2 sg1=floor(uv*190.0);',
-  '  float sv1=h2(sg1);',
-  '  float sd1=length(fract(uv*190.0)-0.5)*2.0;',
-  '  col+=step(0.991,sv1)*(1.0-smoothstep(0.0,0.5,sd1))*(0.45+0.55*sin(u_time*0.003+sv1*20.0))*0.80;',
+  // Stars — 4 fields at different densities, all steady with subtle shimmer
+  // Mix of white and blue-white stars like the nebula theme
+  '  float s1=starField(uv,200.0,vec2(0.0,0.0));',
+  '  float s2=starField(uv,120.0,vec2(57.3,83.7));',
+  '  float s3=starField(uv,70.0,vec2(31.1,47.9));',
+  '  float s4=starField(uv,40.0,vec2(89.3,13.5));',// large bright stars
 
-  '  vec2 sg2=floor(uv*110.0)+vec2(57.3,83.7);',// offset prevents overlap with sg1
-  '  float sv2=h2(sg2);',
-  '  float sd2=length(fract(uv*110.0)-0.5)*2.0;',
-  '  col+=step(0.987,sv2)*(1.0-smoothstep(0.0,0.5,sd2))*(0.50+0.50*sin(u_time*0.005+sv2*15.0))*1.0;',
-
-  '  vec2 sg3=floor(uv*60.0)+vec2(31.1,47.9);',
-  '  float sv3=h2(sg3);',
-  '  float sd3=length(fract(uv*60.0)-0.5)*2.0;',
-  '  col+=step(0.994,sv3)*(1.0-smoothstep(0.0,0.4,sd3))*(0.70+0.30*sin(u_time*0.007+sv3*10.0))*1.2;',
+  // White stars
+  '  col+=vec3(s1*0.75+s2*0.90+s3*1.0);',
+  // Blue-white tint on the larger stars (like nebula blue: flag)
+  '  float blueHash=h2(floor(uv*40.0)+vec2(89.3,13.5));',
+  '  vec3 starTint=blueHash>0.6?vec3(0.72,0.84,1.0):vec3(1.0);',
+  '  col+=starTint*s4*1.3;',
 
   // Aurora vertical extent
-  '  float av=(uv.y-0.04)/0.70;',// 0=top, 1=hem
+  '  float av=(uv.y-0.04)/0.70;',
   '  float vMask=smoothstep(-0.03,0.18,av)*smoothstep(1.06,0.70,av);',
   '  float hemBoost=pow(clamp(av,0.0,1.0),0.5);',
 
-  // Fold: ONLY depends on uv.y → keeps rays vertical, no diagonal blobs
+  // Fold from y only — keeps rays perfectly vertical
   '  float fold =sin(uv.y*2.4+t*5.0)*0.09+sin(uv.y*5.5+t*7.5)*0.034+sin(uv.y*11.0+t*11.0)*0.011;',
   '  float fold2=sin(uv.y*2.1+t*4.2+1.8)*0.10+sin(uv.y*4.8+t*6.8+0.9)*0.037;',
   '  float fx =uv.x+fold;',
   '  float fx2=uv.x+fold2;',
 
-  // Ray texture: HIGH x-freq (many narrow rays), LOW y-freq (tall rays)
-  // Threshold at 0.38 so only the bright peaks make visible rays
-  '  float rn1=vnoise(vec2(fx*18.0+t*0.55, uv.y*0.6+t*0.12));',
-  '  float rn2=vnoise(vec2(fx*36.0+t*0.90, uv.y*1.2+t*0.22));',
-  '  float rn3=vnoise(vec2(fx*9.0 +t*0.30, uv.y*0.3+t*0.08));',
-  // Threshold + sharpen: only top 40% of noise values create light
-  '  float w1=max(0.0, rn1*0.55+rn2*0.30+rn3*0.15 - 0.38);',
-  '  float rays1=pow(w1/0.62, 1.5);',// normalize to [0,1] and sharpen
+  // Ray texture — threshold to get bright rays on dark gaps
+  '  float rn1=vnoise(vec2(fx*18.0+t*0.55,uv.y*0.6+t*0.12));',
+  '  float rn2=vnoise(vec2(fx*36.0+t*0.90,uv.y*1.2+t*0.22));',
+  '  float rn3=vnoise(vec2(fx*9.0 +t*0.30,uv.y*0.3+t*0.08));',
+  '  float w1=max(0.0,rn1*0.55+rn2*0.30+rn3*0.15-0.38);',
+  '  float rays1=pow(w1/0.62,1.5);',
 
-  '  float rn4=vnoise(vec2(fx2*15.0+t*0.40+3.1, uv.y*0.5+t*0.10));',
-  '  float rn5=vnoise(vec2(fx2*30.0+t*0.70, uv.y*1.0+t*0.18));',
-  '  float w2=max(0.0, rn4*0.60+rn5*0.40 - 0.40);',
-  '  float rays2=pow(w2/0.60, 1.4)*0.72;',
+  '  float rn4=vnoise(vec2(fx2*15.0+t*0.40+3.1,uv.y*0.5+t*0.10));',
+  '  float rn5=vnoise(vec2(fx2*30.0+t*0.70,uv.y*1.0+t*0.18));',
+  '  float w2=max(0.0,rn4*0.60+rn5*0.40-0.40);',
+  '  float rays2=pow(w2/0.60,1.4)*0.72;',
 
-  // Shimmer: rapid per-pixel flicker
+  // Active ripple shimmer
   '  float sh1=0.62+0.38*sin(t*17.0+uv.x*28.0+uv.y*9.0);',
   '  float sh2=0.68+0.32*sin(t*13.0+uv.x*22.0+uv.y*6.5+2.0);',
 
   '  float d1=rays1*vMask*hemBoost*sh1;',
   '  float d2=rays2*vMask*hemBoost*sh2;',
 
-  // Color: height-based from hem (primary) to tips (secondary/purple)
+  // Color — height based: hem=primary, tips=secondary/purple
   '  float hf=clamp(1.0-av,0.0,1.0);',
   '  vec3 hemCol=u_c0;',
   '  vec3 midCol=mix(u_c1,u_c2,0.4);',
@@ -2048,14 +2060,14 @@ var GL_AURORA_FRAG = [
   '  float hBlend=smoothstep(0.0,0.65,hf*hf*1.4);',
   '  vec3 aCol=mix(tipCol,mix(midCol,hemCol,hBlend),smoothstep(0.0,0.5,hf));',
 
-  // White bleach at peak ray brightness
+  // White bleach at peak
   '  vec3 br1=mix(aCol,vec3(1.0),d1*d1*0.55);',
   '  vec3 br2=mix(mix(aCol,u_c1,0.35),vec3(1.0),d2*d2*0.30);',
 
   '  col+=br1*d1*u_intensity*1.65;',
   '  col+=br2*d2*u_intensity*0.72;',
 
-  // Horizon reflection glow
+  // Horizon reflection
   '  col+=hemCol*smoothstep(0.80,1.0,uv.y)*d1*u_intensity*0.18;',
 
   // Vignette
