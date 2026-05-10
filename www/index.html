@@ -702,6 +702,7 @@ const BLOBS = [
 var activeBlobs      = BLOBS;
 var nebulaBackground = ['#07021a', '#03010e', '#010009'];
 var blobOpacityMult  = 1.0;
+window.particleMult  = 1.0;
 var animSpeed        = 1;
 
 function drawBlob(cx, cy, radius, rgb, alpha) {
@@ -2348,14 +2349,14 @@ var GL_DEEPSEA_FRAG = [
   '  bio+=bioPart(uv,vec2(0.76,0.63),t);',
   '  bio+=bioPart(uv,vec2(0.04,0.48),t);',
   '  vec3 bioCol=mix(u_c0,mix(u_c2,vec3(0.5,1.0,0.8),0.5),0.4);',
-  '  col+=mix(bioCol,vec3(1.0),0.5)*bio*u_intensity;',
+  '  col+=mix(bioCol,vec3(1.0),0.5)*bio*u_intensity*u_particles;',
   '  float mote=0.0;',
   '  mote+=bioPart(uv,vec2(0.31,0.73),t*0.6);',
   '  mote+=bioPart(uv,vec2(0.58,0.22),t*0.5);',
   '  mote+=bioPart(uv,vec2(0.77,0.88),t*0.7);',
   '  mote+=bioPart(uv,vec2(0.14,0.55),t*0.55);',
   '  mote+=bioPart(uv,vec2(0.44,0.41),t*0.65);',
-  '  col+=vec3(0.8,0.95,1.0)*mote*0.4*u_intensity;',
+  '  col+=vec3(0.8,0.95,1.0)*mote*0.4*u_intensity*u_particles;',
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(0.7,0.9),vc*vec2(0.7,0.9))*1.1;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
@@ -2473,6 +2474,8 @@ function glSetUniforms(locs, useAccentForC0) {
   gl.uniform1f(locs.u_time,      t);
   gl.uniform2f(locs.u_res,       glCanvas.width, glCanvas.height);
   gl.uniform1f(locs.u_intensity, blobOpacityMult);
+  if (locs.u_particles !== undefined && locs.u_particles !== null)
+    gl.uniform1f(locs.u_particles, window.particleMult !== undefined ? window.particleMult : 1.0);
 
   for (var i = 0; i < 6; i++) {
     var col = themeRgbPalette[i] || [0,100,200];
@@ -4825,11 +4828,11 @@ document.addEventListener('keydown', function(e) {
           </div>
         </div>
         <div class="p-row" data-pref-row="3">
-          <div class="p-row-label">Stars</div>
+          <div class="p-row-label">Particles</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="stars" data-val="off"    data-pref-row="2" data-pref-col="0">Off</button>
-            <button class="p-toggle" data-pref="stars" data-val="normal" data-pref-row="3" data-pref-col="1">Normal</button>
-            <button class="p-toggle" data-pref="stars" data-val="dense"  data-pref-row="2" data-pref-col="2">Dense</button>
+            <button class="p-toggle" data-pref="particles" data-val="off"    data-pref-row="2" data-pref-col="0">Off</button>
+            <button class="p-toggle" data-pref="particles" data-val="normal" data-pref-row="2" data-pref-col="1">Normal</button>
+            <button class="p-toggle" data-pref="particles" data-val="dense"  data-pref-row="2" data-pref-col="2">Dense</button>
           </div>
         </div>
       </div>
@@ -4926,9 +4929,43 @@ function applyPrefs(prefs) {
   // Dominant color = first blob
   themeRgb = themeRgbPalette[0];
   var im = {dim:0.45,normal:1.0,vivid:1.7}; blobOpacityMult = im[prefs.intensity]||1.0;
-  var sm = {off:0,normal:240,dense:420};
-  var nc = sm[prefs.stars]!==undefined?sm[prefs.stars]:240;
+  // Particle density — controls all particle systems
+  var pm = {off:0, normal:1.0, dense:2.0};
+  window.particleMult = pm[prefs.particles] !== undefined ? pm[prefs.particles] : 1.0;
+
+  // Canvas 2D stars
+  var sm = {off:0, normal:240, dense:420};
+  var nc = sm[prefs.particles] !== undefined ? sm[prefs.particles] : 240;
   if (nc !== starCount) { starCount = nc; initStars(); }
+
+  // Deep sea particles & motes
+  var dpc = {off:0, normal:160, dense:300};
+  var dmc = {off:0, normal:80,  dense:150};
+  var newDpc = dpc[prefs.particles] !== undefined ? dpc[prefs.particles] : 160;
+  var newDmc = dmc[prefs.particles] !== undefined ? dmc[prefs.particles] : 80;
+  if (!deepSeaParticles || deepSeaParticles.length !== newDpc) {
+    deepSeaParticles = [];
+    for (var dpi=0; dpi<newDpc; dpi++) deepSeaParticles.push(newDeepParticle(true));
+  }
+  if (!deepSeaMotes || deepSeaMotes.length !== newDmc) {
+    deepSeaMotes = [];
+    for (var dmi=0; dmi<newDmc; dmi++) deepSeaMotes.push(newMote(true));
+  }
+
+  // Flame particles & embers
+  var fpc = {off:60, normal:180, dense:320};
+  var fec = {off:20, normal:120, dense:220};
+  var newFpc = fpc[prefs.particles] !== undefined ? fpc[prefs.particles] : 180;
+  var newFec = fec[prefs.particles] !== undefined ? fec[prefs.particles] : 120;
+  if (!flameParticles || flameParticles.length !== newFpc) {
+    flameParticles = [];
+    for (var fpi=0; fpi<newFpc; fpi++) flameParticles.push(newFlameParticle(true));
+  }
+  if (!flameEmbers || flameEmbers.length !== newFec) {
+    flameEmbers = [];
+    for (var fei=0; fei<newFec; fei++) flameEmbers.push(newEmber(true));
+  }
+
   document.body.classList.remove('pref-font-sm','pref-font-lg');
   if (prefs.fontSize==='small') document.body.classList.add('pref-font-sm');
   if (prefs.fontSize==='large') document.body.classList.add('pref-font-lg');
