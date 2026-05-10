@@ -2057,18 +2057,20 @@ var GL_AURORA_FRAG = [
 
   '  float sh1=0.65+0.35*sin(t*18.0+uv.y*28.0+uv.x*9.0);',
   '  float sh2=0.70+0.30*sin(t*14.0+uv.y*22.0+uv.x*6.0+2.1);',
-  '  float d1=rays*sh1*u_intensity;',
-  '  float d2=rays2*sh2*u_intensity;',
+  // Vertical mask — centres aurora in the middle band, away from screen edges
+  '  float vMask=smoothstep(0.08,0.30,uv.y)*smoothstep(1.0,0.72,uv.y);',
+  '  float d1=rays*sh1*u_intensity*vMask;',
+  '  float d2=rays2*sh2*u_intensity*vMask;',
 
   // Color varies left-right (horizontal equivalent of top-bottom vertical aurora)
   '  float xf=uv.x;',
   '  vec3 aCol=mix(mix(u_c3,u_c2,smoothstep(0.0,0.35,xf)),mix(u_c1,u_c0,smoothstep(0.3,0.85,xf)),smoothstep(0.2,0.7,xf));',
   '  col+=mix(aCol,vec3(1.0),d1*d1*0.50)*d1*1.65;',
   '  col+=mix(mix(aCol,u_c1,0.4),vec3(1.0),d2*d2*0.28)*d2*0.70;',
-  '  col+=u_c0*smoothstep(0.78,1.0,uv.y)*d1*0.16;',
+  '  col+=u_c0*smoothstep(0.30,0.08,uv.y)*d1*0.14;',
 
   '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(0.70,1.0),vc*vec2(0.70,1.0))*1.18;',
+  '  col*=1.0-dot(vc*vec2(0.80,1.0),vc*vec2(0.80,1.0))*1.10;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
   '}'
 ].join('\n');
