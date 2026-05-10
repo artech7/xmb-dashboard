@@ -1767,144 +1767,176 @@ function drawBokeh() {
 }
 
 // ── 8. INK IN WATER ───────────────────────────────────────────────────────────
+// Dense billowing clouds of pigment diffusing through dark water.
+// Each ink cloud expands slowly, has irregular noisy edges driven by overlapping
+// sine fields, and slowly mixes with neighbours using additive blending.
+
 var inkBlobs = null;
 var inkAge   = 0;
 
 function initInk() {
   inkBlobs = [];
   inkAge   = 0;
-  // Spawn initial ink drops spread around
-  for (var i = 0; i < 12; i++) {
-    inkBlobs.push(newInkDrop(true));
+  // Seed several clouds spread across the canvas
+  for (var i = 0; i < 9; i++) {
+    inkBlobs.push(newInkBlob(true));
   }
 }
 
-function newInkDrop(randomAge) {
-  var U    = Math.min(W, H);
-  var maxA = 0.8 + Math.random() * 1.5;
+function newInkBlob(randomAge) {
+  var U   = Math.min(W, H);
+  var ml  = 8 + Math.random() * 10;  // clouds live a long time
+  var pal = Math.floor(Math.random() * 6);
   return {
-    x:      0.15 + Math.random() * 0.70,
-    y:      0.15 + Math.random() * 0.70,
-    // Ink spreads outward from drop point
-    r:      (0.01 + Math.random() * 0.02) * U,
-    maxR:   (0.12 + Math.random() * 0.20) * U,
-    vr:     (0.003 + Math.random() * 0.004) * U,   // expansion speed (px/frame)
-    // Tendrils — multiple arms spreading outward
-    arms:   Math.floor(3 + Math.random() * 4),
-    armPhases: Array.from({length:7}, function() { return Math.random() * Math.PI * 2; }),
-    armSpeeds: Array.from({length:7}, function() { return 0.004 + Math.random() * 0.006; }),
-    age:    randomAge ? Math.random() * maxA : 0,
-    maxAge: maxA,
-    alpha:  0.55 + Math.random() * 0.35,
-    palIdx: Math.floor(Math.random() * 6),
-    // Drift — ink slowly moves in water
-    vx:    (Math.random() - 0.5) * 0.00012,
-    vy:    (Math.random() - 0.5) * 0.00008,
-    // Rotation of the whole drop
-    rot:   Math.random() * Math.PI * 2,
-    rotSpd: (Math.random() - 0.5) * 0.002,
+    x:        0.10 + Math.random() * 0.80,
+    y:        0.10 + Math.random() * 0.80,
+    // Very slow drift — ink in water barely moves
+    vx:       (Math.random() - 0.5) * 0.000055,
+    vy:       (Math.random() - 0.5) * 0.000040,
+    // Current radius and target max radius
+    r:        (0.005 + Math.random() * 0.015) * U,
+    maxR:     (0.14 + Math.random() * 0.22) * U,
+    // Expansion speed — slows as it approaches maxR
+    vr:       (0.0018 + Math.random() * 0.0022) * U,
+    age:      randomAge ? Math.random() * ml * 0.6 : 0,
+    maxAge:   ml,
+    palIdx:   pal,
+    // Noise field parameters for irregular cloud edge
+    // 8 sine wave overlays at different frequencies and phases
+    noiseFreqs:  [0.8, 1.4, 2.1, 3.3, 5.0, 7.2, 11.0, 16.0].map(function(f) {
+      return f * (0.85 + Math.random() * 0.30);
+    }),
+    noiseAmps:   [0.28, 0.20, 0.14, 0.10, 0.07, 0.045, 0.025, 0.012],
+    noisePhases: Array.from({length: 8}, function() { return Math.random() * Math.PI * 2; }),
+    noiseSpeeds: Array.from({length: 8}, function() { return (Math.random() - 0.5) * 0.0018; }),
+    // Slow rotation of the whole noise field
+    rot:      Math.random() * Math.PI * 2,
+    rotSpd:   (Math.random() - 0.5) * 0.0012,
+    // Peak opacity
+    peakAlpha: 0.55 + Math.random() * 0.35,
   };
 }
 
 function drawInkWater() {
   if (!inkBlobs) initInk();
   ctx.clearRect(0, 0, W, H);
-  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
 
   var spd = animSpeed > 0 ? animSpeed : 0;
   var [ar, ag, ab] = accentRgb;
-  inkAge += 0.008 * spd;
 
-  // Periodically spawn new drops
-  if (spd > 0 && Math.random() < 0.004 * spd) {
-    inkBlobs.push(newInkDrop(false));
-    // Remove old expired blobs
-    inkBlobs = inkBlobs.filter(function(b) { return b.age < b.maxAge + 0.5; });
-    if (inkBlobs.length > 20) inkBlobs.splice(0, inkBlobs.length - 20);
+  // ── Deep water background ─────────────────────────────────
+  var bg = ctx.createRadialGradient(W*0.5, H*0.45, 0, W*0.5, H*0.5, Math.max(W,H)*0.9);
+  bg.addColorStop(0,   nebulaBackground[0]);
+  bg.addColorStop(0.6, nebulaBackground[1]);
+  bg.addColorStop(1,   nebulaBackground[2]);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  inkAge += 0.006 * spd;
+
+  // Periodically spawn a new cloud
+  if (spd > 0 && Math.random() < 0.006 * spd && inkBlobs.length < 16) {
+    inkBlobs.push(newInkBlob(false));
   }
+  // Remove fully faded blobs
+  inkBlobs = inkBlobs.filter(function(b) { return b.age < b.maxAge + 1.0; });
 
+  // Draw each ink cloud
   inkBlobs.forEach(function(blob) {
-    blob.age += 0.006 * spd;
-    blob.r    = Math.min(blob.maxR, blob.r + blob.vr * spd);
-    blob.x   += blob.vx * spd;
-    blob.y   += blob.vy * spd;
-    blob.rot += blob.rotSpd * spd;
-    blob.armPhases = blob.armPhases.map(function(p, i) {
-      return p + blob.armSpeeds[i] * spd;
+    blob.age  += 0.005 * spd;
+    blob.rot  += blob.rotSpd * spd;
+    blob.x    += blob.vx * spd;
+    blob.y    += blob.vy * spd;
+    blob.noisePhases = blob.noisePhases.map(function(p, i) {
+      return p + blob.noiseSpeeds[i] * spd;
     });
 
-    var ageFrac  = blob.age / blob.maxAge;
-    if (ageFrac > 1) return;   // fading out
+    // Expand radius — ease out as it approaches maxR
+    var growth = Math.max(0, 1 - blob.r / blob.maxR);
+    blob.r += blob.vr * growth * spd;
 
-    // Fade in then slowly fade out
-    var fadeAlpha = blob.alpha * Math.min(1, ageFrac * 4) * Math.max(0, 1 - Math.pow(ageFrac - 0.7, 2) * 5);
-    if (fadeAlpha <= 0.01) return;
+    var ageFrac = blob.age / blob.maxAge;
+    if (ageFrac >= 1) return;
+
+    // Fade envelope: quick bloom in, slow hold, gentle fade out
+    var fadeIn  = Math.min(1, ageFrac * 5);
+    var fadeOut = Math.max(0, 1 - Math.pow(Math.max(0, ageFrac - 0.5) / 0.5, 1.5));
+    var alpha   = blob.peakAlpha * fadeIn * fadeOut;
+    if (alpha < 0.01) return;
 
     var cx  = blob.x * W;
     var cy  = blob.y * H;
     var r   = blob.r;
     var col = themeRgbPalette[blob.palIdx] || [ar, ag, ab];
 
-    // ── Core blob ──────────────────────────────────────────
-    var coreG = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.9);
-    coreG.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.80)+')');
-    coreG.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.50)+')');
-    coreG.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = coreG;
-    ctx.fillRect(cx - r, cy - r, r*2, r*2);
+    // ── Render as a polygon with noisy radius ───────────────
+    // Sample the cloud edge in angular steps, displacing by noise
+    var steps   = 72;
+    var angleStep = (Math.PI * 2) / steps;
 
-    // ── Ink tendrils spreading outward ─────────────────────
-    for (var arm = 0; arm < blob.arms; arm++) {
-      var baseAngle = (arm / blob.arms) * Math.PI * 2 + blob.rot;
-      var ap        = blob.armPhases[arm];
-      var tendLen   = r * (1.6 + Math.sin(ap) * 0.5);
-      var tendW     = r * (0.28 - ageFrac * 0.12);
+    // Draw multiple layers from outermost (transparent) to core (opaque)
+    var layers = [
+      { rMult: 1.80, aMult: 0.04 },  // very outer diffuse haze
+      { rMult: 1.40, aMult: 0.10 },  // outer glow
+      { rMult: 1.10, aMult: 0.28 },  // main cloud body
+      { rMult: 0.72, aMult: 0.55 },  // dense core
+      { rMult: 0.38, aMult: 0.80 },  // bright centre
+    ];
 
-      // Bezier tendril curling outward
-      var tipX = cx + Math.cos(baseAngle + Math.sin(ap*0.7)*0.4) * tendLen;
-      var tipY = cy + Math.sin(baseAngle + Math.sin(ap*0.7)*0.4) * tendLen;
-      var cp1X = cx + Math.cos(baseAngle - 0.4) * tendLen * 0.45;
-      var cp1Y = cy + Math.sin(baseAngle - 0.4) * tendLen * 0.45;
-      var cp2X = cx + Math.cos(baseAngle + 0.5 + Math.sin(ap)*0.3) * tendLen * 0.80;
-      var cp2Y = cy + Math.sin(baseAngle + 0.5 + Math.sin(ap)*0.3) * tendLen * 0.80;
+    layers.forEach(function(lyr) {
+      var layerR  = r * lyr.rMult;
+      var layerA  = alpha * lyr.aMult;
 
-      var tendGrad = ctx.createLinearGradient(cx, cy, tipX, tipY);
-      tendGrad.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.65)+')');
-      tendGrad.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.35)+')');
-      tendGrad.addColorStop(1,   'rgba(0,0,0,0)');
-
-      ctx.strokeStyle = tendGrad;
-      ctx.lineWidth   = Math.max(0.5, tendW * (1 - ageFrac * 0.6));
-      ctx.lineCap     = 'round';
       ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, tipX, tipY);
-      ctx.stroke();
-
-      // Secondary feathered micro-tendrils at tip
-      if (ageFrac < 0.75 && r > Math.min(W,H) * 0.03) {
-        for (var ft = 0; ft < 2; ft++) {
-          var ftAngle = baseAngle + (ft === 0 ? 0.35 : -0.35) + Math.sin(ap + ft) * 0.2;
-          var ftLen   = tendLen * (0.25 + Math.sin(ap * 1.3 + ft) * 0.12);
-          var ftX     = tipX + Math.cos(ftAngle) * ftLen;
-          var ftY     = tipY + Math.sin(ftAngle) * ftLen;
-          ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.25)+')';
-          ctx.lineWidth   = Math.max(0.3, tendW * 0.25);
-          ctx.beginPath();
-          ctx.moveTo(tipX, tipY);
-          ctx.lineTo(ftX, ftY);
-          ctx.stroke();
+      for (var s = 0; s <= steps; s++) {
+        var angle    = s * angleStep + blob.rot;
+        // Noise displacement: sum of sine waves at increasing frequencies
+        var disp = 0;
+        for (var n = 0; n < blob.noiseFreqs.length; n++) {
+          disp += Math.sin(angle * blob.noiseFreqs[n] + blob.noisePhases[n]) * blob.noiseAmps[n];
         }
+        // disp is in range roughly -0.5 to +0.5 — scale by layer radius
+        var rad  = layerR * (1 + disp * (0.45 - lyr.rMult * 0.10));
+        var px   = cx + Math.cos(angle) * rad;
+        var py   = cy + Math.sin(angle) * rad;
+        if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
-    }
+      ctx.closePath();
 
-    // ── Outer diffuse halo ─────────────────────────────────
-    var haloG = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.0);
-    haloG.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(fadeAlpha*0.18)+')');
-    haloG.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = haloG;
-    ctx.fillRect(cx - r*2, cy - r*2, r*4, r*4);
+      // Fill with radial gradient so edges of the noisy poly are softer
+      var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, layerR * 1.1);
+      grad.addColorStop(0,    'rgba('+col[0]+','+col[1]+','+col[2]+','+layerA+')');
+      grad.addColorStop(0.55, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(layerA*0.75)+')');
+      grad.addColorStop(1,    'rgba('+col[0]+','+col[1]+','+col[2]+',0)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+    });
+
+    // ── Bright pigment core flash on fresh blobs ────────────
+    if (ageFrac < 0.15) {
+      var flashA = alpha * (1 - ageFrac / 0.15) * 0.6;
+      var flashG = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.35);
+      flashG.addColorStop(0,   'rgba(255,255,255,'+flashA+')');
+      flashG.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(flashA*0.5)+')');
+      flashG.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = flashG;
+      ctx.fillRect(cx - r*0.35, cy - r*0.35, r*0.7, r*0.7);
+    }
   });
+
+  // ── Subtle water surface shimmer at top ──────────────────
+  for (var sh = 0; sh < 3; sh++) {
+    ctx.beginPath();
+    var shY = H * (0.04 + sh * 0.05);
+    for (var sx = 0; sx <= W; sx += 5) {
+      var sy = shY + Math.sin(sx * 0.008 + inkAge * 0.4 + sh) * 4
+                   + Math.sin(sx * 0.013 + inkAge * 0.25 + sh * 1.5) * 2.5;
+      if (sx === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.strokeStyle = 'rgba('+ar+','+ag+','+ab+','+(0.04 - sh*0.01)+')';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   drawVignette();
 }
