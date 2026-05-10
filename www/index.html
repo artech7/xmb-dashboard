@@ -136,43 +136,13 @@ html, body {
   transform: translateX(-50%);
   min-width: 380px;
   max-width: 500px;
-  /* Clip overflow so items fade out above and below */
-  overflow: hidden;
-  /* Show ~3 items above and below selected */
-  height: 420px;
-  margin-top: -20px;
-  /* Mask edges for smooth fade in/out */
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0,0,0,0.1) 8%,
-    rgba(0,0,0,0.6) 16%,
-    black 26%,
-    black 74%,
-    rgba(0,0,0,0.6) 84%,
-    rgba(0,0,0,0.1) 92%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0,0,0,0.1) 8%,
-    rgba(0,0,0,0.6) 16%,
-    black 26%,
-    black 74%,
-    rgba(0,0,0,0.6) 84%,
-    rgba(0,0,0,0.1) 92%,
-    transparent 100%
-  );
+  padding-top: 32px;
 }
 
 .item-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /* JS sets translateY to keep selected item centred */
-  transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  will-change: transform;
 }
 
 .xmb-item {
@@ -182,23 +152,9 @@ html, body {
   gap: 18px;
   padding: 10px 16px;
   cursor: pointer;
-  transition: all 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: all 0.2s ease;
   border-radius: 3px;
-  /* Distance-based opacity — set by JS via --dist attribute */
-  opacity: 1;
 }
-/* Items 1 away from selected */
-.xmb-item[data-dist="1"] { opacity: 0.65; }
-.xmb-item[data-dist="-1"] { opacity: 0.65; }
-/* Items 2 away */
-.xmb-item[data-dist="2"] { opacity: 0.38; }
-.xmb-item[data-dist="-2"] { opacity: 0.38; }
-/* Items 3 away */
-.xmb-item[data-dist="3"] { opacity: 0.20; }
-.xmb-item[data-dist="-3"] { opacity: 0.20; }
-/* Items 4+ away */
-.xmb-item[data-dist="4"] { opacity: 0.08; }
-.xmb-item[data-dist="-4"] { opacity: 0.08; }
 
 .xmb-item::before {
   content: '';
@@ -381,7 +337,7 @@ html, body {
 }
 
 .item-list .xmb-item {
-  /* animation removed — items now use translateY scroll instead */
+  animation: itemSlideIn 0.3s ease both;
 }
 
 /* ── OPEN OVERLAY ── */
@@ -476,24 +432,12 @@ html, body {
     min-width: unset;
     max-width: unset;
     width: 100%;
-    height: auto;
-    margin-top: 0;
     padding: 0 0 32px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    /* Disable the mask and clip on mobile — native scroll handles it */
-    -webkit-mask-image: none;
-    mask-image: none;
-    overflow: auto;
   }
   #item-panel::-webkit-scrollbar { display: none; }
-  /* Disable translateY scrolling on mobile — use native scroll */
-  #item-panel .item-list {
-    transform: none !important;
-    transition: none !important;
-    gap: 0;
-    padding: 2px 0;
-  }
+  .item-list { gap: 0; padding: 2px 0; }
 
   /* ── Item cards ── */
   .xmb-item {
@@ -1876,35 +1820,10 @@ function renderItems() {
   });
 }
 
-// Height of each item — measured once and cached
-var itemRowHeight = 52;
-
 function updateItemSelection() {
-  var items = document.querySelectorAll('.xmb-item');
-  var list  = document.querySelector('.item-list');
-  var panel = document.getElementById('item-panel');
-  if (!list || !panel) return;
-
-  items.forEach(function(el, i) {
-    var dist = i - itemIdx;
+  document.querySelectorAll('.xmb-item').forEach((el, i) => {
     el.classList.toggle('selected', i === itemIdx);
-    // Cap at ±4 for CSS selector matching
-    el.setAttribute('data-dist', Math.max(-4, Math.min(4, dist)).toString());
   });
-
-  // Measure actual item height from DOM if possible
-  if (items.length > 0) {
-    var h = items[0].getBoundingClientRect().height;
-    if (h > 0) itemRowHeight = h + 2; // +2 for gap
-  }
-
-  // Panel centre point (anchor where selected item sits)
-  var panelH  = panel.offsetHeight || 420;
-  var anchor  = panelH / 2;
-
-  // Offset to put selected item at anchor
-  var offset  = anchor - (itemIdx * itemRowHeight) - (itemRowHeight / 2);
-  list.style.transform = 'translateY(' + offset + 'px)';
 }
 
 function openItem(item) {
