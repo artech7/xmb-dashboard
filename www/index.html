@@ -4831,9 +4831,9 @@ document.addEventListener('keydown', function(e) {
         <div class="p-row" data-pref-row="3">
           <div class="p-row-label">Particles</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="particles" data-val="off"    data-pref-row="2" data-pref-col="0">Off</button>
-            <button class="p-toggle" data-pref="particles" data-val="normal" data-pref-row="2" data-pref-col="1">Normal</button>
-            <button class="p-toggle" data-pref="particles" data-val="dense"  data-pref-row="2" data-pref-col="2">Dense</button>
+            <button class="p-toggle" data-pref="particles" data-val="off"    data-pref-row="3" data-pref-col="0">Off</button>
+            <button class="p-toggle" data-pref="particles" data-val="normal" data-pref-row="3" data-pref-col="1">Normal</button>
+            <button class="p-toggle" data-pref="particles" data-val="dense"  data-pref-row="3" data-pref-col="2">Dense</button>
           </div>
         </div>
       </div>
@@ -4843,9 +4843,9 @@ document.addEventListener('keydown', function(e) {
         <div class="p-row" data-pref-row="4">
           <div class="p-row-label">Font Size</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="fontSize" data-val="small"  data-pref-row="3" data-pref-col="0">S</button>
+            <button class="p-toggle" data-pref="fontSize" data-val="small"  data-pref-row="4" data-pref-col="0">S</button>
             <button class="p-toggle" data-pref="fontSize" data-val="normal" data-pref-row="4" data-pref-col="1">M</button>
-            <button class="p-toggle" data-pref="fontSize" data-val="large"  data-pref-row="3" data-pref-col="2">L</button>
+            <button class="p-toggle" data-pref="fontSize" data-val="large"  data-pref-row="4" data-pref-col="2">L</button>
           </div>
         </div>
         <div class="p-row" data-pref-row="5">
@@ -4863,8 +4863,8 @@ document.addEventListener('keydown', function(e) {
           <div class="p-row-label">Format</div>
           <div class="p-toggle-group">
             <button class="p-toggle" data-pref="clockFmt" data-val="default" data-pref-row="6" data-pref-col="0">Auto</button>
-            <button class="p-toggle" data-pref="clockFmt" data-val="12h"     data-pref-row="5" data-pref-col="1">12h</button>
-            <button class="p-toggle" data-pref="clockFmt" data-val="24h"     data-pref-row="5" data-pref-col="2">24h</button>
+            <button class="p-toggle" data-pref="clockFmt" data-val="12h"     data-pref-row="6" data-pref-col="1">12h</button>
+            <button class="p-toggle" data-pref="clockFmt" data-val="24h"     data-pref-row="6" data-pref-col="2">24h</button>
           </div>
         </div>
       </div>
@@ -4876,7 +4876,7 @@ document.addEventListener('keydown', function(e) {
           <div class="p-toggle-group">
             <button class="p-toggle" data-pref="motion" data-val="normal"  data-pref-row="7" data-pref-col="0">Normal</button>
             <button class="p-toggle" data-pref="motion" data-val="reduced" data-pref-row="7" data-pref-col="1">Slow</button>
-            <button class="p-toggle" data-pref="motion" data-val="off"     data-pref-row="6" data-pref-col="2">Off</button>
+            <button class="p-toggle" data-pref="motion" data-val="off"     data-pref-row="7" data-pref-col="2">Off</button>
           </div>
         </div>
       </div>
@@ -4931,26 +4931,28 @@ function applyPrefs(prefs) {
   themeRgb = themeRgbPalette[0];
   var im = {dim:0.45,normal:1.0,vivid:1.7}; blobOpacityMult = im[prefs.intensity]||1.0;
   // Particle density — controls all particle systems
-  var pm = {off:0, normal:1.0, dense:2.0};
-  window.particleMult = pm[prefs.particles] !== undefined ? pm[prefs.particles] : 1.0;
+  var pm = {off:0.0, normal:1.0, dense:2.0};
+  window.particleMult = (prefs.particles && pm[prefs.particles] !== undefined) ? pm[prefs.particles] : 1.0;
 
   // Canvas 2D stars
   var sm = {off:0, normal:240, dense:420};
   var nc = sm[prefs.particles] !== undefined ? sm[prefs.particles] : 240;
   if (nc !== starCount) { starCount = nc; initStars(); }
 
-  // Deep sea particles & motes
-  var dpc = {off:0, normal:160, dense:300};
-  var dmc = {off:0, normal:80,  dense:150};
-  var newDpc = dpc[prefs.particles] !== undefined ? dpc[prefs.particles] : 160;
-  var newDmc = dmc[prefs.particles] !== undefined ? dmc[prefs.particles] : 80;
-  if (!deepSeaParticles || deepSeaParticles.length !== newDpc) {
-    deepSeaParticles = [];
-    for (var dpi=0; dpi<newDpc; dpi++) deepSeaParticles.push(newDeepParticle(true));
-  }
-  if (!deepSeaMotes || deepSeaMotes.length !== newDmc) {
-    deepSeaMotes = [];
-    for (var dmi=0; dmi<newDmc; dmi++) deepSeaMotes.push(newMote(true));
+  // Deep sea particles & motes (Canvas 2D fallback only — WebGL uses u_particles)
+  if (W > 0) {
+    var dpc = {off:0, normal:160, dense:300};
+    var dmc = {off:0, normal:80,  dense:150};
+    var newDpc = (prefs.particles && dpc[prefs.particles] !== undefined) ? dpc[prefs.particles] : 160;
+    var newDmc = (prefs.particles && dmc[prefs.particles] !== undefined) ? dmc[prefs.particles] : 80;
+    if (!deepSeaParticles || deepSeaParticles.length !== newDpc) {
+      deepSeaParticles = [];
+      for (var dpi=0; dpi<newDpc; dpi++) deepSeaParticles.push(newDeepParticle(true));
+    }
+    if (!deepSeaMotes || deepSeaMotes.length !== newDmc) {
+      deepSeaMotes = [];
+      for (var dmi=0; dmi<newDmc; dmi++) deepSeaMotes.push(newMote(true));
+    }
   }
 
   // Flame particles & embers
@@ -4986,7 +4988,7 @@ function applyPrefs(prefs) {
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
 var THEME_KEYS = Object.keys(NEBULA_THEMES);
-var ROW_COLS   = [THEME_KEYS.length, 9, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=stars, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
+var ROW_COLS   = [THEME_KEYS.length, 9, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=particles, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
