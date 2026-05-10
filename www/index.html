@@ -2257,6 +2257,7 @@ var GL_DEEPSEA_FRAG = [
   'uniform float u_intensity;',
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  'uniform float u_particles;',
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
@@ -4903,7 +4904,7 @@ var NEBULA_THEMES = {
 };
 
 // ─── PREFS STATE ──────────────────────────────────────────────────────────────
-var DEFAULT_PREFS = { theme:'default', intensity:'normal', stars:'normal', fontSize:'normal', showDesc:'show', clockFmt:'default', motion:'normal', animStyle:'nebula' };
+var DEFAULT_PREFS = { theme:'default', intensity:'normal', particles:'normal', fontSize:'normal', showDesc:'show', clockFmt:'default', motion:'normal', animStyle:'nebula' };
 var userPrefs = Object.assign({}, DEFAULT_PREFS);
 
 function loadPrefs() {
