@@ -2056,96 +2056,59 @@ var GL_INK_FRAG = [
   'uniform float u_intensity;',
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
-
   'float hash2(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
-
-  'float noise(vec2 p){',
-  '  vec2 i=floor(p),f=fract(p);',
-  '  f=f*f*(3.0-2.0*f);',
+  'float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  float a=hash2(i),b=hash2(i+vec2(1,0)),c=hash2(i+vec2(0,1)),d=hash2(i+vec2(1,1));',
-  '  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);',
-  '}',
-
-  'float fbm(vec2 p){',
-  '  float v=0.0,a=0.5;',
-  '  for(int i=0;i<6;i++){v+=a*noise(p);p=p*2.0+vec2(1.7,9.2);a*=0.5;}',
-  '  return v;',
-  '}',
+  '  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}',
+  'float fbm(vec2 p){float v=0.0,a=0.5;',
+  '  v+=a*noise(p);p=p*2.0+vec2(1.7,9.2);a*=0.5;',
+  '  v+=a*noise(p);p=p*2.0+vec2(3.5,4.4);a*=0.5;',
+  '  v+=a*noise(p);p=p*2.0+vec2(7.1,2.8);a*=0.5;',
+  '  v+=a*noise(p);p=p*2.0+vec2(2.3,6.7);a*=0.5;',
+  '  v+=a*noise(p);p=p*2.0+vec2(5.5,1.9);a*=0.5;',
+  '  v+=a*noise(p);return v;}',
   'vec2 fbm2(vec2 p){return vec2(fbm(p),fbm(p+vec2(5.2,1.3)));}',
-
-  'vec3 inkPal(float t){',
-  '  float f=mod(t,1.0)*5.0;',
-  '  float fr=fract(f);',
+  'vec3 inkPal(float t){float f=mod(t,1.0)*5.0;float fr=fract(f);',
   '  vec3 c0,c1;',
   '  if(f<1.0){c0=u_c0;c1=u_c1;}',
   '  else if(f<2.0){c0=u_c1;c1=u_c2;}',
   '  else if(f<3.0){c0=u_c2;c1=u_c3;}',
   '  else if(f<4.0){c0=u_c3;c1=u_c4;}',
   '  else{c0=u_c4;c1=u_c5;}',
-  '  return mix(c0,c1,fr);',
-  '}',
-
+  '  return mix(c0,c1,fr);}',
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  // Aspect-correct coordinates
   '  vec2 p=uv*vec2(u_res.x/u_res.y,1.0);',
-  '  float t=u_time*0.000028;', // Very slow — ink barely moves
-
-  // ── Domain warp level 1 ────────────────────────────────
+  '  float t=u_time*0.000048;',
   '  vec2 q=fbm2(p*1.6+vec2(t,t*0.71));',
-  // ── Domain warp level 2 (adds fine tendrils) ──────────
-  '  vec2 r=fbm2(p*1.6+3.5*q+vec2(1.7,9.2)+vec2(0.14*t,0.10*t));',
-  // ── Final warp ─────────────────────────────────────────
-  '  float f1=fbm(p*1.6+3.0*r);',
-
-  // Second ink layer — different scale, offset, and warp chain
+  '  vec2 r=fbm2(p*1.6+5.2*q+vec2(1.7,9.2)+vec2(0.18*t,0.13*t));',
+  '  float f1=fbm(p*1.6+4.5*r);',
   '  vec2 p2=p*2.3+vec2(2.31,1.17);',
   '  vec2 q2=fbm2(p2+vec2(t*0.78,t*1.23));',
-  '  vec2 r2=fbm2(p2+2.8*q2+vec2(3.1,0.9));',
-  '  float f2=fbm(p2+2.5*r2);',
-
-  // Fine detail layer — high frequency
+  '  vec2 r2=fbm2(p2+4.2*q2+vec2(3.1,0.9));',
+  '  float f2=fbm(p2+3.8*r2);',
   '  vec2 p3=p*4.1+vec2(-1.53,3.27);',
-  '  float f3=fbm(p3+fbm2(p3+t*0.45)*1.8);',
-
-  // Background
+  '  float f3=fbm(p3+fbm2(p3+t*0.60)*2.8);',
   '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
-
-  // Layer 1: primary ink clouds — large, billowing
-  '  float ink1=smoothstep(0.22,0.68,f1);',
+  '  float ink1=smoothstep(0.26,0.64,f1);',
   '  vec3 inkC1=inkPal(f1);',
-  // Mix white at peak density for the bright pigment look
   '  inkC1=mix(inkC1,vec3(1.0),ink1*ink1*0.18);',
   '  col=mix(col,inkC1,ink1*u_intensity*0.88);',
-
-  // Layer 2: secondary clouds — different colors, adds depth
   '  float ink2=smoothstep(0.28,0.66,f2);',
   '  col+=inkPal(f2+0.42)*ink2*u_intensity*0.38;',
-
-  // Layer 3: fine wisps and tendrils
   '  float ink3=smoothstep(0.42,0.60,f3);',
   '  col+=inkPal(f3+0.71)*ink3*u_intensity*0.16;',
-
-  // Dark water in gaps — areas of low f1 stay very dark
   '  float water=smoothstep(0.48,0.18,f1);',
   '  col=mix(col,col*0.18,water*0.75);',
-
-  // Subtle brightness at high-density centres
   '  col+=vec3(smoothstep(0.68,0.88,f1)*0.10)*u_intensity;',
-
-  // Very faint water surface ripple lines at top
-  '  for(int sh=0;sh<2;sh++){',
-  '    float sy=0.04+float(sh)*0.055;',
-  '    float ripple=abs(uv.y-sy-sin(uv.x*8.0+t*20.0)*0.008-sin(uv.x*13.0+t*14.0)*0.005);',
-  '    col+=u_c1*max(0.0,0.025-ripple*5.0)*(1.0-float(sh)*0.4);',
-  '  }',
-
-  // Vignette
+  '  float rip0=abs(uv.y-0.040-sin(uv.x*8.0+t*20.0)*0.008-sin(uv.x*13.0+t*14.0)*0.005);',
+  '  col+=u_c1*max(0.0,0.025-rip0*5.0);',
+  '  float rip1=abs(uv.y-0.095-sin(uv.x*7.0+t*18.0)*0.007-sin(uv.x*11.0+t*12.0)*0.004);',
+  '  col+=u_c2*max(0.0,0.018-rip1*4.5)*0.6;',
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.25;',
-
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
-  '}'
+  '}',
 ].join('\n');
 
 // ── WebGL NEBULA shader ──────────────────────────────────────────────────────
