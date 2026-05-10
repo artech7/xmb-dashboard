@@ -2070,7 +2070,7 @@ var FL_ADVECT = [
   'varying vec2 v_uv;',
   'void main(){',
   '  vec2 vel=(texture2D(u_vel,v_uv).xy-0.5)*2.0;',// decode signed velocity
-  '  vec2 pos=v_uv-vel*u_dt/u_res;',
+  '  vec2 pos=v_uv-vel*u_dt;',// velocity in UV space — no /u_res
   '  gl_FragColor=texture2D(u_src,pos)*u_decay;',
   '}'
 ].join('\n');
@@ -2210,7 +2210,8 @@ var FL_DISPLAY = [
   '  vec3 dye=texture2D(u_dye,v_uv).rgb;',
   '  vec3 bg=mix(u_bg0,mix(u_bg1,u_bg2,v_uv.y),v_uv.y*0.7+0.3);',
   // Dark water background + vivid ink on top
-  '  vec3 col=bg*0.22+dye;',
+  '  float dyeLen=length(dye);',
+  '  vec3 col=mix(bg*0.30,dye*1.4,smoothstep(0.02,0.20,dyeLen));',
   '  vec2 vc=v_uv-0.5;',
   '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.20;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
@@ -2597,15 +2598,15 @@ function fluidInjectSides() {
     var y    = base + yOff;
 
     // Speed varies slightly per stream for asymmetry
-    var spd  = 0.25 + Math.sin(fluidStreamPhase * 0.5 + i * 2.1) * 0.08;
+    var spd  = 0.35 + Math.sin(fluidStreamPhase * 0.5 + i * 2.1) * 0.10;
 
     // Left side → shooting right (+x velocity)
     var colL = fluidGetColor(fluidSplatIdx + i);
-    fluidSplat(0.02, y, spd, 0.0, colL, 0.055);
+    fluidSplat(0.02, y, spd, 0.0, colL, 0.07);
 
     // Right side → shooting left (-x velocity)
     var colR = fluidGetColor(fluidSplatIdx + i + 3);
-    fluidSplat(0.98, y, -spd, 0.0, colR, 0.055);
+    fluidSplat(0.98, y, -spd, 0.0, colR, 0.07);
   }
   fluidSplatIdx += 2;
 }
@@ -2621,10 +2622,10 @@ function fluidSplatRandom() {
 }
 
 function stepFluidSim() {
-  if (!fluidReady || !fluidSim) return;
+  if (!fluidReady || !fluidSim || !gl) return;
   var sim = fluidSim;
   var locs;
-  var dt = 0.016 * (animSpeed > 0 ? Math.min(animSpeed, 2) : 0);
+  var dt = 0.018 * (animSpeed > 0 ? Math.min(animSpeed, 2) : 0);
   if (dt <= 0) return;
 
   // ── 1. Curl (vorticity) ───────────────────────────────────────────────────
@@ -2693,10 +2694,10 @@ function stepFluidSim() {
 
 function renderGLInkFluid() {
   if (!fluidReady || !fluidSim) {
-    // Fallback to old ink if sim not ready
     if (glProgInk) glRenderFrame(glProgInk, glInkLocs);
     return;
   }
+  try {
   stepFluidSim();
   var sim = fluidSim;
 
@@ -2711,6 +2712,11 @@ function renderGLInkFluid() {
   gl.uniform3fv(locs.u_bg2, bg2);
   gl.uniform1i(locs.u_dye, fluidBind(0, sim.dye.read));
   fluidBlit(null);
+  } catch(err) {
+    console.error('Fluid render error:', err.message);
+    fluidReady = false; // stop trying, fall back silently
+    if (glProgInk) glRenderFrame(glProgInk, glInkLocs);
+  }
 }
 
 function initWebGL() {
