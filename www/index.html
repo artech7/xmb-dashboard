@@ -2590,28 +2590,24 @@ function fluidGetColor(idx) {
 var fluidInjectFrame = 0;
 function fluidInjectSides() {
   fluidInjectFrame++;
-  if (fluidInjectFrame % 8 !== 0) return; // inject every 8 frames
-  fluidStreamPhase += 0.018;
+  if (fluidInjectFrame % 6 !== 0) return;
+  fluidStreamPhase += 0.015;
 
-  // 3 streams per side — y positions oscillate gently
   var streams = 3;
   for (var i = 0; i < streams; i++) {
     var base = (i + 1) / (streams + 1);
-    var yOff = Math.sin(fluidStreamPhase * 0.6 + i * 1.3) * 0.06;
-    var y    = Math.max(0.05, Math.min(0.95, base + yOff));
+    var yOff = Math.sin(fluidStreamPhase * 0.5 + i * 1.2) * 0.07;
+    var y    = Math.max(0.08, Math.min(0.92, base + yOff));
 
-    // Inward horizontal speed
-    var spd = 0.30 + Math.sin(fluidStreamPhase * 0.4 + i * 1.8) * 0.06;
-    // Tiny vertical component — helps mixing, not dominant
-    var vy  = Math.sin(fluidStreamPhase * 0.3 + i * 2.4) * 0.04;
+    var spd = 0.28 + Math.sin(fluidStreamPhase * 0.3 + i * 1.5) * 0.05;
 
-    // Left side → shoots RIGHT (positive x)
+    // LEFT side: positive x velocity → flows toward screen centre (rightward)
     var colL = fluidGetColor(fluidSplatIdx + i);
-    fluidSplat(0.025, y,  spd, vy, colL, 0.035);
+    fluidSplat(0.02, y, spd, 0.0, colL, 0.038);
 
-    // Right side → shoots LEFT (negative x)
+    // RIGHT side: negative x velocity → flows toward screen centre (leftward)
     var colR = fluidGetColor(fluidSplatIdx + i + 3);
-    fluidSplat(0.975, y, -spd, vy, colR, 0.035);
+    fluidSplat(0.98, y, -spd, 0.0, colR, 0.038);
   }
   fluidSplatIdx += 2;
 }
@@ -2630,67 +2626,43 @@ function stepFluidSim() {
   if (!fluidReady || !fluidSim || !gl) return;
   var sim = fluidSim;
   var locs;
-  var dt = 0.018 * (animSpeed > 0 ? Math.min(animSpeed, 2) : 0);
+  var dt = 0.016 * (animSpeed > 0 ? Math.min(animSpeed, 2) : 0);
   if (dt <= 0) return;
 
-  // ── 1. Curl (vorticity) ───────────────────────────────────────────────────
+  // ── 1. Inject from sides FIRST (before advection) ────────────────────────
+  fluidInjectSides();
+
+  // ── 2. Vorticity curl ─────────────────────────────────────────────────────
   locs = fluidUse(sim.progs.curl);
   gl.uniform2f(locs.u_res, SIM_W, SIM_H);
   gl.uniform1i(locs.u_vel, fluidBind(0, sim.velocity.read));
   fluidBlit(sim.curl);
 
-  // ── 2. Vorticity confinement ──────────────────────────────────────────────
+  // ── 3. Vorticity confinement (amplify swirls) ─────────────────────────────
   locs = fluidUse(sim.progs.vorticity);
   gl.uniform2f(locs.u_res,      SIM_W, SIM_H);
-  gl.uniform1f(locs.u_strength, 18.0);   // moderate vorticity
+  gl.uniform1f(locs.u_strength, 22.0);
   gl.uniform1f(locs.u_dt,       dt);
   gl.uniform1i(locs.u_vel,      fluidBind(0, sim.velocity.read));
   gl.uniform1i(locs.u_curl,     fluidBind(1, sim.curl));
   fluidBlit(sim.velocity.write);
   sim.velocity.swap();
 
-  // ── 3. Advect velocity (self-advection) ───────────────────────────────────
+  // ── 4. Advect velocity (self-advection gives inertia) ─────────────────────
   locs = fluidUse(sim.progs.advect);
   gl.uniform2f(locs.u_res,   SIM_W, SIM_H);
   gl.uniform1f(locs.u_dt,    dt);
-  gl.uniform1f(locs.u_decay, 0.995);   // slight velocity damping
+  gl.uniform1f(locs.u_decay, 0.990);  // velocity damps over time
   gl.uniform1i(locs.u_vel,   fluidBind(0, sim.velocity.read));
   gl.uniform1i(locs.u_src,   fluidBind(1, sim.velocity.read));
   fluidBlit(sim.velocity.write);
   sim.velocity.swap();
 
-  // ── 4. Divergence ─────────────────────────────────────────────────────────
-  locs = fluidUse(sim.progs.div);
-  gl.uniform2f(locs.u_res, SIM_W, SIM_H);
-  gl.uniform1i(locs.u_vel, fluidBind(0, sim.velocity.read));
-  fluidBlit(sim.divergence);
-
-  // ── 5. Pressure solve (20 Jacobi iterations) ──────────────────────────────
-  for (var i = 0; i < 20; i++) {
-    locs = fluidUse(sim.progs.pressure);
-    gl.uniform2f(locs.u_res,      SIM_W, SIM_H);
-    gl.uniform1i(locs.u_pressure, fluidBind(0, sim.pressure.read));
-    gl.uniform1i(locs.u_div,      fluidBind(1, sim.divergence));
-    fluidBlit(sim.pressure.write);
-    sim.pressure.swap();
-  }
-
-  // ── 6. Subtract gradient (make velocity divergence-free) ──────────────────
-  locs = fluidUse(sim.progs.grad);
-  gl.uniform2f(locs.u_res,      SIM_W, SIM_H);
-  gl.uniform1i(locs.u_vel,      fluidBind(0, sim.velocity.read));
-  gl.uniform1i(locs.u_pressure, fluidBind(1, sim.pressure.read));
-  fluidBlit(sim.velocity.write);
-  sim.velocity.swap();
-
-  // ── 7. Continuous side injection ─────────────────────────────────────────
-  fluidInjectSides();
-
-  // ── 8. Advect dye ─────────────────────────────────────────────────────────
+  // ── 5. Advect dye through velocity field ──────────────────────────────────
   locs = fluidUse(sim.progs.advect);
   gl.uniform2f(locs.u_res,   DYE_W, DYE_H);
   gl.uniform1f(locs.u_dt,    dt);
-  gl.uniform1f(locs.u_decay, 0.990);   // dye fades faster to prevent buildup
+  gl.uniform1f(locs.u_decay, 0.991);
   gl.uniform1i(locs.u_vel,   fluidBind(0, sim.velocity.read));
   gl.uniform1i(locs.u_src,   fluidBind(1, sim.dye.read));
   fluidBlit(sim.dye.write);
