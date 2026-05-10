@@ -778,7 +778,7 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
@@ -1956,8 +1956,10 @@ function drawInkWater() {
 var glCanvas    = document.getElementById('gl-canvas');
 var gl          = null;
 var glSupported = false;
-var glProgAurora = null;
-var glProgInk    = null;
+var glProgAurora  = null;
+var glProgInk     = null;
+var glProgNebula  = null;
+var glNebLocs     = {};
 var glAuroraLocs = {};
 var glInkLocs    = {};
 var glQuadBuf    = null;
@@ -1977,107 +1979,107 @@ var GL_AURORA_FRAG = [
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
 
-  // Good hash with no grid artifacts
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-  'float vnoise(vec2 p){',
-  '  vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
-  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),',
-  '             mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
 
-  // Star: returns brightness for a star field at given scale and offset
-  // Stars are steady — only very subtle shimmer (like the nebula Canvas stars)
-  'float starField(vec2 uv, float scale, vec2 offset){',
-  '  vec2 g=floor(uv*scale+offset);',
-  '  float v=h2(g);',
-  '  if(v<0.986) return 0.0;',// only top 1.4% of cells have a star
-  '  float size=0.3+h2(g+vec2(41.2,73.1))*0.5;',// vary star size
-  // Circular soft disc — no hard edges
-  '  float d=length(fract(uv*scale+offset)-0.5)*2.0;',
-  '  float disc=1.0-smoothstep(0.0,size,d);',
-  // Very subtle shimmer — base is 0.85, shimmer adds ±0.12 only
-  // Much gentler than before (was 0.4+0.6*sin which went near 0)
-  '  float shimmer=0.85+0.12*sin(u_time*0.0018*(0.5+v)+v*40.0);',
-  '  float brightness=0.45+v*0.55;',// base brightness from hash — some dim, some bright
-  '  return disc*brightness*shimmer;',
+  // Tiny crisp stars — like the nebula Canvas 2D stars
+  // Key: very small disc (0.12 max), high density threshold (>0.994 = ~0.6%)
+  // Only subtle shimmer so they never disappear
+  'float starField(vec2 uv,float sc,vec2 off){',
+  '  vec2 g=floor(uv*sc+off);float v=h2(g);',
+  '  if(v<0.988)return 0.0;',
+  '  float sz=0.06+h2(g+vec2(41.2,73.1))*0.09;',// max 0.15 — very tiny
+  '  float d=length(fract(uv*sc+off)-0.5)*2.0;',
+  '  float disc=1.0-smoothstep(0.0,sz,d);',
+  // Shimmer: base 0.82, only ±0.14 variation → never goes below 0.68
+  '  float shim=0.82+0.14*sin(u_time*0.0016*(0.5+v)+v*43.7);',
+  '  return disc*(0.40+v*0.55)*shim;',
   '}',
 
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
   '  float t=u_time*0.00022;',
 
-  // Background
+  // Night sky
   '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.3),uv.y*0.7+0.3);',
 
-  // Stars — 4 fields at different densities, all steady with subtle shimmer
-  // Mix of white and blue-white stars like the nebula theme
-  '  float s1=starField(uv,200.0,vec2(0.0,0.0));',
-  '  float s2=starField(uv,120.0,vec2(57.3,83.7));',
-  '  float s3=starField(uv,70.0,vec2(31.1,47.9));',
-  '  float s4=starField(uv,40.0,vec2(89.3,13.5));',// large bright stars
+  // Stars — 4 fine fields, all tiny
+  '  float s1=starField(uv,280.0,vec2(0.0,0.0));',
+  '  float s2=starField(uv,180.0,vec2(57.3,83.7));',
+  '  float s3=starField(uv,110.0,vec2(31.1,47.9));',
+  '  float s4=starField(uv,60.0,vec2(89.3,13.5));',// sparse bright ones
+  '  col+=s1*0.65+s2*0.80+s3*0.95;',
+  // Blue-white on sparse field
+  '  float bh=h2(floor(uv*60.0)+vec2(89.3,13.5));',
+  '  col+=mix(vec3(1.0),vec3(0.75,0.88,1.0),step(0.55,bh))*s4*1.1;',
 
-  // White stars
-  '  col+=vec3(s1*0.75+s2*0.90+s3*1.0);',
-  // Blue-white tint on the larger stars (like nebula blue: flag)
-  '  float blueHash=h2(floor(uv*40.0)+vec2(89.3,13.5));',
-  '  vec3 starTint=blueHash>0.6?vec3(0.72,0.84,1.0):vec3(1.0);',
-  '  col+=starTint*s4*1.3;',
+  // ── AURORA ─────────────────────────────────────────────
+  // Approach: continuous noise field, NOT separate curtains
+  // The aurora fills the sky as one flowing sheet of light
+  // Vertical extent mask
+  '  float av=clamp((uv.y-0.03)/0.72,0.0,1.0);',
+  '  float vMask=smoothstep(0.0,0.20,av)*smoothstep(1.0,0.72,av);',
+  '  float hemBoost=pow(av,0.45);',// brightest at bottom hem
 
-  // Aurora vertical extent
-  '  float av=(uv.y-0.04)/0.70;',
-  '  float vMask=smoothstep(-0.03,0.18,av)*smoothstep(1.06,0.70,av);',
-  '  float hemBoost=pow(clamp(av,0.0,1.0),0.5);',
+  // Large-scale horizontal structure — controls WHERE curtain is thick/thin
+  // Low frequency in x → broad bands, not individual columns
+  '  float bigX=vnoise(vec2(uv.x*1.6+t*0.25,t*0.18))*0.55',
+  '            +vnoise(vec2(uv.x*3.2+t*0.40,t*0.14+1.3))*0.30',
+  '            +vnoise(vec2(uv.x*0.7+t*0.12,t*0.09+2.7))*0.15;',
 
-  // Fold from y only — keeps rays perfectly vertical
-  '  float fold =sin(uv.y*2.4+t*5.0)*0.09+sin(uv.y*5.5+t*7.5)*0.034+sin(uv.y*11.0+t*11.0)*0.011;',
-  '  float fold2=sin(uv.y*2.1+t*4.2+1.8)*0.10+sin(uv.y*4.8+t*6.8+0.9)*0.037;',
-  '  float fx =uv.x+fold;',
+  // Fold/wave displacement — y-only, keeps rays vertical
+  '  float fold=sin(uv.y*2.5+t*5.2)*0.07',
+  '            +sin(uv.y*5.8+t*8.0)*0.028',
+  '            +sin(uv.y*12.0+t*12.0)*0.009;',
+  '  float fx=uv.x+fold;',
+
+  // Fine ray texture — high x-freq, low y-freq
+  '  float rA=vnoise(vec2(fx*22.0+t*0.6, uv.y*0.5+t*0.13));',
+  '  float rB=vnoise(vec2(fx*44.0+t*1.0, uv.y*1.0+t*0.24));',
+  '  float rC=vnoise(vec2(fx*11.0+t*0.3, uv.y*0.25+t*0.07));',
+  // Combine: coarse structure × fine rays → continuous curtain with ray detail
+  '  float combined=(rA*0.50+rB*0.28+rC*0.22)*bigX;',
+  // Threshold to create dark gaps between ray clusters
+  '  float w=max(0.0,combined-0.18);',
+  '  float rays=pow(w/0.82,1.3);',
+
+  // Second layer — different phase, adds depth
+  '  float fold2=sin(uv.y*2.1+t*4.0+1.9)*0.08+sin(uv.y*4.9+t*6.5+0.8)*0.030;',
   '  float fx2=uv.x+fold2;',
+  '  float bigX2=vnoise(vec2(uv.x*1.4+t*0.18+2.1,t*0.14+1.8))*0.60',
+  '             +vnoise(vec2(uv.x*2.8+t*0.30,t*0.11+3.4))*0.40;',
+  '  float rD=vnoise(vec2(fx2*18.0+t*0.45+3.1,uv.y*0.5+t*0.10));',
+  '  float rE=vnoise(vec2(fx2*36.0+t*0.75,uv.y*1.0+t*0.19));',
+  '  float w2=max(0.0,(rD*0.55+rE*0.45)*bigX2-0.20);',
+  '  float rays2=pow(w2/0.80,1.3)*0.65;',
 
-  // Ray texture — threshold to get bright rays on dark gaps
-  '  float rn1=vnoise(vec2(fx*18.0+t*0.55,uv.y*0.6+t*0.12));',
-  '  float rn2=vnoise(vec2(fx*36.0+t*0.90,uv.y*1.2+t*0.22));',
-  '  float rn3=vnoise(vec2(fx*9.0 +t*0.30,uv.y*0.3+t*0.08));',
-  '  float w1=max(0.0,rn1*0.55+rn2*0.30+rn3*0.15-0.38);',
-  '  float rays1=pow(w1/0.62,1.5);',
+  // Rapid shimmer — the aurora flickering
+  '  float sh1=0.65+0.35*sin(t*18.0+uv.x*25.0+uv.y*8.0);',
+  '  float sh2=0.70+0.30*sin(t*14.0+uv.x*20.0+uv.y*6.0+2.1);',
 
-  '  float rn4=vnoise(vec2(fx2*15.0+t*0.40+3.1,uv.y*0.5+t*0.10));',
-  '  float rn5=vnoise(vec2(fx2*30.0+t*0.70,uv.y*1.0+t*0.18));',
-  '  float w2=max(0.0,rn4*0.60+rn5*0.40-0.40);',
-  '  float rays2=pow(w2/0.60,1.4)*0.72;',
-
-  // Active ripple shimmer
-  '  float sh1=0.62+0.38*sin(t*17.0+uv.x*28.0+uv.y*9.0);',
-  '  float sh2=0.68+0.32*sin(t*13.0+uv.x*22.0+uv.y*6.5+2.0);',
-
-  '  float d1=rays1*vMask*hemBoost*sh1;',
+  '  float d1=rays*vMask*hemBoost*sh1;',
   '  float d2=rays2*vMask*hemBoost*sh2;',
 
-  // Color — height based: hem=primary, tips=secondary/purple
-  '  float hf=clamp(1.0-av,0.0,1.0);',
-  '  vec3 hemCol=u_c0;',
-  '  vec3 midCol=mix(u_c1,u_c2,0.4);',
-  '  vec3 tipCol=mix(u_c3,u_c4,0.5);',
-  '  float hBlend=smoothstep(0.0,0.65,hf*hf*1.4);',
-  '  vec3 aCol=mix(tipCol,mix(midCol,hemCol,hBlend),smoothstep(0.0,0.5,hf));',
+  // Height-based color: hem=c0, mid=c1/c2, tips=c3/c4
+  '  float hf=1.0-av;',
+  '  vec3 aCol=mix(mix(u_c3,u_c2,smoothstep(0.0,0.35,hf)),',
+  '               mix(u_c1,u_c0,smoothstep(0.3,0.85,hf)),',
+  '               smoothstep(0.2,0.7,hf));',
+  // White bleach at bright cores
+  '  col+=mix(aCol,vec3(1.0),d1*d1*0.5)*d1*u_intensity*1.70;',
+  '  col+=mix(mix(aCol,u_c1,0.4),vec3(1.0),d2*d2*0.3)*d2*u_intensity*0.70;',
 
-  // White bleach at peak
-  '  vec3 br1=mix(aCol,vec3(1.0),d1*d1*0.55);',
-  '  vec3 br2=mix(mix(aCol,u_c1,0.35),vec3(1.0),d2*d2*0.30);',
-
-  '  col+=br1*d1*u_intensity*1.65;',
-  '  col+=br2*d2*u_intensity*0.72;',
-
-  // Horizon reflection
-  '  col+=hemCol*smoothstep(0.80,1.0,uv.y)*d1*u_intensity*0.18;',
+  // Horizon glow
+  '  col+=u_c0*smoothstep(0.80,1.0,uv.y)*d1*u_intensity*0.15;',
 
   // Vignette
   '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(1.0,0.70),vc*vec2(1.0,0.70))*1.22;',
-
+  '  col*=1.0-dot(vc*vec2(1.0,0.68),vc*vec2(1.0,0.68))*1.18;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
   '}'
 ].join('\n');
-// ── Ink in Water fragment shader (domain-warped FBM) ──────────────────────
+
 var GL_INK_FRAG = [
   'precision mediump float;',
   'uniform float u_time;',
@@ -2177,6 +2179,84 @@ var GL_INK_FRAG = [
   '}'
 ].join('\n');
 
+// ── WebGL NEBULA shader ──────────────────────────────────────────────────────
+var GL_NEBULA_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+
+  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float fbm(vec2 p){float v=0.0,a=0.5;',
+  '  for(int i=0;i<5;i++){v+=a*vnoise(p);p=p*2.1+vec2(1.7,9.2);a*=0.5;}return v;}',
+
+  'float starField(vec2 uv,float sc,vec2 off){',
+  '  vec2 g=floor(uv*sc+off);float v=h2(g);',
+  '  if(v<0.988)return 0.0;',
+  '  float sz=0.05+h2(g+vec2(41.2,73.1))*0.08;',
+  '  float d=length(fract(uv*sc+off)-0.5)*2.0;',
+  '  float disc=1.0-smoothstep(0.0,sz,d);',
+  '  float shim=0.82+0.14*sin(u_time*0.0016*(0.5+v)+v*43.7);',
+  '  return disc*(0.40+v*0.55)*shim;}',
+
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  '  float t=u_time*0.000040;',// very slow drift
+
+  // Background
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
+
+  // 6 drifting gas blobs — positioned like the Canvas 2D BLOBS array
+  // Each blob: position drifts slowly, radial gradient
+  '  vec2 bpos[6];',
+  '  bpos[0]=vec2(0.18+sin(t*0.70+0.0)*0.055, 0.28+cos(t*0.50+0.0)*0.048);',
+  '  bpos[1]=vec2(0.72+sin(t*0.50+1.1)*0.055, 0.22+cos(t*0.36+1.1)*0.048);',
+  '  bpos[2]=vec2(0.55+sin(t*0.60+2.3)*0.055, 0.63+cos(t*0.43+2.3)*0.048);',
+  '  bpos[3]=vec2(0.12+sin(t*0.80+0.7)*0.055, 0.66+cos(t*0.57+0.7)*0.048);',
+  '  bpos[4]=vec2(0.82+sin(t*0.55+3.1)*0.055, 0.68+cos(t*0.39+3.1)*0.048);',
+  '  bpos[5]=vec2(0.40+sin(t*0.30+1.8)*0.055, 0.42+cos(t*0.21+1.8)*0.048);',
+
+  '  vec3 bc[6];',
+  '  bc[0]=u_c0;bc[1]=u_c1;bc[2]=u_c2;bc[3]=u_c3;bc[4]=u_c4;bc[5]=u_c5;',
+  '  float ba[6];',
+  '  ba[0]=0.40;ba[1]=0.34;ba[2]=0.30;ba[3]=0.24;ba[4]=0.32;ba[5]=0.20;',
+  '  float br[6];',
+  '  br[0]=0.58;br[1]=0.52;br[2]=0.62;br[3]=0.47;br[4]=0.52;br[5]=0.68;',
+
+  '  float aspect=u_res.x/u_res.y;',
+  '  for(int i=0;i<6;i++){',
+  '    vec2 d2=uv-bpos[i];d2.x*=aspect;',
+  '    float r=length(d2)/br[i];',
+  '    float pulse=0.88+0.12*sin(u_time*0.00018*float(i+1)+float(i)*0.8);',
+  '    float blob=exp(-r*r*2.5)*ba[i]*pulse*u_intensity;',
+  '    col+=bc[i]*blob;',
+  '  }',
+
+  // Accent glow at centre (shifts with category via u_c0)
+  '  float cg=exp(-dot(uv-0.5,uv-0.5)*3.5)*0.07*u_intensity;',
+  '  col+=u_c0*cg;',
+
+  // Stars
+  '  float s1=starField(uv,280.0,vec2(0.0,0.0));',
+  '  float s2=starField(uv,160.0,vec2(57.3,83.7));',
+  '  float s3=starField(uv,90.0,vec2(31.1,47.9));',
+  '  float s4=starField(uv,50.0,vec2(89.3,13.5));',
+  '  col+=s1*0.65+s2*0.80+s3*0.95;',
+  '  float bh=h2(floor(uv*50.0)+vec2(89.3,13.5));',
+  '  col+=mix(vec3(1.0),vec3(0.75,0.88,1.0),step(0.55,bh))*s4*1.1;',
+
+  // Vignette
+  '  vec2 vc=uv-0.5;',
+  '  col*=1.0-dot(vc,vc)*1.55;',
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}'
+].join('\n');
+
+
 // ── Compile a shader ──────────────────────────────────────────────────────
 function glCompileShader(type, src) {
   var s = gl.createShader(type);
@@ -2237,11 +2317,13 @@ function initWebGL() {
 
     glProgAurora = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
     glProgInk    = glCompileProgram(GL_VERT, GL_INK_FRAG);
+    glProgNebula = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
 
-    if (!glProgAurora || !glProgInk) { gl = null; return false; }
+    if (!glProgAurora || !glProgInk || !glProgNebula) { gl = null; return false; }
 
     glAuroraLocs = glCacheUniforms(glProgAurora);
     glInkLocs    = glCacheUniforms(glProgInk);
+    glNebLocs    = glCacheUniforms(glProgNebula);
 
     // Handle context loss gracefully
     glCanvas.addEventListener('webglcontextlost', function(e) {
@@ -2271,7 +2353,7 @@ function hexToVec3(hex) {
 }
 
 // ── Set all uniforms for a GL program ────────────────────────────────────
-function glSetUniforms(locs) {
+function glSetUniforms(locs, useAccentForC0) {
   gl.uniform1f(locs.u_time,      t);
   gl.uniform2f(locs.u_res,       glCanvas.width, glCanvas.height);
   gl.uniform1f(locs.u_intensity, blobOpacityMult);
@@ -2279,6 +2361,10 @@ function glSetUniforms(locs) {
   for (var i = 0; i < 6; i++) {
     var col = themeRgbPalette[i] || [0,100,200];
     gl.uniform3f(locs['u_c'+i], col[0]/255, col[1]/255, col[2]/255);
+  }
+  // Nebula uses accentRgb for c0 so it responds to category color
+  if (useAccentForC0) {
+    gl.uniform3f(locs.u_c0, accentRgb[0]/255, accentRgb[1]/255, accentRgb[2]/255);
   }
 
   var bg0 = hexToVec3(nebulaBackground[0]);
@@ -2290,18 +2376,19 @@ function glSetUniforms(locs) {
 }
 
 // ── Render one frame with a GL program ───────────────────────────────────
-function glRenderFrame(prog, locs) {
+function glRenderFrame(prog, locs, useAccentForC0) {
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
   var pos = gl.getAttribLocation(prog, 'a_pos');
   gl.enableVertexAttribArray(pos);
   gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-  glSetUniforms(locs);
+  glSetUniforms(locs, useAccentForC0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
-function renderGLAurora() { glRenderFrame(glProgAurora, glAuroraLocs); }
-function renderGLInk()    { glRenderFrame(glProgInk,    glInkLocs);    }
+function renderGLAurora()  { glRenderFrame(glProgAurora, glAuroraLocs); }
+function renderGLInk()     { glRenderFrame(glProgInk,    glInkLocs);    }
+function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
 // ── Init on load ──────────────────────────────────────────────────────────
 glSupported = initWebGL();
