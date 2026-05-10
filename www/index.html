@@ -789,12 +789,12 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
     case 'galaxy':    drawGalaxy();                              break;
-    case 'underwater':drawUnderwater();                          break;
+    case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
     case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
@@ -1981,6 +1981,8 @@ var glSupported = false;
 var glProgAurora  = null;
 var glProgInk     = null;
 var glProgNebula  = null;
+var glProgDeepSea = null;
+var glDeepSeaLocs = {};
 var glNebLocs     = {};
 var glAuroraLocs = {};
 var glInkLocs    = {};
@@ -2247,6 +2249,120 @@ var GL_NEBULA_FRAG = [
   '}',
 ].join('\n');
 
+var GL_DEEPSEA_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float fbm(vec2 p){float v=0.0,a=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(1.7,9.2);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(3.5,4.4);a*=0.5;',
+  '  v+=a*vn(p);return v;}',
+  'float caustic(vec2 uv, float t){',
+  '  float c=0.0;',
+  '  vec2 n0=vec2(0.20+sin(t*0.52)*0.18, 0.15+cos(t*0.37)*0.10);',
+  '  vec2 n1=vec2(0.55+sin(t*0.41+1.1)*0.20, 0.10+cos(t*0.29+0.7)*0.08);',
+  '  vec2 n2=vec2(0.80+sin(t*0.33+2.3)*0.15, 0.18+cos(t*0.44+1.5)*0.12);',
+  '  vec2 n3=vec2(0.35+sin(t*0.60+0.5)*0.22, 0.12+cos(t*0.51+2.1)*0.09);',
+  '  vec2 n4=vec2(0.70+sin(t*0.47+3.0)*0.18, 0.08+cos(t*0.38+1.8)*0.11);',
+  '  vec2 n5=vec2(0.10+sin(t*0.55+1.7)*0.12, 0.20+cos(t*0.42+0.3)*0.10);',
+  '  float d0=length((uv-n0)*vec2(1.0,0.4));',
+  '  float d1=length((uv-n1)*vec2(1.0,0.4));',
+  '  float d2=length((uv-n2)*vec2(1.0,0.4));',
+  '  float d3=length((uv-n3)*vec2(1.0,0.4));',
+  '  float d4=length((uv-n4)*vec2(1.0,0.4));',
+  '  float d5=length((uv-n5)*vec2(1.0,0.4));',
+  '  c =pow(max(0.0,sin(d0*28.0-t*1.8)*0.5+0.5),5.0);',
+  '  c+=pow(max(0.0,sin(d1*24.0-t*1.5+1.0)*0.5+0.5),5.0);',
+  '  c+=pow(max(0.0,sin(d2*32.0-t*2.1+2.0)*0.5+0.5),5.0);',
+  '  c+=pow(max(0.0,sin(d3*22.0-t*1.3+0.5)*0.5+0.5),5.0);',
+  '  c+=pow(max(0.0,sin(d4*28.0-t*1.9+3.0)*0.5+0.5),5.0);',
+  '  c+=pow(max(0.0,sin(d5*26.0-t*1.6+1.5)*0.5+0.5),5.0);',
+  '  return c/6.0;}',
+  'float bioPart(vec2 uv, vec2 seed, float t){',
+  '  float px=h2(seed);',
+  '  float py=fract(h2(seed+vec2(1.3,2.7))+t*(0.04+h2(seed+vec2(3.1,0.9))*0.06));',
+  '  float drift=sin(t*1.2+h2(seed+vec2(0.7,4.1))*6.28)*0.03;',
+  '  vec2 pos=vec2(px+drift,1.0-py);',
+  '  float d=length(uv-pos);',
+  '  float life=sin(py*3.14159);',
+  '  float twinkle=0.5+0.5*sin(t*3.0+h2(seed)*20.0);',
+  '  return exp(-d*d*5000.0)*life*twinkle;}',
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  '  float t=u_time*0.00042;',
+  '  float asp=u_res.x/u_res.y;',
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.2),uv.y*0.8+0.2);',
+  '  col*=mix(1.0,0.55,uv.y*uv.y);',
+  '  float surf=0.0;',
+  '  for(int wi=0;wi<8;wi++){',
+  '    float wf=float(wi)/8.0;',
+  '    float wy=wf*0.22;',
+  '    float wave=sin(uv.x*asp*14.0+t*1.8+float(wi)*0.9)*0.006',
+  '              +sin(uv.x*asp*22.0+t*2.5+float(wi)*1.6)*0.003;',
+  '    float wd=abs(uv.y-wy-wave);',
+  '    surf+=max(0.0,(0.004-wd*18.0))*(1.0-wf)*0.7;',
+  '  }',
+  '  col+=u_c1*surf*u_intensity;',
+  '  float causticMask=smoothstep(0.85,0.0,uv.y);',
+  '  float caust=caustic(uv,t)*causticMask;',
+  '  float caust2=caustic(uv+vec2(0.3,0.1),t*0.85+1.5)*causticMask*0.55;',
+  '  vec3 causticCol=mix(u_c1,mix(u_c0,vec3(1.0),0.35),caust);',
+  '  col+=causticCol*caust*0.22*u_intensity;',
+  '  col+=u_c2*caust2*0.12*u_intensity;',
+  '  for(int ri=0;ri<6;ri++){',
+  '    float rf=float(ri);',
+  '    float rx=0.08+rf*0.17+sin(t*0.25+rf)*0.04;',
+  '    float tilt=sin(t*0.18+rf*1.1)*0.06;',
+  '    float rayX=uv.x-(rx+tilt*uv.y);',
+  '    float rayW=0.028+sin(t*0.4+rf*0.7)*0.008;',
+  '    float ray=exp(-rayX*rayX/(rayW*rayW))',
+  '             *smoothstep(1.0,0.0,uv.y*1.3)',
+  '             *(0.5+0.5*sin(t*0.9+rf*0.8));',
+  '    col+=u_c1*ray*0.14*u_intensity;',
+  '  }',
+  '  float haze=fbm(uv*vec2(asp,1.0)*2.5+vec2(t*0.12,t*0.08))*0.5+0.5;',
+  '  col+=u_c2*haze*0.06*uv.y*u_intensity;',
+  '  float bio=0.0;',
+  '  bio+=bioPart(uv,vec2(0.13,0.27),t);',
+  '  bio+=bioPart(uv,vec2(0.72,0.54),t);',
+  '  bio+=bioPart(uv,vec2(0.41,0.83),t);',
+  '  bio+=bioPart(uv,vec2(0.88,0.12),t);',
+  '  bio+=bioPart(uv,vec2(0.25,0.67),t);',
+  '  bio+=bioPart(uv,vec2(0.56,0.39),t);',
+  '  bio+=bioPart(uv,vec2(0.09,0.91),t);',
+  '  bio+=bioPart(uv,vec2(0.64,0.73),t);',
+  '  bio+=bioPart(uv,vec2(0.33,0.18),t);',
+  '  bio+=bioPart(uv,vec2(0.81,0.45),t);',
+  '  bio+=bioPart(uv,vec2(0.47,0.61),t);',
+  '  bio+=bioPart(uv,vec2(0.19,0.34),t);',
+  '  bio+=bioPart(uv,vec2(0.93,0.78),t);',
+  '  bio+=bioPart(uv,vec2(0.38,0.52),t);',
+  '  bio+=bioPart(uv,vec2(0.67,0.29),t);',
+  '  bio+=bioPart(uv,vec2(0.52,0.87),t);',
+  '  bio+=bioPart(uv,vec2(0.76,0.63),t);',
+  '  bio+=bioPart(uv,vec2(0.04,0.48),t);',
+  '  vec3 bioCol=mix(u_c0,mix(u_c2,vec3(0.5,1.0,0.8),0.5),0.4);',
+  '  col+=mix(bioCol,vec3(1.0),0.5)*bio*u_intensity;',
+  '  float mote=0.0;',
+  '  mote+=bioPart(uv,vec2(0.31,0.73),t*0.6);',
+  '  mote+=bioPart(uv,vec2(0.58,0.22),t*0.5);',
+  '  mote+=bioPart(uv,vec2(0.77,0.88),t*0.7);',
+  '  mote+=bioPart(uv,vec2(0.14,0.55),t*0.55);',
+  '  mote+=bioPart(uv,vec2(0.44,0.41),t*0.65);',
+  '  col+=vec3(0.8,0.95,1.0)*mote*0.4*u_intensity;',
+  '  vec2 vc=uv-0.5;',
+  '  col*=1.0-dot(vc*vec2(0.7,0.9),vc*vec2(0.7,0.9))*1.1;',
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}',
+].join('\n');
+
+
 
 
 
@@ -2310,18 +2426,20 @@ function initWebGL() {
       gl.STATIC_DRAW
     );
 
-    glProgAurora = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
-    glProgInk    = glCompileProgram(GL_VERT, GL_INK_FRAG);
-    glProgNebula = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
+    glProgAurora  = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
+    glProgInk     = glCompileProgram(GL_VERT, GL_INK_FRAG);
+    glProgNebula  = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
+    glProgDeepSea = glCompileProgram(GL_VERT, GL_DEEPSEA_FRAG);
 
     // Independent failures — one bad shader doesn't kill the rest
-    if (!glProgAurora && !glProgInk && !glProgNebula) { gl = null; return false; }
+    if (!glProgAurora && !glProgInk && !glProgNebula && !glProgDeepSea) { gl = null; return false; }
     if (!glProgAurora) console.warn('Aurora shader failed');
     if (!glProgNebula) console.warn('Nebula shader failed');
 
-    glAuroraLocs = glCacheUniforms(glProgAurora);
-    glInkLocs    = glCacheUniforms(glProgInk);
-    glNebLocs    = glCacheUniforms(glProgNebula);
+    glAuroraLocs  = glCacheUniforms(glProgAurora);
+    glInkLocs     = glCacheUniforms(glProgInk);
+    glNebLocs     = glCacheUniforms(glProgNebula);
+    if (glProgDeepSea) glDeepSeaLocs = glCacheUniforms(glProgDeepSea);
 
     // Handle context loss gracefully
     glCanvas.addEventListener('webglcontextlost', function(e) {
@@ -2388,6 +2506,7 @@ function glRenderFrame(prog, locs, useAccentForC0) {
 }
 
 function renderGLAurora()  { glRenderFrame(glProgAurora, glAuroraLocs); }
+function renderGLDeepSea() { if (glProgDeepSea) glRenderFrame(glProgDeepSea, glDeepSeaLocs); else drawUnderwater(); }
 function renderGLInk()     { glRenderFrame(glProgInk, glInkLocs); }
 function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
