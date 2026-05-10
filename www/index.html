@@ -2211,7 +2211,7 @@ var FL_DISPLAY = [
   '  vec3 bg=mix(u_bg0,mix(u_bg1,u_bg2,v_uv.y),v_uv.y*0.7+0.3);',
   // Dark water background + vivid ink on top
   '  float dyeLen=length(dye);',
-  '  vec3 col=mix(bg*0.30,dye*1.4,smoothstep(0.02,0.20,dyeLen));',
+  '  vec3 col=mix(bg*0.55,dye*1.1,smoothstep(0.03,0.30,dyeLen));',
   '  vec2 vc=v_uv-0.5;',
   '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.20;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
@@ -2583,11 +2583,14 @@ function fluidGetColor(idx) {
   var palIdx = idx % 6;
   var col = themeRgbPalette[palIdx] || [80, 120, 255];
   var mx = Math.max(col[0], col[1], col[2]) || 1;
-  var sc = 1.1 / mx;
+  var sc = 0.55 / mx;
   return [col[0] * sc, col[1] * sc, col[2] * sc];
 }
 
+var fluidInjectFrame = 0;
 function fluidInjectSides() {
+  fluidInjectFrame++;
+  if (fluidInjectFrame % 4 !== 0) return; // inject every 4 frames
   fluidStreamPhase += 0.018;
 
   // 3 streams from each side — y positions oscillate gently
@@ -2602,11 +2605,11 @@ function fluidInjectSides() {
 
     // Left side → shooting right (+x velocity)
     var colL = fluidGetColor(fluidSplatIdx + i);
-    fluidSplat(0.02, y, spd, 0.0, colL, 0.07);
+    fluidSplat(0.02, y, spd, 0.0, colL, 0.042);
 
     // Right side → shooting left (-x velocity)
     var colR = fluidGetColor(fluidSplatIdx + i + 3);
-    fluidSplat(0.98, y, -spd, 0.0, colR, 0.07);
+    fluidSplat(0.98, y, -spd, 0.0, colR, 0.042);
   }
   fluidSplatIdx += 2;
 }
@@ -2685,7 +2688,7 @@ function stepFluidSim() {
   locs = fluidUse(sim.progs.advect);
   gl.uniform2f(locs.u_res,   DYE_W, DYE_H);
   gl.uniform1f(locs.u_dt,    dt);
-  gl.uniform1f(locs.u_decay, 0.998);   // dye fades very slowly
+  gl.uniform1f(locs.u_decay, 0.993);   // dye fades at reasonable rate
   gl.uniform1i(locs.u_vel,   fluidBind(0, sim.velocity.read));
   gl.uniform1i(locs.u_src,   fluidBind(1, sim.dye.read));
   fluidBlit(sim.dye.write);
@@ -2803,6 +2806,9 @@ function glSetUniforms(locs, useAccentForC0) {
 
 // ── Render one frame with a GL program ───────────────────────────────────
 function glRenderFrame(prog, locs, useAccentForC0) {
+  // Always reset to main canvas to avoid fluid sim leaving dirty state
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
   var pos = gl.getAttribLocation(prog, 'a_pos');
