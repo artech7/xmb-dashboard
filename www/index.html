@@ -2203,8 +2203,39 @@ var FL_DISPLAY = [
   '}'
 ].join('\n');
 
-// Legacy frag shader (unused — fluid sim replaces it, kept for fallback)
-var GL_INK_FRAG = FL_DISPLAY;
+// Fallback ink shader — used if fluid sim fails to init
+// Must work with GL_VERT (which uses gl_FragCoord, no v_uv varying)
+var GL_INK_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float fbm(vec2 p){float v=0.0,a=0.5;',
+  '  v+=a*vn(p);p=p*2.0+vec2(1.7,9.2);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.0+vec2(3.5,4.4);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.0+vec2(7.1,2.8);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.0+vec2(2.3,6.7);a*=0.5;',
+  '  v+=a*vn(p);return v;}',
+  'vec2 fbm2(vec2 p){return vec2(fbm(p),fbm(p+vec2(5.2,1.3)));}',
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  '  vec2 p=uv*vec2(u_res.x/u_res.y,1.0);',
+  '  float t=u_time*0.000048;',
+  '  vec2 q=fbm2(p*1.8+vec2(t,t*0.71));',
+  '  vec2 r=fbm2(p*1.8+7.5*q+vec2(1.7,9.2));',
+  '  float f1=fbm(p*1.8+6.5*r);',
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
+  '  float ink1=smoothstep(0.26,0.64,f1);',
+  '  col=mix(col,u_c0,ink1*u_intensity*0.90);',
+  '  vec2 vc=uv-0.5;col*=1.0-dot(vc,vc)*1.25;',
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}'
+].join('\n');
 
 
 
@@ -2413,12 +2444,35 @@ function fluidUse(prog) {
 function initFluidSim() {
   if (!gl) return false;
 
-  // Try float textures for better precision
-  var floatExt = gl.getExtension('OES_texture_float');
-  var halfExt  = gl.getExtension('OES_texture_half_float');
-  var texType  = floatExt ? gl.FLOAT :
-                 halfExt  ? halfExt.HALF_FLOAT_OES :
-                            gl.UNSIGNED_BYTE;
+  // Use UNSIGNED_BYTE by default — most compatible across all devices
+  // Float textures require WEBGL_color_buffer_float to render to, not just OES_texture_float
+  var texType = gl.UNSIGNED_BYTE;
+  try {
+    var halfExt = gl.getExtension('OES_texture_half_float');
+    var halfLinear = gl.getExtension('OES_texture_half_float_linear');
+    var colorBuf = gl.getExtension('WEBGL_color_buffer_float') ||
+                   gl.getExtension('EXT_color_buffer_half_float');
+    if (halfExt && halfLinear && colorBuf) {
+      // Verify we can actually render to half-float by testing a small FBO
+      var testTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, testTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, halfExt.HALF_FLOAT_OES, null);
+      var testFBO = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, testFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, testTex, 0);
+      var status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteTexture(testTex);
+      gl.deleteFramebuffer(testFBO);
+      if (status === gl.FRAMEBUFFER_COMPLETE) {
+        texType = halfExt.HALF_FLOAT_OES;
+        console.log('Fluid sim: using half-float textures');
+      }
+    }
+  } catch(e) {}
+  if (texType === gl.UNSIGNED_BYTE) console.log('Fluid sim: using UNSIGNED_BYTE textures');
+
+  try { // wrap rest of init in try/catch
 
   // Compile all fluid programs
   var progs = {
@@ -2451,9 +2505,18 @@ function initFluidSim() {
     fluidSplatRandom();
   }
 
+  // Verify framebuffer is working
+  var check = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
   fluidReady = true;
-  console.log('Fluid sim ready — texType:', texType === gl.FLOAT ? 'float' : texType === gl.UNSIGNED_BYTE ? 'byte' : 'half');
+  console.log('Fluid sim ready — texType:', texType === gl.UNSIGNED_BYTE ? 'byte' : 'half');
   return true;
+  } catch(err) {
+    console.error('Fluid sim init error:', err);
+    fluidReady = false;
+    return false;
+  }
 }
 
 function fluidBind(unit, fbo) {
