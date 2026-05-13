@@ -821,6 +821,7 @@ function animLoop() {
     case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
+    case 'hex':        drawHexGrid();                             break;
     default:          drawNebula();                              break;
   }
   requestAnimationFrame(animLoop);
@@ -1036,6 +1037,185 @@ function drawParticleFlow() {
     ctx.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + alpha.toFixed(2) + ')';
     ctx.fill();
   }
+
+  drawVignette();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HEX GRID — honeycomb mesh with tracing pulses along edges
+// ══════════════════════════════════════════════════════════════════════════════
+var hexPulses  = null;
+var hexGrid    = null;
+var HEX_SIZE   = 48;  // hex cell radius in px
+var HEX_PULSE_MAX = 55; // max concurrent pulses
+
+function hexCorner(cx, cy, size, i) {
+  var angle = Math.PI / 180 * (60 * i - 30);
+  return { x: cx + size * Math.cos(angle), y: cy + size * Math.sin(angle) };
+}
+
+function initHexGrid() {
+  var s  = HEX_SIZE;
+  var sw = s * Math.sqrt(3);
+  var sh = s * 1.5;
+  hexGrid = [];
+  // Build all hex centres
+  var cols = Math.ceil(W / sw) + 2;
+  var rows = Math.ceil(H / sh) + 2;
+  for (var row = -1; row < rows; row++) {
+    for (var col = -1; col < cols; col++) {
+      var x = col * sw + (row % 2 === 0 ? 0 : sw * 0.5);
+      var y = row * sh;
+      hexGrid.push({ x: x, y: y });
+    }
+  }
+  // Build edges — each unique edge between adjacent hexes
+  // Store as {x1,y1,x2,y2,pulse} for each of the 6 edges per hex
+  hexGrid.edges = [];
+  var seen = {};
+  hexGrid.forEach(function(h) {
+    for (var i = 0; i < 6; i++) {
+      var a = hexCorner(h.x, h.y, s, i);
+      var b = hexCorner(h.x, h.y, s, (i + 1) % 6);
+      // Deduplicate edges by rounded key
+      var key = [Math.round(a.x),Math.round(a.y),Math.round(b.x),Math.round(b.y)].join(',');
+      var key2= [Math.round(b.x),Math.round(b.y),Math.round(a.x),Math.round(a.y)].join(',');
+      if (!seen[key] && !seen[key2]) {
+        seen[key] = true;
+        hexGrid.edges.push({ x1:a.x,y1:a.y,x2:b.x,y2:b.y,
+          cx: h.x, cy: h.y }); // store parent hex centre for pulse targeting
+      }
+    }
+  });
+  hexPulses = [];
+}
+
+function hexSpawnPulse() {
+  if (!hexGrid || !hexGrid.edges) return;
+  // Pick a random edge to start from
+  var eIdx = Math.floor(Math.random() * hexGrid.edges.length);
+  var e = hexGrid.edges[eIdx];
+  var col = themeRgbPalette[Math.floor(Math.random() * themeRgbPalette.length)];
+  hexPulses.push({
+    // Parametric position along edge: 0=start, 1=end
+    ex: e.x1, ey: e.y1,  // start
+    tx: e.x2, ty: e.y2,  // end
+    prog: 0,             // 0→1
+    spd:  0.018 + Math.random() * 0.028,
+    col:  col,
+    alpha: 0.7 + Math.random() * 0.3,
+    width: 1.0 + Math.random() * 1.5,
+    tail:  0.18 + Math.random() * 0.22, // tail length (0-1)
+    // When pulse reaches end, it forks to adjacent edges
+    forks: 1 + (Math.random() < 0.35 ? 1 : 0),
+    edge:  e,
+  });
+}
+
+function drawHexGrid() {
+  if (!hexGrid) initHexGrid();
+
+  // Background
+  var bg0 = nebulaBackground[0] || '#050508';
+  var bg1 = nebulaBackground[1] || '#030306';
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, bg0);
+  grad.addColorStop(1, bg1);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw static hex grid — very dim
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth   = 0.5;
+  var s = HEX_SIZE;
+  hexGrid.forEach(function(h) {
+    ctx.beginPath();
+    for (var i = 0; i < 6; i++) {
+      var c = hexCorner(h.x, h.y, s, i);
+      i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  });
+
+  // Spawn new pulses
+  if (hexPulses.length < HEX_PULSE_MAX && Math.random() < 0.22) hexSpawnPulse();
+
+  // Draw + advance pulses
+  var alive = [];
+  for (var i = 0; i < hexPulses.length; i++) {
+    var p = hexPulses[i];
+    p.prog += p.spd * animSpeed;
+
+    var col = p.col;
+    var r = col[0], g = col[1], b = col[2];
+
+    // Draw glowing trail along the edge
+    // Head position
+    var hx = p.ex + (p.tx - p.ex) * p.prog;
+    var hy = p.ey + (p.ty - p.ey) * p.prog;
+    // Tail position
+    var tailProg = Math.max(0, p.prog - p.tail);
+    var tx = p.ex + (p.tx - p.ex) * tailProg;
+    var ty = p.ey + (p.ty - p.ey) * tailProg;
+
+    // Outer glow
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(hx, hy);
+    ctx.strokeStyle = 'rgba('+r+','+g+','+b+','+(p.alpha * 0.3 * blobOpacityMult).toFixed(2)+')';
+    ctx.lineWidth   = p.width * 3;
+    ctx.lineCap     = 'round';
+    ctx.stroke();
+
+    // Core bright line
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(hx, hy);
+    ctx.strokeStyle = 'rgba('+r+','+g+','+b+','+(p.alpha * blobOpacityMult).toFixed(2)+')';
+    ctx.lineWidth   = p.width;
+    ctx.stroke();
+
+    // Head dot
+    ctx.beginPath();
+    ctx.arc(hx, hy, p.width * 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba('+r+','+g+','+b+','+(p.alpha * blobOpacityMult).toFixed(2)+')';
+    ctx.fill();
+
+    if (p.prog < 1.0) {
+      alive.push(p);
+    } else {
+      // Fork: spawn new pulses from adjacent edges at the endpoint
+      for (var f = 0; f < p.forks; f++) {
+        if (hexPulses.length + alive.length < HEX_PULSE_MAX && Math.random() < 0.72) {
+          // Find edges that share the endpoint
+          var near = hexGrid.edges.filter(function(e) {
+            var d1 = Math.hypot(e.x1-p.tx, e.y1-p.ty);
+            var d2 = Math.hypot(e.x2-p.tx, e.y2-p.ty);
+            return (d1 < 3 || d2 < 3) && !(Math.abs(e.x1-p.ex)<3 && Math.abs(e.y1-p.ey)<3);
+          });
+          if (near.length > 0) {
+            var ne = near[Math.floor(Math.random() * near.length)];
+            // Determine start direction — continue from endpoint
+            var startX = Math.hypot(ne.x1-p.tx, ne.y1-p.ty) < 3 ? ne.x1 : ne.x2;
+            var startY = Math.hypot(ne.x1-p.tx, ne.y1-p.ty) < 3 ? ne.y1 : ne.y2;
+            var endX   = startX === ne.x1 ? ne.x2 : ne.x1;
+            var endY   = startY === ne.y1 ? ne.y2 : ne.y1;
+            var newCol = Math.random() < 0.7 ? p.col :
+              themeRgbPalette[Math.floor(Math.random() * themeRgbPalette.length)];
+            alive.push({
+              ex: startX, ey: startY, tx: endX, ty: endY,
+              prog: 0, spd: p.spd * (0.85 + Math.random() * 0.3),
+              col: newCol, alpha: p.alpha * (0.7 + Math.random() * 0.25),
+              width: p.width * (0.75 + Math.random() * 0.35),
+              tail: p.tail, forks: Math.random() < 0.4 ? 1 : 0, edge: ne,
+            });
+          }
+        }
+      }
+    }
+  }
+  hexPulses = alive;
 
   drawVignette();
 }
@@ -5219,6 +5399,7 @@ document.addEventListener('keydown', function(e) {
             <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">XMB Wave</button>
             <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="1" data-pref-col="7">Particles</button>
             <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="1" data-pref-col="8">Smoke</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="hex"   data-pref-row="1" data-pref-col="9">Hex Grid</button>
           </div>
         </div>
       </div>
@@ -5406,13 +5587,14 @@ function applyPrefs(prefs) {
     matrixCols = null; flameParticles = null; flameEmbers = null;
     auroraCurtains = null; bokehCircles = null; inkBlobs = null;
     pfParticles = null;
+    hexPulses = null; hexGrid = null;
   }
 }
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
 var THEME_KEYS = Object.keys(NEBULA_THEMES);
-var ROW_COLS   = [THEME_KEYS.length, 9, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=particles, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
+var ROW_COLS   = [THEME_KEYS.length, 10, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=particles, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
