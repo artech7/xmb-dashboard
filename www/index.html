@@ -2087,7 +2087,7 @@ var GL_INK_FRAG = [
   'float h1(float v){return fract(sin(v*127.1)*43758.5453);}',
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float t=u_time*0.00055;',
+  '  float t=u_time*0.00090;',
   '  float asp=u_res.x/u_res.y;',
   '  vec3 bg=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.6+0.4);',
   '  vec3 col=bg*0.28;',
@@ -2097,7 +2097,7 @@ var GL_INK_FRAG = [
   '  float rainCol=0.0;',
   '  float sc1=asp*55.0;',
   '  vec2 g1=vec2(floor((uv.x+uv.y*windAngle)*sc1), 0.0);',
-  '  float spd1=0.55+h1(g1.x)*0.35;',
+  '  float spd1=0.80+h1(g1.x)*0.45;',
   '  float phase1=h1(g1.x+13.7);',
   '  float streak1=fract(uv.y+phase1+t*spd1);',
   '  float len1=0.06+h1(g1.x+3.1)*0.10;',
@@ -2109,7 +2109,7 @@ var GL_INK_FRAG = [
   '  rainCol+=col1*(0.55+h1(g1.x+7.3)*0.45);',
   '  float sc2=asp*100.0;',
   '  vec2 g2=vec2(floor((uv.x+uv.y*windAngle)*sc2), 0.0);',
-  '  float spd2=0.40+h1(g2.x+2.1)*0.25;',
+  '  float spd2=0.60+h1(g2.x+2.1)*0.35;',
   '  float phase2=h1(g2.x+27.3);',
   '  float streak2=fract(uv.y+phase2+t*spd2);',
   '  float len2=0.04+h1(g2.x+5.7)*0.07;',
@@ -2121,7 +2121,7 @@ var GL_INK_FRAG = [
   '  rainCol+=col2*(0.30+h1(g2.x+11.1)*0.30)*0.70;',
   '  float sc3=asp*190.0;',
   '  vec2 g3=vec2(floor((uv.x+uv.y*windAngle)*sc3), 0.0);',
-  '  float spd3=0.30+h1(g3.x+4.3)*0.20;',
+  '  float spd3=0.45+h1(g3.x+4.3)*0.28;',
   '  float phase3=h1(g3.x+41.7);',
   '  float streak3=fract(uv.y+phase3+t*spd3);',
   '  float len3=0.025+h1(g3.x+8.1)*0.04;',
@@ -2166,6 +2166,22 @@ var GL_INK_FRAG = [
   '  float fog=smoothstep(0.4,0.0,abs(uv.x-0.5))*0.08',
   '           +smoothstep(0.3,0.0,uv.y)*0.05;',
   '  col=mix(col,col+u_bg2*0.15,fog);',
+
+  // Mist — slow drifting fog patches like distant rain haze
+  // Two overlapping noise fields at different scales and speeds
+  '  vec2 mp1=uv*vec2(asp*1.6,1.2)+vec2(t*0.06,t*0.03);',
+  '  vec2 mp2=uv*vec2(asp*3.2,2.5)+vec2(t*0.04,t*0.07)+vec2(1.7,3.2);',
+  '  float m1=fract(sin(dot(mp1,vec2(127.1,311.7)))*43758.5453);',
+  '  float m2=fract(sin(dot(mp2,vec2(311.7,127.1)))*43758.5453);',
+  '  float m3=fract(sin(dot((mp1+mp2)*0.5,vec2(92.3,251.4)))*43758.5453);',
+  '  float mist=smoothstep(0.38,0.72,m1*0.5+m2*0.3+m3*0.2);',
+  // Mist is stronger in middle-distance, fades near top and bottom
+  '  float mistMask=smoothstep(0.05,0.30,uv.y)*smoothstep(1.0,0.55,uv.y);',
+  // Slight color — cold blue-grey tinted by theme
+  '  vec3 mistCol=mix(vec3(0.18,0.22,0.28),u_c1*0.25+vec3(0.12,0.16,0.22),',
+  '    sin(uv.x*asp*0.8+t*0.12)*0.5+0.5);',
+  '  col=mix(col,col*0.7+mistCol,mist*mistMask*0.32*u_intensity);',
+
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(0.8,1.0),vc*vec2(0.8,1.0))*1.1;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
