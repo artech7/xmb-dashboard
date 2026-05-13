@@ -150,26 +150,7 @@ html, body {
   max-height: 460px;
 }
 
-/* Fade top/bottom of list using pointer-events:none overlays.
-   NOT using mask-image — it breaks backdrop-filter on child .xmb-item */
-#item-panel::before,
-#item-panel::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0;
-  height: 28px;
-  z-index: 2;
-  pointer-events: none;
-}
-#item-panel::before {
-  top: 32px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
-}
-#item-panel::after {
-  bottom: 0;
-  background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
-}
-}
+/* No fade overlays needed — clean clip via overflow:hidden */
 
 .item-list {
   display: flex;
@@ -481,9 +462,7 @@ html, body {
   .item-list {
     gap: 0; padding: 2px 0;
     transform: none !important;      /* disable JS translateY on mobile */
-    transition: none !important;     /* no slide animation needed */
-    mask-image: none !important;     /* remove mask — kills WebGL on mobile */
-    -webkit-mask-image: none !important;
+    transition: none !important;
   }
 
   /* ── Item cards ── */
