@@ -428,9 +428,11 @@ html, body {
     padding: 7px 14px 7px 10px;
     margin-right: 6px;
     border-radius: 20px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
     transition: background 0.18s, border-color 0.18s;
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
   }
   .cat-item.mob-active {
     background: rgba(255,255,255,0.09);
@@ -2690,17 +2692,20 @@ function scrollItemList() {
   var items = listEl.querySelectorAll('.xmb-item');
   if (!items.length) return;
 
-  var itemH     = items[0].offsetHeight + 2; // height + gap
-  var panelH    = document.getElementById('item-panel').offsetHeight - 32; // minus padding-top
-  var visCount  = Math.floor(panelH / itemH); // visible items
-  var centerPos = Math.floor(visCount / 2);   // selected stays at this index
+  var itemH = items[0].offsetHeight + 2;
+  if (itemH <= 2) return; // not rendered yet, skip
 
-  // How far to translate so selected item is centered
-  var offset = -(itemIdx - centerPos) * itemH;
+  var panelEl = document.getElementById('item-panel');
+  if (!panelEl) return;
+  var panelH    = panelEl.offsetHeight - 32;
+  if (panelH <= 0) return;
 
-  // Clamp: don't scroll past first or last item
+  var visCount  = Math.floor(panelH / itemH);
+  var centerPos = Math.floor(visCount / 2);
+  var offset    = -(itemIdx - centerPos) * itemH;
   var maxOffset = 0;
   var minOffset = -(items.length - visCount) * itemH;
+  if (minOffset > maxOffset) minOffset = maxOffset; // fewer items than visible slots
   offset = Math.max(minOffset, Math.min(maxOffset, offset));
 
   listEl.style.transform = 'translateY(' + offset + 'px)';
