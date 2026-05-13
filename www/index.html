@@ -467,15 +467,24 @@ html, body {
     -webkit-overflow-scrolling: touch;
   }
   #item-panel::-webkit-scrollbar { display: none; }
-  .item-list { gap: 0; padding: 2px 0; }
+  .item-list {
+    gap: 0; padding: 2px 0;
+    transform: none !important;      /* disable JS translateY on mobile */
+    transition: none !important;     /* no slide animation needed */
+    mask-image: none !important;     /* remove mask — kills WebGL on mobile */
+    -webkit-mask-image: none !important;
+  }
 
   /* ── Item cards ── */
   .xmb-item {
     padding: 14px 18px;
     border-radius: 0;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
     gap: 14px;
     min-height: 62px;
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+    background: rgba(255,255,255,0.04);
   }
   .xmb-item::after { display: none; }
   .xmb-item.selected::before { opacity: 0; }
@@ -2687,6 +2696,7 @@ function updateItemSelection() {
 }
 
 function scrollItemList() {
+  if (isMobile) return; // mobile uses native overflow scroll, not translateY
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
   var items = listEl.querySelectorAll('.xmb-item');
@@ -2798,6 +2808,9 @@ window.matchMedia('(max-width: 768px)').addEventListener('change', function(e) {
 });
 
 function setupMobile() {
+  // Clear any JS scroll transform applied in desktop mode
+  var listEl = document.querySelector('.item-list');
+  if (listEl) listEl.style.transform = '';
   // Mark active category pill
   updateMobileCatStrip();
 
