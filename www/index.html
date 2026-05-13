@@ -846,7 +846,7 @@ var pfParticles   = null;
 var pfObstacles   = [];   // cached UI element bounding boxes
 var pfObsTimer    = 0;    // refresh obstacles every N frames
 
-var PF_COUNT      = 320;  // total particles
+var PF_COUNT      = 520;  // total particles
 var PF_SPEED      = 0.55; // base speed (px/frame)
 var PF_AVOID_R    = 72;   // avoidance radius around obstacles (px)
 var PF_NOISE_STR  = 0.18; // flow noise strength
@@ -860,11 +860,42 @@ function pfNewParticle() {
     y:     Math.random() * H,
     vx:    pfRand(-PF_SPEED, PF_SPEED),
     vy:    pfRand(-PF_SPEED, PF_SPEED),
-    size:  pfRand(0.8, 2.0),
-    alpha: pfRand(0.3, 0.9),
+    size:  pfRand(1.4, 3.2),
+    alpha: pfRand(0.4, 1.0),
     phase: Math.random() * Math.PI * 2, // for twinkle
     speed: pfRand(0.35, 0.80),
   };
+}
+
+// Scatter burst when category changes — pushes nearby particles outward
+var pfScatterX = W * 0.5;
+var pfScatterY = H * 0.5;
+var pfScatterActive = false;
+
+function pfTriggerScatter() {
+  // Find center of active category icon
+  var active = document.querySelector('.cat-item.active, .cat-icon-wrap');
+  if (active) {
+    var r = active.getBoundingClientRect();
+    pfScatterX = r.left + r.width * 0.5;
+    pfScatterY = r.top  + r.height * 0.5;
+  }
+  pfScatterActive = true;
+  // Kick nearby particles outward
+  if (!pfParticles) return;
+  for (var i = 0; i < pfParticles.length; i++) {
+    var p = pfParticles[i];
+    var dx = p.x - pfScatterX;
+    var dy = p.y - pfScatterY;
+    var dist = Math.sqrt(dx*dx + dy*dy);
+    var radius = 220;
+    if (dist < radius && dist > 1) {
+      var force = (1 - dist/radius) * 5.5;
+      p.vx += (dx/dist) * force;
+      p.vy += (dy/dist) * force;
+    }
+  }
+  pfScatterActive = false;
 }
 
 function initParticleFlow() {
@@ -904,14 +935,34 @@ function drawParticleFlow() {
   pfObsTimer++;
   if (pfObsTimer >= 30) { pfObstacles = pfGetObstacles(); pfObsTimer = 0; }
 
-  // Clear with dark background
+  // Background — dark gradient base + slow drifting palette blobs
   var bg0 = nebulaBackground[0] || '#050508';
   var bg1 = nebulaBackground[1] || '#030306';
-  var grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, bg0);
-  grad.addColorStop(1, bg1);
-  ctx.fillStyle = grad;
+  var bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, bg0);
+  bgGrad.addColorStop(1, bg1);
+  ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
+
+  // 4 drifting light blobs — soft, low opacity so particles remain visible
+  var blobDefs = [
+    { xi: 0.18, yi: 0.28, spd: 0.00012, phase: 0.0,  ci: 0 },
+    { xi: 0.72, yi: 0.22, spd: 0.00009, phase: 1.1,  ci: 2 },
+    { xi: 0.55, yi: 0.65, spd: 0.00011, phase: 2.3,  ci: 4 },
+    { xi: 0.35, yi: 0.50, spd: 0.00008, phase: 3.7,  ci: 1 },
+  ];
+  blobDefs.forEach(function(b) {
+    var bx = (b.xi + Math.sin(t * b.spd + b.phase) * 0.12) * W;
+    var by = (b.yi + Math.cos(t * b.spd * 0.8 + b.phase) * 0.10) * H;
+    var br = Math.min(W, H) * 0.45;
+    var col = themeRgbPalette[b.ci] || [80,100,180];
+    var rg = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+    rg.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+',0.10)');
+    rg.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+',0.04)');
+    rg.addColorStop(1,   'rgba('+col[0]+','+col[1]+','+col[2]+',0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+  });
 
   var palette = themeRgbPalette;
 
@@ -2821,6 +2872,7 @@ function positionCategories(animate = true) {
 }
 
 function updateCategoryUI() {
+  if (typeof pfTriggerScatter === 'function') pfTriggerScatter();
   const cat = config.categories[catIdx];
   setAccent(cat.color);
   positionCategories(true);
