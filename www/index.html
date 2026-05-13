@@ -384,6 +384,50 @@ html, body {
   opacity: 0;
 }
 
+/* ── Service iframe overlay ── */
+#service-frame-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: #000;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.55s ease-out;
+}
+#service-frame-wrap.visible { opacity: 1; }
+#service-frame {
+  width: 100%; height: 100%;
+  border: none;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.45s ease-out;
+}
+#service-frame.loaded { opacity: 1; }
+
+/* Close button — escape hatch back to dashboard */
+#service-close {
+  position: absolute;
+  top: 16px; right: 20px;
+  z-index: 10;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #fff;
+  font-size: 18px;
+  line-height: 36px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.3s;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  user-select: none;
+}
+#service-frame-wrap:hover #service-close,
+#service-frame-wrap.show-close #service-close { opacity: 0.7; }
+#service-close:hover { opacity: 1 !important; background: rgba(0,0,0,0.8); }
+
 /* ═══════════════════════════════════════════════════════════════════
    MOBILE LAYOUT  (max-width: 768px)
    Desktop XMB is completely unchanged — these rules only apply mobile
@@ -542,6 +586,10 @@ html, body {
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
 </div>
 <div id="open-flash"></div>
+<div id="service-frame-wrap" id="service-frame-wrap">
+  <div id="service-close" title="Back to dashboard">✕</div>
+  <iframe id="service-frame" src="about:blank" allowfullscreen></iframe>
+</div>
 <div id="xmb-root">
 
 <div id="topbar">
@@ -3173,16 +3221,72 @@ function openItem(item) {
 
   var root    = document.getElementById('xmb-root');
   var overlay = document.getElementById('open-flash');
+  var wrap    = document.getElementById('service-frame-wrap');
+  var frame   = document.getElementById('service-frame');
 
-  // Zoom UI outward + fade to black simultaneously
+  // Step 1: zoom out + fade dashboard to black (500ms)
   if (root)    root.classList.add('launching');
   if (overlay) overlay.classList.add('launching');
 
-  // Navigate in same tab after animation completes
   setTimeout(function() {
-    window.location.href = item.url;
+    // Step 2: load iframe behind the black overlay
+    frame.classList.remove('loaded');
+    wrap.style.display = 'block';
+    wrap.classList.remove('visible');
+
+    // Listen for iframe load — fade it in once ready
+    function onFrameLoad() {
+      frame.removeEventListener('load', onFrameLoad);
+      // Brief pause so page has rendered
+      setTimeout(function() {
+        // Fade out the black overlay, fade in the frame
+        if (overlay) { overlay.classList.remove('launching'); }
+        wrap.classList.add('visible');
+        setTimeout(function() { frame.classList.add('loaded'); }, 80);
+      }, 180);
+    }
+    frame.addEventListener('load', onFrameLoad);
+    frame.src = item.url;
   }, 560);
 }
+
+function closeServiceFrame() {
+  var wrap    = document.getElementById('service-frame-wrap');
+  var frame   = document.getElementById('service-frame');
+  var overlay = document.getElementById('open-flash');
+  var root    = document.getElementById('xmb-root');
+
+  // Fade out the iframe
+  frame.classList.remove('loaded');
+  wrap.classList.remove('visible');
+  if (overlay) overlay.classList.add('launching');
+
+  setTimeout(function() {
+    // Hide iframe, fade dashboard back in
+    wrap.style.display = 'none';
+    frame.src = 'about:blank';
+    if (root) root.classList.remove('launching');
+    setTimeout(function() {
+      if (overlay) overlay.classList.remove('launching');
+    }, 80);
+  }, 500);
+}
+
+// Close button
+document.addEventListener('DOMContentLoaded', function() {
+  var closeBtn = document.getElementById('service-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeServiceFrame);
+});
+
+// Also close on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    var wrap = document.getElementById('service-frame-wrap');
+    if (wrap && wrap.style.display !== 'none' && wrap.classList.contains('visible')) {
+      closeServiceFrame();
+    }
+  }
+});
 
 // ─── KEYBOARD ─────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
