@@ -3630,6 +3630,15 @@ function escHtml(s) {
   border-bottom: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
+.ip-src-btn {
+  padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.55); cursor: pointer;
+  font-size: 12px; transition: all 0.2s;
+}
+.ip-src-btn.active {
+  background: rgba(255,255,255,0.18); color: #fff; border-color: rgba(255,255,255,0.35);
+}
+.ip-src-btn:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); }
 .ip-tab-btn {
   padding: 7px 16px;
   background: none;
@@ -3873,6 +3882,9 @@ function escHtml(s) {
       <button class="ip-tab-btn active" data-tab="repo">Repository</button>
       <button class="ip-tab-btn" data-tab="url">URL</button>
       <button class="ip-tab-btn" data-tab="upload">Upload</button>
+      <div style="flex:1"></div>
+      <button class="ip-src-btn active" data-src="homarr" title="homarr-labs/dashboard-icons">homarr-labs</button>
+      <button class="ip-src-btn" data-src="selfhst" title="selfh.st/icons">selfh.st</button>
     </div>
     <!-- Repo -->
     <div id="ip-pane-repo" class="ip-pane active">
@@ -3907,6 +3919,11 @@ var ipSearchTimer = null;
 var IP_CDN        = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@main/svg/';
 var IP_TREE       = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@main/tree.json';
 var IP_API        = 'https://data.jsdelivr.com/v1/packages/gh/homarr-labs/dashboard-icons@main?structure=flat';
+// selfh.st/icons
+var SH_CDN        = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/';
+var SH_API        = 'https://data.jsdelivr.com/v1/packages/gh/selfhst/icons@main?structure=flat&limit=100000';
+var ipSource      = 'homarr'; // 'homarr' or 'selfhst'
+var ipIconListSH  = null;    // cached selfh.st list
 var IP_FALLBACK = [
   "2fauth",
   "actual-budget",
@@ -4278,6 +4295,49 @@ var IP_FALLBACK = [
   "zwavejs2mqtt"
 ];
 
+async function loadIconListSelfhst(forceRefresh) {
+  if (!forceRefresh && ipIconListSH) return ipIconListSH;
+  if (!forceRefresh) {
+    try {
+      var c = sessionStorage.getItem('xmb-icon-list-sh');
+      if (c) { var p = JSON.parse(c); if (p.length > 50) { ipIconListSH = p; return ipIconListSH; } }
+    } catch(e) {}
+  }
+  document.getElementById('ip-status').textContent = 'Fetching selfh.st icons…';
+  // jsDelivr package API for selfhst/icons
+  try {
+    var r = await fetch(SH_API);
+    if (r.ok) {
+      var d = await r.json();
+      var files = Array.isArray(d.files) ? d.files : [];
+      var names = files
+        .map(function(f) { return typeof f === 'string' ? f : (f.name || ''); })
+        .filter(function(n) { return n && n.indexOf('/svg/') !== -1 && n.slice(-4) === '.svg'; })
+        .map(function(n) {
+          var base = n.split('/svg/').pop().slice(0,-4).toLowerCase();
+          // strip -light / -dark variants — keep only the base name
+          return base.replace(/-(light|dark)$/, '');
+        })
+        .filter(function(n,i,a) { return n && n.indexOf('/') === -1 && a.indexOf(n) === i; })
+        .sort();
+      if (names.length > 50) {
+        ipIconListSH = names;
+        try { sessionStorage.setItem('xmb-icon-list-sh', JSON.stringify(names)); } catch(e) {}
+        return ipIconListSH;
+      }
+    }
+  } catch(e) {}
+  // Fallback: small curated list of selfh.st icons
+  ipIconListSH = ['adguard-home','authentik','bazarr','bitwarden','caddy','calibre-web',
+    'dashdot','duplicati','filebrowser','gitea','grafana','headscale','heimdall',
+    'homepage','immich','jackett','jellyfin','jellyseerr','kavita','komga','lidarr',
+    'mealie','navidrome','netdata','nextcloud','nginx-proxy-manager','ntfy','ombi',
+    'overseerr','paperless-ngx','pihole','portainer','prowlarr','radarr','readarr',
+    'sonarr','syncthing','traefik','tautulli','unifi','uptime-kuma','vaultwarden',
+    'vikunja','wireguard','your-spotify'];
+  return ipIconListSH;
+}
+
 async function loadIconList(forceRefresh) {
   if (!forceRefresh && ipIconList) return ipIconList;
   if (!forceRefresh) {
@@ -4374,6 +4434,8 @@ function openIconPicker(callback) {
   document.getElementById('ip-upload-preview').src = '';
   document.getElementById('ip-upload-preview-wrap').classList.remove('show');
   document.getElementById('ip-upload-use').classList.remove('show');
+  ipSource = 'homarr';
+  document.querySelectorAll('.ip-src-btn').forEach(function(b){b.classList.toggle('active',b.dataset.src==='homarr');});
   switchIpTab('repo');
   loadIconList().then(function(list) {
     renderIconGrid(list, '');
@@ -4425,8 +4487,9 @@ function renderIconGrid(list, query) {
   var filtered = q
     ? list.filter(function(n) { return n.indexOf(q) !== -1; })
     : list;
-  var src = (list === IP_FALLBACK) ? ' (built-in list \u2014 hit \u21bb to fetch full repo)' : '';
-  status.textContent = filtered.length + ' icons' + src;
+  var src = (list === IP_FALLBACK) ? ' (built-in list)' : '';
+  var srcLabel = ipSource === 'selfhst' ? ' · selfh.st' : ' · homarr-labs';
+  status.textContent = filtered.length + ' icons' + srcLabel + src;
   if (filtered.length === 0) {
     var el = document.createElement('div');
     el.className = 'ip-no-results';
@@ -4437,7 +4500,8 @@ function renderIconGrid(list, query) {
   filtered.forEach(function(name) {
     var item = document.createElement('div');
     item.className = 'ip-grid-item';
-    var url = IP_CDN + name + '.svg';
+    var cdn = ipSource === 'selfhst' ? SH_CDN : IP_CDN;
+    var url = cdn + name + '.svg';
     item.innerHTML =
       '<img src="' + url + '" loading="lazy" alt="' + name + '" onerror="this.parentElement.style.display=\'none\'">' +
       '<span>' + name + '</span>';
@@ -4495,12 +4559,23 @@ document.getElementById('ip-upload-use').addEventListener('click', function() {
   if (ipUploadData) selectIcon(ipUploadData);
 });
 
+// Source toggle
+document.querySelectorAll('.ip-src-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    ipSource = btn.dataset.src;
+    document.querySelectorAll('.ip-src-btn').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.src === ipSource);
+    });
+    document.getElementById('ip-search').value = '';
+    var loadFn = ipSource === 'selfhst' ? loadIconListSelfhst : loadIconList;
+    loadFn().then(function(list) { renderIconGrid(list, ''); });
+  });
+});
+
 // Close
 document.getElementById('ip-close-btn').addEventListener('click', closeIconPicker);
 document.getElementById('ip-refresh-btn').addEventListener('click', function() {
-  sessionStorage.removeItem('xmb-icon-list');
-  ipIconList = null;
-  loadIconList(true).then(function(list) { renderIconGrid(list, document.getElementById('ip-search').value); });
+  if (ipSource === 'selfhst') { sessionStorage.removeItem('xmb-icon-list-sh'); ipIconListSH = null; loadIconListSelfhst(true).then(function(list) { renderIconGrid(list, document.getElementById('ip-search').value); }); } else { sessionStorage.removeItem('xmb-icon-list'); ipIconList = null; loadIconList(true).then(function(list) { renderIconGrid(list, document.getElementById('ip-search').value); }); }
 });
 document.getElementById('ip-overlay').addEventListener('click', function(e) {
   if (e.target === document.getElementById('ip-overlay')) closeIconPicker();
@@ -4797,12 +4872,12 @@ document.addEventListener('keydown', function(e) {
 
     <div id="prefs-body">
       <div class="p-section">
-        <div class="p-section-label">Color Theme</div>
+        <div class="p-section-label">Nebula Theme</div>
         <div id="theme-swatches"></div>
       </div>
 
       <div class="p-section">
-        <div class="p-section-label">Animation Style</div>
+        <div class="p-section-label">Background Style</div>
         <div class="p-row" data-pref-row="1">
           <div class="p-row-label">Style</div>
           <div class="p-toggle-group">
