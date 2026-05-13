@@ -14,6 +14,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
+  --bg-deep: #050508; /* matches nebulaBackground darkest — updated by applyPrefs */
   --accent: #00c8ff;
   --bg-dark: #04080f;
   --transition-speed: 0.35s;
@@ -147,17 +148,27 @@ html, body {
   /* Fixed window — list scrolls inside via translateY */
   overflow: hidden;
   max-height: 460px;
-  /* Fade edges so list feels like it continues off screen */
-  mask-image: linear-gradient(to bottom,
-    transparent 0%,
-    black 8%,
-    black 92%,
-    transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom,
-    transparent 0%,
-    black 8%,
-    black 92%,
-    transparent 100%);
+}
+
+/* Fade top/bottom of list using pointer-events:none overlays.
+   NOT using mask-image — it breaks backdrop-filter on child .xmb-item */
+#item-panel::before,
+#item-panel::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 38px;
+  z-index: 2;
+  pointer-events: none;
+}
+#item-panel::before {
+  top: 32px;
+  background: linear-gradient(to bottom, var(--bg-deep,#050508), transparent);
+}
+#item-panel::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--bg-deep,#050508), transparent);
+}
 }
 
 .item-list {
@@ -5089,6 +5100,7 @@ function applyPrefs(prefs) {
   var theme = NEBULA_THEMES[prefs.theme] || NEBULA_THEMES.default;
   activeBlobs = BLOBS.map(function(b,i){ return {x:b.x,y:b.y,r:b.r,rgb:theme.blobs[i]||b.rgb,a:b.a,spd:b.spd}; });
   nebulaBackground = theme.bg;
+  document.documentElement.style.setProperty('--bg-deep', theme.bg[0] || '#050508');
   // Build vivid palette from all 6 theme blob colors
   themeRgbPalette = theme.blobs.map(function(tb) {
     var tMax = Math.max(tb[0], tb[1], tb[2]) || 1;
