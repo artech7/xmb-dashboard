@@ -2085,6 +2085,14 @@ var GL_INK_FRAG = [
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float h1(float v){return fract(sin(v*127.1)*43758.5453);}',
+  // Smooth noise + FBM for fog (same as Nebula)
+  'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float fbm(vec2 p){float v=0.0,a=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(1.70,9.20);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(3.51,4.37);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(7.13,2.84);a*=0.5;',
+  '  v+=a*vn(p);return v;}',
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
   '  float t=u_time*0.00090;',
@@ -2167,20 +2175,25 @@ var GL_INK_FRAG = [
   '           +smoothstep(0.3,0.0,uv.y)*0.05;',
   '  col=mix(col,col+u_bg2*0.15,fog);',
 
-  // Mist — slow drifting fog patches like distant rain haze
-  // Two overlapping noise fields at different scales and speeds
-  '  vec2 mp1=uv*vec2(asp*1.6,1.2)+vec2(t*0.06,t*0.03);',
-  '  vec2 mp2=uv*vec2(asp*3.2,2.5)+vec2(t*0.04,t*0.07)+vec2(1.7,3.2);',
-  '  float m1=fract(sin(dot(mp1,vec2(127.1,311.7)))*43758.5453);',
-  '  float m2=fract(sin(dot(mp2,vec2(311.7,127.1)))*43758.5453);',
-  '  float m3=fract(sin(dot((mp1+mp2)*0.5,vec2(92.3,251.4)))*43758.5453);',
-  '  float mist=smoothstep(0.38,0.72,m1*0.5+m2*0.3+m3*0.2);',
-  // Mist is stronger in middle-distance, fades near top and bottom
-  '  float mistMask=smoothstep(0.05,0.30,uv.y)*smoothstep(1.0,0.55,uv.y);',
-  // Slight color — cold blue-grey tinted by theme
-  '  vec3 mistCol=mix(vec3(0.18,0.22,0.28),u_c1*0.25+vec3(0.12,0.16,0.22),',
-  '    sin(uv.x*asp*0.8+t*0.12)*0.5+0.5);',
-  '  col=mix(col,col*0.7+mistCol,mist*mistMask*0.32*u_intensity);',
+  // ── MIST — domain-warped FBM clouds (same technique as Nebula) ──
+  // Slow time so fog drifts very gently
+  '  float tMist=u_time*0.000018;',
+  // Domain warp: sample fbm at warped position for wispy irregular edges
+  '  vec2 fogUV=uv*vec2(asp*1.2,1.0);',
+  '  vec2 fq=vec2(fbm(fogUV*1.1+vec2(tMist,tMist*0.7)),',
+  '               fbm(fogUV*1.1+vec2(tMist*0.8+3.2,tMist*1.1+1.7)));',
+  '  float fogDensity=fbm(fogUV*1.1+2.2*fq+vec2(tMist*0.5,0.0));',
+  // Second fog layer at slightly different scale for depth
+  '  vec2 fq2=vec2(fbm(fogUV*0.7+vec2(tMist*0.6+1.1,tMist*0.9)),',
+  '                fbm(fogUV*0.7+vec2(tMist*0.5+4.3,tMist*0.7+2.1)));',
+  '  float fogDensity2=fbm(fogUV*0.7+1.8*fq2+vec2(0.0,tMist*0.4))*0.65;',
+  '  float mist=smoothstep(0.32,0.68,fogDensity+fogDensity2*0.4);',
+  // Vertical mask: fog sits in middle band, thicker near horizon
+  '  float mistMask=smoothstep(0.02,0.35,uv.y)*smoothstep(1.0,0.50,uv.y);',
+  '  float horizBoost=1.0+smoothstep(0.55,0.35,uv.y)*0.8;',
+  // Color: cold blue-grey fog tinted by theme secondary color
+  '  vec3 mistCol=mix(vec3(0.14,0.18,0.26),u_c1*0.20+vec3(0.10,0.14,0.20),fogDensity);',
+  '  col=mix(col,col*0.65+mistCol,mist*mistMask*horizBoost*0.28*u_intensity);',
 
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(0.8,1.0),vc*vec2(0.8,1.0))*1.1;',
