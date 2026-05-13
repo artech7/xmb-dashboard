@@ -4305,77 +4305,61 @@ async function loadIconListSelfhst(forceRefresh) {
   }
   document.getElementById('ip-status').textContent = 'Fetching selfh.st icons…';
 
-  // index.json is their canonical manifest — contains all icon slugs
-  var indexUrls = [
+  var fetchUrls = [
     'https://cdn.jsdelivr.net/gh/selfhst/icons@main/index.json',
     'https://raw.githubusercontent.com/selfhst/icons/main/index.json',
+    'https://cdn.jsdelivr.net/gh/selfhst/icons@main/index-consolidated.json',
   ];
-  for (var ii = 0; ii < indexUrls.length; ii++) {
+
+  for (var i = 0; i < fetchUrls.length; i++) {
     try {
-      var r = await fetch(indexUrls[ii]);
-      if (r.ok) {
-        var d = await r.json();
-        var names;
-        // index.json is an array of objects with a "slug" field
-        if (Array.isArray(d) && d.length > 0 && d[0].slug) {
-          names = d.map(function(e) { return e.slug; }).filter(Boolean).sort();
-        } else if (Array.isArray(d) && d.length > 0 && typeof d[0] === 'string') {
-          names = d.filter(function(n) { return !n.endsWith('-dark') && !n.endsWith('-light'); }).sort();
+      var r = await fetch(fetchUrls[i]);
+      if (!r.ok) { console.warn('selfh.st icons: HTTP', r.status, fetchUrls[i]); continue; }
+      var d = await r.json();
+      var names = null;
+      console.log('selfh.st index response type:', typeof d, Array.isArray(d) ? 'array len='+d.length : JSON.stringify(d).slice(0,120));
+      if (Array.isArray(d) && d.length > 0) {
+        var first = d[0];
+        if (first && first.slug) {
+          names = d.map(function(e) { return e.slug; });
+        } else if (first && first.name) {
+          names = d.map(function(e) { return e.name; })
+            .filter(function(n) { return !n.endsWith('-dark') && !n.endsWith('-light'); });
+        } else if (typeof first === 'string') {
+          names = d.filter(function(n) { return !n.endsWith('-dark') && !n.endsWith('-light'); });
         }
-        if (names && names.length > 50) {
-          ipIconListSH = names;
-          try { sessionStorage.setItem('xmb-icon-list-sh', JSON.stringify(names)); } catch(e) {}
-          return ipIconListSH;
+      } else if (d && typeof d === 'object' && !Array.isArray(d)) {
+        // might be {icons: [...]} or similar
+        var keys = Object.keys(d);
+        for (var k = 0; k < keys.length; k++) {
+          var v = d[keys[k]];
+          if (Array.isArray(v) && v.length > 50) {
+            var first2 = v[0];
+            names = first2 && first2.slug ? v.map(function(e){return e.slug;}) :
+                    first2 && first2.name ? v.map(function(e){return e.name;}) :
+                    typeof first2 === 'string' ? v : null;
+            if (names) break;
+          }
         }
       }
-    } catch(e) {}
+      if (names && names.length > 50) {
+        names = names.filter(function(n) { return n && n.indexOf('/') === -1; })
+                     .filter(function(n,i,a) { return a.indexOf(n) === i; })
+                     .sort();
+        console.log('selfh.st: loaded', names.length, 'icons from', fetchUrls[i]);
+        ipIconListSH = names;
+        try { sessionStorage.setItem('xmb-icon-list-sh', JSON.stringify(names)); } catch(e) {}
+        return ipIconListSH;
+      }
+    } catch(e) { console.warn('selfh.st icons fetch error:', fetchUrls[i], e.message); }
   }
 
-  // Try index-consolidated.json as fallback
-  try {
-    var r2 = await fetch('https://cdn.jsdelivr.net/gh/selfhst/icons@main/index-consolidated.json');
-    if (r2.ok) {
-      var d2 = await r2.json();
-      var names2;
-      if (Array.isArray(d2) && d2.length > 0 && d2[0].slug) {
-        names2 = d2.map(function(e) { return e.slug; }).filter(Boolean).sort();
-      } else if (Array.isArray(d2) && d2.length > 0 && d2[0].name) {
-        names2 = d2.map(function(e) { return e.name; }).filter(Boolean)
-          .filter(function(n) { return !n.endsWith('-dark') && !n.endsWith('-light'); }).sort();
-      }
-      if (names2 && names2.length > 50) {
-        ipIconListSH = names2;
-        try { sessionStorage.setItem('xmb-icon-list-sh', JSON.stringify(names2)); } catch(e) {}
-        return ipIconListSH;
-      }
-    }
-  } catch(e) {}
-
-  // jsDelivr package API last resort
-  try {
-    var r3 = await fetch(SH_API);
-    if (r3.ok) {
-      var d3 = await r3.json();
-      var files = Array.isArray(d3.files) ? d3.files : [];
-      var names3 = files
-        .map(function(f) { return typeof f === 'string' ? f : (f.name || ''); })
-        .filter(function(n) { return n && n.indexOf('/svg/') !== -1 && n.slice(-4) === '.svg'; })
-        .map(function(n) { return n.split('/svg/').pop().slice(0,-4).toLowerCase(); })
-        .filter(function(n) { return n && !n.endsWith('-dark') && !n.endsWith('-light') && n.indexOf('/') === -1; })
-        .filter(function(n,i,a) { return a.indexOf(n) === i; })
-        .sort();
-      if (names3.length > 50) {
-        ipIconListSH = names3;
-        try { sessionStorage.setItem('xmb-icon-list-sh', JSON.stringify(names3)); } catch(e) {}
-        return ipIconListSH;
-      }
-    }
-  } catch(e) {}
-
-  document.getElementById('ip-status').textContent = 'Could not load selfh.st icons — check network';
-  ipIconListSH = [];
+  // Comprehensive built-in fallback — 150+ common self-hosted icons
+  console.warn('selfh.st: all fetches failed, using built-in list');
+  ipIconListSH = ['2fauth', 'actual-budget', 'adguard', 'adguard-home', 'adguard-vpn', 'alertmanager', 'arr-suite', 'audiobookshelf', 'authentik', 'autobrr', 'bazarr', 'beszel', 'bitwarden', 'blocky', 'bookstack', 'borgmatic', 'bunkerweb', 'caddy', 'calibre', 'calibre-web', 'changedetection', 'chromadb', 'codeserver', 'crowdsec', 'cups', 'cyberchef', 'dagu', 'dashdot', 'dasherr', 'dashy', 'datadog', 'dozzle', 'dragonfly', 'duplicati', 'emby', 'esphome', 'excalidraw', 'expressvpn', 'fenrus', 'filebrowser', 'filestash', 'flame', 'flaresolverr', 'flood', 'fluent-bit', 'forgejo', 'freshrss', 'frigate', 'ghostfolio', 'gitea', 'gitea-mirror', 'gladys', 'glances', 'gluetun', 'gotify', 'grafana', 'grocy', 'guacamole', 'handbrake', 'headscale', 'healthchecks', 'heimdall', 'homarr', 'homebox', 'homepage', 'homer', 'huginn', 'hyperion', 'immich', 'influxdb', 'invoiceninja', 'jackett', 'jellyfin', 'jellyseerr', 'joplin', 'kavita', 'keycloak', 'komga', 'kubernetes', 'lacework', 'lazylibrarian', 'ldap', 'letsencrypt', 'librespeed', 'lidarr', 'linkding', 'linkwarden', 'lldap', 'loki', 'lubelogger', 'mailcow', 'mainsail', 'matrix', 'mealie', 'meilisearch', 'metabase', 'miniflux', 'minio', 'monitoring', 'mosquitto', 'moviepilot', 'myspeed', 'n8n', 'navidrome', 'netboot', 'netdata', 'netmaker', 'nextcloud', 'nextcloud-maps', 'nginx', 'nginx-proxy-manager', 'nocodb', 'node-red', 'notifiarr', 'ntfy', 'oauth2-proxy', 'obsidian', 'omada', 'ombi', 'open-webui', 'openldap', 'opnsense', 'overseerr', 'paperless-ngx', 'penpot', 'photoprism', 'phpmyadmin', 'pihole', 'pingvin', 'plex', 'portainer', 'postgresql', 'prometheus', 'prowlarr', 'proxmox', 'pterodactyl', 'qbittorrent', 'radarr', 'readarr', 'redis', 'restic', 'rocket-chat', 'rss-bridge', 'sabnzbd', 'scrutiny', 'seafile', 'searxng', 'semaphore', 'sftpgo', 'shadow', 'shiori', 'signal', 'sonarr', 'speedtest-tracker', 'stirling-pdf', 'supabase', 'syncthing', 'synology', 'tautulli', 'tdarr', 'technitium', 'telegraf', 'traefik', 'trilium', 'tubearchivist', 'umami', 'unifi', 'unraid', 'uptime-kuma', 'vaultwarden', 'vikunja', 'wallabag', 'wallos', 'wg-easy', 'whishper', 'wikijs', 'wireguard', 'xen-orchestra', 'yacht', 'your-spotify', 'zabbix', 'zoraxy', 'zwavejs'];
   return ipIconListSH;
 }
+
 
 async function loadIconList(forceRefresh) {
   if (!forceRefresh && ipIconList) return ipIconList;
