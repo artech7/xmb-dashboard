@@ -808,7 +808,7 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater' || animMode === 'bokeh');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
@@ -818,7 +818,7 @@ function animLoop() {
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
-    case 'bokeh':     useGL ? renderGLCrystals() : drawBokeh();  break;
+    case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
     default:          drawNebula();                              break;
@@ -839,6 +839,141 @@ animLoop();
 // ═══════════════════════════════════════════════════════════
 
 // ── Shared helpers ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// PARTICLE FLOW — organic wandering particles that avoid UI elements
+// ══════════════════════════════════════════════════════════════════════════════
+var pfParticles   = null;
+var pfObstacles   = [];   // cached UI element bounding boxes
+var pfObsTimer    = 0;    // refresh obstacles every N frames
+
+var PF_COUNT      = 320;  // total particles
+var PF_SPEED      = 0.55; // base speed (px/frame)
+var PF_AVOID_R    = 72;   // avoidance radius around obstacles (px)
+var PF_NOISE_STR  = 0.18; // flow noise strength
+var PF_TRAIL      = 0;    // no trails — tiny dots only
+
+function pfRand(min, max) { return min + Math.random() * (max - min); }
+
+function pfNewParticle() {
+  return {
+    x:     Math.random() * W,
+    y:     Math.random() * H,
+    vx:    pfRand(-PF_SPEED, PF_SPEED),
+    vy:    pfRand(-PF_SPEED, PF_SPEED),
+    size:  pfRand(0.8, 2.0),
+    alpha: pfRand(0.3, 0.9),
+    phase: Math.random() * Math.PI * 2, // for twinkle
+    speed: pfRand(0.35, 0.80),
+  };
+}
+
+function initParticleFlow() {
+  pfParticles = [];
+  for (var i = 0; i < PF_COUNT; i++) pfParticles.push(pfNewParticle());
+  pfObstacles = [];
+  pfObsTimer  = 0;
+}
+
+function pfGetObstacles() {
+  // Collect bounding boxes of category icons and item cards
+  var obs = [];
+  // Category icon wraps
+  document.querySelectorAll('.cat-icon-wrap').forEach(function(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width > 0) obs.push({ x: r.left + r.width*0.5, y: r.top + r.height*0.5, w: r.width + 32, h: r.height + 32 });
+  });
+  // Item cards
+  document.querySelectorAll('.xmb-item').forEach(function(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width > 0) obs.push({ x: r.left + r.width*0.5, y: r.top + r.height*0.5, w: r.width + 24, h: r.height + 16 });
+  });
+  return obs;
+}
+
+function pfNoise(x, y, t) {
+  // Simple smooth noise for flow field
+  var s = Math.sin(x * 0.012 + t * 0.0008) * Math.cos(y * 0.010 + t * 0.0006);
+  var s2 = Math.cos(x * 0.007 - t * 0.0005) * Math.sin(y * 0.009 + t * 0.0009);
+  return (s + s2) * 0.5;
+}
+
+function drawParticleFlow() {
+  if (!pfParticles) initParticleFlow();
+
+  // Refresh obstacle list every 30 frames (cheap enough)
+  pfObsTimer++;
+  if (pfObsTimer >= 30) { pfObstacles = pfGetObstacles(); pfObsTimer = 0; }
+
+  // Clear with dark background
+  var bg0 = nebulaBackground[0] || '#050508';
+  var bg1 = nebulaBackground[1] || '#030306';
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, bg0);
+  grad.addColorStop(1, bg1);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  var palette = themeRgbPalette;
+
+  for (var i = 0; i < pfParticles.length; i++) {
+    var p = pfParticles[i];
+
+    // ── Flow field: smooth noise drives direction slowly ─────────────────
+    var angle = pfNoise(p.x, p.y, t) * Math.PI * 2;
+    p.vx += Math.cos(angle) * PF_NOISE_STR * 0.08;
+    p.vy += Math.sin(angle) * PF_NOISE_STR * 0.08;
+
+    // ── Obstacle avoidance ───────────────────────────────────────────────
+    for (var j = 0; j < pfObstacles.length; j++) {
+      var o   = pfObstacles[j];
+      var dx  = p.x - o.x;
+      var dy  = p.y - o.y;
+      // Elliptical distance check matching the card shape
+      var ex  = dx / (o.w * 0.5 + PF_AVOID_R);
+      var ey  = dy / (o.h * 0.5 + PF_AVOID_R);
+      var dist = Math.sqrt(ex*ex + ey*ey);
+      if (dist < 1.0 && dist > 0.001) {
+        // Push away from obstacle, stronger when closer
+        var force = (1.0 - dist) * 0.9;
+        p.vx += (dx / (dist * (o.w * 0.5 + PF_AVOID_R))) * force;
+        p.vy += (dy / (dist * (o.h * 0.5 + PF_AVOID_R))) * force;
+      }
+    }
+
+    // ── Clamp speed ──────────────────────────────────────────────────────
+    var spd = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+    var maxSpd = p.speed * PF_SPEED * 2.2;
+    if (spd > maxSpd) { p.vx = p.vx/spd * maxSpd; p.vy = p.vy/spd * maxSpd; }
+    // Minimum speed so they keep moving
+    if (spd < 0.08) { p.vx += pfRand(-0.1, 0.1); p.vy += pfRand(-0.1, 0.1); }
+
+    // ── Move ─────────────────────────────────────────────────────────────
+    p.x += p.vx * animSpeed;
+    p.y += p.vy * animSpeed;
+
+    // ── Wrap at edges ────────────────────────────────────────────────────
+    if (p.x < -4)  p.x = W + 4;
+    if (p.x > W+4) p.x = -4;
+    if (p.y < -4)  p.y = H + 4;
+    if (p.y > H+4) p.y = -4;
+
+    // ── Draw tiny dot ────────────────────────────────────────────────────
+    // Gentle twinkle
+    var twinkle = 0.65 + 0.35 * Math.sin(t * 0.018 + p.phase);
+    var alpha   = p.alpha * twinkle * blobOpacityMult;
+
+    // Color from theme palette, varied by particle index
+    var ci  = i % palette.length;
+    var col = palette[ci];
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + alpha.toFixed(2) + ')';
+    ctx.fill();
+  }
+
+  drawVignette();
+}
+
 function drawVignette() {
   var vig = ctx.createRadialGradient(W/2,H/2,H*0.18,W/2,H/2,H*0.88);
   vig.addColorStop(0,'rgba(0,0,0,0)');
@@ -5015,7 +5150,7 @@ document.addEventListener('keydown', function(e) {
             <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="4">Matrix</button>
             <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="1" data-pref-col="5">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">XMB Wave</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="1" data-pref-col="7">Crystals</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="1" data-pref-col="7">Particles</button>
             <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="1" data-pref-col="8">Smoke</button>
           </div>
         </div>
@@ -5203,6 +5338,7 @@ function applyPrefs(prefs) {
     galaxyStars = null; causticPoints = null; solarParticles = null;
     matrixCols = null; flameParticles = null; flameEmbers = null;
     auroraCurtains = null; bokehCircles = null; inkBlobs = null;
+    pfParticles = null;
   }
 }
 
