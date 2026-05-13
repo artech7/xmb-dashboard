@@ -808,7 +808,7 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater' || animMode === 'bokeh');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
@@ -818,7 +818,7 @@ function animLoop() {
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
-    case 'bokeh':     drawBokeh();                               break;
+    case 'bokeh':     useGL ? renderGLCrystals() : drawBokeh();  break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
     default:          drawNebula();                              break;
@@ -2000,8 +2000,10 @@ var glSupported = false;
 var glProgAurora  = null;
 var glProgInk     = null;
 var glProgNebula  = null;
-var glProgDeepSea = null;
-var glDeepSeaLocs = {};
+var glProgDeepSea    = null;
+var glDeepSeaLocs    = {};
+var glProgCrystals   = null;
+var glCrystalLocs    = {};
 var glNebLocs     = {};
 var glAuroraLocs = {};
 var glInkLocs    = {};
@@ -2093,7 +2095,7 @@ var GL_AURORA_FRAG = [
   '}'
 ].join('\n');
 
-// ── RAIN fragment shader ──────────────────────────────────────────────────────
+// ── SMOKE fragment shader ────────────────────────────────────────────────────
 var GL_INK_FRAG = [
   'precision mediump float;',
   'uniform float u_time;',
@@ -2102,83 +2104,54 @@ var GL_INK_FRAG = [
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-  'float h1(float v){return fract(sin(v*127.1)*43758.5453);}',
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
   'float fbm(vec2 p){float v=0.0,a=0.5;',
   '  v+=a*vn(p);p=p*2.1+vec2(1.70,9.20);a*=0.5;',
   '  v+=a*vn(p);p=p*2.1+vec2(3.51,4.37);a*=0.5;',
   '  v+=a*vn(p);p=p*2.1+vec2(7.13,2.84);a*=0.5;',
+  '  v+=a*vn(p);p=p*2.1+vec2(2.29,6.71);a*=0.5;',
   '  v+=a*vn(p);return v;}',
-  'vec3 pal(float t){float f=mod(t,1.0)*5.0;float fr=fract(f);vec3 a,b;',
-  '  if(f<1.0){a=u_c0;b=u_c1;}else if(f<2.0){a=u_c1;b=u_c2;}',
-  '  else if(f<3.0){a=u_c2;b=u_c3;}else if(f<4.0){a=u_c3;b=u_c4;}',
-  '  else{a=u_c4;b=u_c5;}return mix(a,b,fr);}',
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float t=u_time*0.0016;',
   '  float asp=u_res.x/u_res.y;',
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3)*0.30;',
-  '  float tm=u_time*0.000055;',
-  '  vec2 fuv=uv*vec2(asp*1.0,1.0);',
-  '  vec2 q=vec2(fbm(fuv*1.4+vec2(tm*0.8,tm*0.6)),',
-  '              fbm(fuv*1.4+vec2(tm*0.6+3.2,tm*0.9+1.7)));',
-  '  float f1=fbm(fuv*1.4+3.0*q+vec2(tm*0.4,0.0));',
-  '  vec2 q2=vec2(fbm(fuv*2.5+vec2(tm*1.1+1.1,tm*0.8)),',
-  '               fbm(fuv*2.5+vec2(tm*0.9+4.3,tm*1.2+2.1)));',
-  '  float f2=fbm(fuv*2.5+2.2*q2+vec2(0.0,tm*0.6))*0.70;',
-  '  float mistDensity=f1*0.65+f2*0.35;',
-  '  float mist=smoothstep(0.28,0.65,mistDensity);',
-  '  float mistMask=smoothstep(0.0,0.25,uv.y)*smoothstep(1.0,0.45,uv.y);',
-  '  float horizBoost=1.0+smoothstep(0.55,0.30,uv.y)*1.0;',
-  '  vec3 mistCol=mix(pal(f1*1.4)*0.55,pal(f1*1.4+0.3)*0.55,f2);',
-  '  mistCol=mix(mistCol,vec3(1.0),mist*mist*0.15);',
-  '  col=mix(col,col*0.5+mistCol,mist*mistMask*horizBoost*0.55*u_intensity);',
-  '  float windAngle=0.08;',
-  '  float rainCol=0.0;',
-  '  float sc1=asp*55.0;',
-  '  float gx1=floor((uv.x+uv.y*windAngle)*sc1);',
-  '  float spd1=1.40+h1(gx1)*0.70;',
-  '  float streak1=fract(uv.y+h1(gx1+13.7)+t*spd1);',
-  '  float len1=0.06+h1(gx1+3.1)*0.10;',
-  '  float w1=fract((uv.x+uv.y*windAngle)*sc1);',
-  '  float c1=smoothstep(0.18,0.0,abs(w1-0.5))*smoothstep(0.0,0.012,streak1)*smoothstep(len1,0.0,streak1);',
-  '  rainCol+=c1*(0.55+h1(gx1+7.3)*0.45);',
-  '  float sc2=asp*100.0;',
-  '  float gx2=floor((uv.x+uv.y*windAngle)*sc2);',
-  '  float spd2=1.10+h1(gx2+2.1)*0.55;',
-  '  float streak2=fract(uv.y+h1(gx2+27.3)+t*spd2);',
-  '  float len2=0.04+h1(gx2+5.7)*0.07;',
-  '  float w2=fract((uv.x+uv.y*windAngle)*sc2);',
-  '  float c2=smoothstep(0.18,0.0,abs(w2-0.5))*smoothstep(0.0,0.008,streak2)*smoothstep(len2,0.0,streak2);',
-  '  rainCol+=c2*(0.30+h1(gx2+11.1)*0.30)*0.70;',
-  '  float sc3=asp*190.0;',
-  '  float gx3=floor((uv.x+uv.y*windAngle)*sc3);',
-  '  float spd3=0.80+h1(gx3+4.3)*0.45;',
-  '  float streak3=fract(uv.y+h1(gx3+41.7)+t*spd3);',
-  '  float len3=0.025+h1(gx3+8.1)*0.04;',
-  '  float w3=fract((uv.x+uv.y*windAngle)*sc3);',
-  '  float c3=smoothstep(0.18,0.0,abs(w3-0.5))*smoothstep(0.0,0.005,streak3)*smoothstep(len3,0.0,streak3);',
-  '  rainCol+=c3*(0.15+h1(gx3+17.3)*0.20)*0.45;',
-  '  vec3 rainTint=vec3(0.75,0.85,1.0)*0.85+u_c2*0.15;',
-  '  col+=rainTint*rainCol*u_intensity;',
-  '  float puddleY=0.15;float ripple=0.0;',
-  '  vec2 rp0=vec2(0.15+h1(0.0)*0.70,h1(1.0)*puddleY);float rt0=fract(t*0.35+h1(2.0));',
-  '  ripple+=max(0.0,0.018-abs(length((uv-rp0)*vec2(asp,1.0))-rt0*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt0);',
-  '  vec2 rp1=vec2(0.15+h1(3.0)*0.70,h1(4.0)*puddleY);float rt1=fract(t*0.30+h1(5.0));',
-  '  ripple+=max(0.0,0.018-abs(length((uv-rp1)*vec2(asp,1.0))-rt1*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt1);',
-  '  vec2 rp2=vec2(0.15+h1(6.0)*0.70,h1(7.0)*puddleY);float rt2=fract(t*0.40+h1(8.0));',
-  '  ripple+=max(0.0,0.018-abs(length((uv-rp2)*vec2(asp,1.0))-rt2*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt2);',
-  '  vec2 rp3=vec2(0.15+h1(9.0)*0.70,h1(10.0)*puddleY);float rt3=fract(t*0.28+h1(11.0));',
-  '  ripple+=max(0.0,0.018-abs(length((uv-rp3)*vec2(asp,1.0))-rt3*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt3);',
-  '  vec2 rp4=vec2(0.15+h1(12.0)*0.70,h1(13.0)*puddleY);float rt4=fract(t*0.36+h1(14.0));',
-  '  ripple+=max(0.0,0.018-abs(length((uv-rp4)*vec2(asp,1.0))-rt4*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt4);',
-  '  vec2 rp5=vec2(0.15+h1(15.0)*0.70,h1(16.0)*puddleY);float rt5=fract(t*0.32+h1(17.0));',
-  '  ripple+=max(0.0,0.018-abs(length((uv-rp5)*vec2(asp,1.0))-rt5*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt5);',
-  '  col+=vec3(0.6,0.75,0.9)*ripple*u_intensity*1.2;',
-  '  col+=rainTint*rainCol*smoothstep(1.0,0.0,uv.y/puddleY)*0.30*u_intensity;',
+  '  float t=u_time*0.000038;',
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.6+0.4)*0.20;',
+  '  float yy=1.0-uv.y;',
+  '  float cx0=0.35+sin(t*0.55)*0.06;',
+  '  float cx1=0.55+sin(t*0.40+1.1)*0.08;',
+  '  float cx2=0.70+sin(t*0.65+2.3)*0.05;',
+  '  float smoke=0.0;',
+  '  vec2 p0=vec2((uv.x-cx0)*asp*1.8, yy*2.2-t*1.40);',
+  '  vec2 w0=vec2(fbm(p0+vec2(t*0.3,0.0)),fbm(p0+vec2(0.0,t*0.25)+vec2(3.2,1.7)));',
+  '  float s0=fbm(p0+2.5*w0);',
+  '  float shape0=s0*smoothstep(0.0,0.35,yy)*smoothstep(1.1,0.55,yy+sin(uv.x*3.0+t)*0.08);',
+  '  float col0=smoothstep(0.25,0.65,shape0);',
+  '  smoke+=col0*(0.45+h2(vec2(0.3,1.7))*0.2);',
+  '  vec2 p1=vec2((uv.x-cx1)*asp*1.6, yy*2.0-t*1.20);',
+  '  vec2 w1=vec2(fbm(p1+vec2(t*0.25+1.1,0.0)),fbm(p1+vec2(0.0,t*0.20)+vec2(1.7,4.3)));',
+  '  float s1=fbm(p1+2.8*w1);',
+  '  float shape1=s1*smoothstep(0.0,0.30,yy)*smoothstep(1.0,0.50,yy+sin(uv.x*2.5+t*0.8)*0.06);',
+  '  float col1=smoothstep(0.22,0.62,shape1);',
+  '  smoke+=col1*(0.35+h2(vec2(0.7,2.3))*0.2);',
+  '  vec2 p2=vec2((uv.x-cx2)*asp*2.0, yy*2.4-t*1.55);',
+  '  vec2 w2=vec2(fbm(p2+vec2(t*0.35+2.3,0.0)),fbm(p2+vec2(0.0,t*0.28)+vec2(5.1,2.2)));',
+  '  float s2=fbm(p2+2.3*w2);',
+  '  float shape2=s2*smoothstep(0.0,0.28,yy)*smoothstep(0.95,0.45,yy+sin(uv.x*4.0+t*1.2)*0.05);',
+  '  float col2=smoothstep(0.28,0.66,shape2);',
+  '  smoke+=col2*(0.30+h2(vec2(1.1,0.9))*0.2);',
+  '  float smokeLuma=clamp(smoke,0.0,1.0);',
+  '  vec3 smokeCol=mix(',
+  '    mix(vec3(0.55,0.58,0.62),u_c0*0.4+vec3(0.3,0.32,0.35),0.25),',
+  '    vec3(0.80,0.82,0.85),',
+  '    smokeLuma*smokeLuma);',
+  '  col=mix(col,smokeCol,smokeLuma*u_intensity*0.88);',
+  '  float srcGlow=exp(-pow((uv.x-cx0)*asp*4.0,2.0))*exp(-yy*yy*22.0)*0.4',
+  '               +exp(-pow((uv.x-cx1)*asp*4.0,2.0))*exp(-yy*yy*18.0)*0.35',
+  '               +exp(-pow((uv.x-cx2)*asp*4.0,2.0))*exp(-yy*yy*25.0)*0.3;',
+  '  col+=mix(u_c0,vec3(0.9,0.85,0.8),0.5)*srcGlow*u_intensity;',
   '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(0.8,1.0),vc*vec2(0.8,1.0))*1.1;',
+  '  col*=1.0-dot(vc*vec2(0.7,0.9),vc*vec2(0.7,0.9))*1.0;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
   '}',
 ].join('\n');
@@ -2372,6 +2345,99 @@ var GL_DEEPSEA_FRAG = [
   '}',
 ].join('\n');
 
+var GL_CRYSTALS_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float h1(float v){return fract(sin(v*127.1)*43758.5453);}',
+  'vec3 pal(float t){float f=mod(t,1.0)*5.0;float fr=fract(f);vec3 a,b;',
+  '  if(f<1.0){a=u_c0;b=u_c1;}else if(f<2.0){a=u_c1;b=u_c2;}',
+  '  else if(f<3.0){a=u_c2;b=u_c3;}else if(f<4.0){a=u_c3;b=u_c4;}',
+  '  else{a=u_c4;b=u_c5;}return mix(a,b,fr);}',
+  'float lineDist(vec2 p, vec2 a, vec2 b){',
+  '  vec2 pa=p-a,ba=b-a;',
+  '  float t=clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);',
+  '  return length(pa-ba*t);}',
+  'void main(){',
+  '  vec2 uv=gl_FragCoord.xy/u_res;',
+  '  vec2 p=vec2((uv.x-0.5)*(u_res.x/u_res.y),uv.y-0.5);',
+  '  float t=u_time*0.00028;',
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3)*0.35;',
+  '  float crystalGlow=0.0;',
+  '  vec3 crystalCol=vec3(0.0);',
+  '  float a0=t*0.22;',
+  '  vec2 c0=vec2(sin(t*0.3)*0.15, cos(t*0.2)*0.10);',
+  '  mat2 r0=mat2(cos(a0),-sin(a0),sin(a0),cos(a0));',
+  '  vec2 lp0=r0*(p-c0);',
+  '  float d0=max(max(abs(lp0.x)*1.8+abs(lp0.y)-0.28,abs(lp0.x)-0.12),0.0);',
+  '  float f0=exp(-d0*18.0);',
+  '  float facet0=abs(lp0.x)*3.5+abs(lp0.y*2.0-lp0.x*0.5);',
+  '  float edge0=exp(-abs(facet0-0.15)*35.0)*f0;',
+  '  crystalGlow+=f0*0.65+edge0*0.9;',
+  '  crystalCol+=pal(0.0+t*0.08)*(f0*0.65+edge0*1.2);',
+  '  float a1=t*0.18+1.1;',
+  '  vec2 c1=vec2(0.28+sin(t*0.25+1.0)*0.10, cos(t*0.32+0.5)*0.14);',
+  '  mat2 r1=mat2(cos(a1),-sin(a1),sin(a1),cos(a1));',
+  '  vec2 lp1=r1*(p-c1);',
+  '  float d1=max(abs(lp1.x)*2.2+abs(lp1.y)-0.22, abs(lp1.x)-0.09);',
+  '  float f1=exp(-max(d1,0.0)*22.0);',
+  '  float edge1=exp(-abs(abs(lp1.x)*2.5-abs(lp1.y)*1.2-0.08)*40.0)*f1;',
+  '  crystalGlow+=f1*0.55+edge1*0.8;',
+  '  crystalCol+=pal(0.2+t*0.07)*(f1*0.55+edge1*1.0);',
+  '  float a2=t*0.28+2.3;',
+  '  vec2 c2=vec2(-0.25+cos(t*0.20+2.0)*0.12, sin(t*0.28+1.8)*0.12);',
+  '  mat2 r2=mat2(cos(a2),-sin(a2),sin(a2),cos(a2));',
+  '  vec2 lp2=r2*(p-c2);',
+  '  float d2=max(abs(lp2.x)*1.6+abs(lp2.y)-0.24, abs(lp2.x)-0.14);',
+  '  float f2=exp(-max(d2,0.0)*20.0);',
+  '  float edge2=exp(-abs(lp2.y-lp2.x*0.7-0.06)*38.0)*f2+exp(-abs(lp2.y+lp2.x*0.7-0.06)*38.0)*f2;',
+  '  crystalGlow+=f2*0.55+edge2*0.9;',
+  '  crystalCol+=pal(0.4+t*0.09)*(f2*0.5+edge2*1.1);',
+  '  float a3=t*0.35+0.7;',
+  '  vec2 c3=vec2(sin(t*0.38+3.1)*0.20, -0.18+cos(t*0.22+2.7)*0.08);',
+  '  mat2 r3=mat2(cos(a3),-sin(a3),sin(a3),cos(a3));',
+  '  vec2 lp3=r3*(p-c3);',
+  '  float d3=max(abs(lp3.x)*2.5+abs(lp3.y)-0.16, abs(lp3.x)-0.07);',
+  '  float f3=exp(-max(d3,0.0)*28.0);',
+  '  crystalGlow+=f3*0.45;',
+  '  crystalCol+=pal(0.6+t*0.06)*f3*0.50;',
+  '  float a4=t*0.16+3.8;',
+  '  vec2 c4=vec2(-0.10+sin(t*0.42+0.9)*0.16, 0.20+cos(t*0.35+3.5)*0.08);',
+  '  mat2 r4=mat2(cos(a4),-sin(a4),sin(a4),cos(a4));',
+  '  vec2 lp4=r4*(p-c4);',
+  '  float d4=max(abs(lp4.x)*1.9+abs(lp4.y)-0.19, abs(lp4.x)-0.10);',
+  '  float f4=exp(-max(d4,0.0)*24.0);',
+  '  float edge4=exp(-abs(abs(lp4.x*1.5)-abs(lp4.y)-0.07)*36.0)*f4;',
+  '  crystalGlow+=f4*0.50+edge4*0.8;',
+  '  crystalCol+=pal(0.8+t*0.10)*(f4*0.45+edge4*1.0);',
+  '  float a5=t*0.12+5.2;',
+  '  vec2 c5=vec2(0.08+cos(t*0.18+4.1)*0.18, -0.08+sin(t*0.26+1.3)*0.15);',
+  '  mat2 r5=mat2(cos(a5),-sin(a5),sin(a5),cos(a5));',
+  '  vec2 lp5=r5*(p-c5);',
+  '  float d5=max(abs(lp5.x)*1.4+abs(lp5.y)-0.30, abs(lp5.x)-0.18);',
+  '  float f5=exp(-max(d5,0.0)*15.0);',
+  '  float edge5=exp(-abs(lp5.y-0.0)*30.0)*f5+exp(-abs(lp5.x-0.0)*25.0)*f5;',
+  '  crystalGlow+=f5*0.40+edge5*0.7;',
+  '  crystalCol+=pal(1.0+t*0.05)*(f5*0.35+edge5*0.9);',
+  '  float glow=clamp(crystalGlow,0.0,1.0);',
+  '  vec3 cCol=crystalGlow>0.001?crystalCol/crystalGlow:vec3(1.0);',
+  '  vec3 bodyCol=mix(cCol*0.55,vec3(1.0),glow*glow*0.35);',
+  '  col=mix(col,bodyCol,glow*u_intensity*0.82);',
+  '  float specular=clamp(crystalGlow-0.6,0.0,1.0);',
+  '  col+=vec3(1.0)*specular*u_intensity*0.55;',
+  '  vec3 haloCol=mix(cCol,vec3(1.0),0.4);',
+  '  col+=haloCol*clamp(glow*0.25,0.0,0.15)*u_intensity;',
+  '  vec2 vc=uv-0.5;',
+  '  col*=1.0-dot(vc,vc)*1.2;',
+  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
+  '}',
+].join('\n');
+
+
 
 
 
@@ -2439,7 +2505,8 @@ function initWebGL() {
     glProgAurora  = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
     glProgInk     = glCompileProgram(GL_VERT, GL_INK_FRAG);
     glProgNebula  = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
-    glProgDeepSea = glCompileProgram(GL_VERT, GL_DEEPSEA_FRAG);
+    glProgDeepSea   = glCompileProgram(GL_VERT, GL_DEEPSEA_FRAG);
+    glProgCrystals  = glCompileProgram(GL_VERT, GL_CRYSTALS_FRAG);
 
     // Independent failures — one bad shader doesn't kill the rest
     if (!glProgAurora && !glProgInk && !glProgNebula && !glProgDeepSea) { gl = null; return false; }
@@ -2449,7 +2516,8 @@ function initWebGL() {
     glAuroraLocs  = glCacheUniforms(glProgAurora);
     glInkLocs     = glCacheUniforms(glProgInk);
     glNebLocs     = glCacheUniforms(glProgNebula);
-    if (glProgDeepSea) glDeepSeaLocs = glCacheUniforms(glProgDeepSea);
+    if (glProgDeepSea)   glDeepSeaLocs   = glCacheUniforms(glProgDeepSea);
+    if (glProgCrystals) glCrystalLocs   = glCacheUniforms(glProgCrystals);
 
     // Handle context loss gracefully
     glCanvas.addEventListener('webglcontextlost', function(e) {
@@ -2518,7 +2586,8 @@ function glRenderFrame(prog, locs, useAccentForC0) {
 }
 
 function renderGLAurora()  { glRenderFrame(glProgAurora, glAuroraLocs); }
-function renderGLDeepSea() { if (glProgDeepSea) glRenderFrame(glProgDeepSea, glDeepSeaLocs); else drawUnderwater(); }
+function renderGLDeepSea()    { if (glProgDeepSea)   glRenderFrame(glProgDeepSea,   glDeepSeaLocs);   else drawUnderwater(); }
+function renderGLCrystals()   { if (glProgCrystals)  glRenderFrame(glProgCrystals,  glCrystalLocs);   else drawBokeh(); }
 function renderGLInk()     { glRenderFrame(glProgInk, glInkLocs); }
 function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
@@ -4953,8 +5022,8 @@ document.addEventListener('keydown', function(e) {
             <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="4">Matrix</button>
             <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="1" data-pref-col="5">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">XMB Wave</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="1" data-pref-col="7">Bokeh</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="1" data-pref-col="8">Rain</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="1" data-pref-col="7">Crystals</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="1" data-pref-col="8">Smoke</button>
           </div>
         </div>
       </div>
