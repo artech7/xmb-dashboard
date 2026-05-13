@@ -3215,6 +3215,8 @@ function scrollItemList() {
   listEl.style.transform = 'translateY(' + offset + 'px)';
 }
 
+var _frameLoadHandler = null; // track active listener so we can remove it
+
 function openItem(item) {
   if (item.url === '#admin') { openSettings(); return; }
   if (item.url === '#prefs') { openPrefs(); return; }
@@ -3224,34 +3226,47 @@ function openItem(item) {
   var wrap    = document.getElementById('service-frame-wrap');
   var frame   = document.getElementById('service-frame');
 
-  // Step 1: zoom out + fade dashboard to black (500ms)
+  // Clear any leftover load listener before we start
+  if (_frameLoadHandler) {
+    frame.removeEventListener('load', _frameLoadHandler);
+    _frameLoadHandler = null;
+  }
+
+  // Step 1: zoom out + fade dashboard to black
   if (root)    root.classList.add('launching');
   if (overlay) overlay.classList.add('launching');
 
   setTimeout(function() {
-    // Step 2: load iframe behind the black overlay
     frame.classList.remove('loaded');
     wrap.style.display = 'block';
     wrap.classList.remove('visible');
 
-    // Detect iframe block — try to access contentDocument after load
-    // Blocked iframes (X-Frame-Options) fire load but content is inaccessible
-    function onFrameLoad() {
-      frame.removeEventListener('load', onFrameLoad);
-      // Try to detect block: blocked frames throw on contentDocument access
+    var frameTimeout = setTimeout(function() {
+      // Timeout — service took too long, open new tab, restore dashboard
+      if (_frameLoadHandler) { frame.removeEventListener('load', _frameLoadHandler); _frameLoadHandler = null; }
+      frame.src = 'about:blank';
+      wrap.style.display = 'none';
+      if (root) root.classList.remove('launching');
+      if (overlay) overlay.classList.remove('launching');
+      window.open(item.url, '_blank');
+    }, 8000);
+
+    _frameLoadHandler = function() {
+      clearTimeout(frameTimeout);
+      frame.removeEventListener('load', _frameLoadHandler);
+      _frameLoadHandler = null;
+
+      // Detect block: blocked frames land on about:blank
       var blocked = false;
       try {
-        // Same-origin frames allow this; cross-origin blocked ones throw
-        var loc = frame.contentWindow && frame.contentWindow.location && frame.contentWindow.location.href;
-        // If about:blank it likely failed silently or was blocked
+        var loc = frame.contentWindow && frame.contentWindow.location.href;
         if (!loc || loc === 'about:blank') blocked = true;
       } catch(e) {
-        // Cross-origin but loaded OK — this is fine, means iframe worked
-        blocked = false;
+        blocked = false; // cross-origin but loaded = good
       }
 
       if (blocked) {
-        // Fallback: open in new tab, restore dashboard
+        // Restore dashboard silently, open in new tab
         frame.src = 'about:blank';
         wrap.style.display = 'none';
         if (root) root.classList.remove('launching');
@@ -3260,28 +3275,15 @@ function openItem(item) {
         return;
       }
 
-      // Iframe loaded OK — fade it in
+      // Loaded OK — fade in
       setTimeout(function() {
-        if (overlay) { overlay.classList.remove('launching'); }
+        if (overlay) overlay.classList.remove('launching');
         wrap.classList.add('visible');
         setTimeout(function() { frame.classList.add('loaded'); }, 80);
       }, 180);
-    }
+    };
 
-    // Also set a timeout fallback — if load doesn't fire in 8s, open new tab
-    var frameTimeout = setTimeout(function() {
-      frame.removeEventListener('load', onFrameLoad);
-      frame.src = 'about:blank';
-      wrap.style.display = 'none';
-      if (root) root.classList.remove('launching');
-      if (overlay) overlay.classList.remove('launching');
-      window.open(item.url, '_blank');
-    }, 8000);
-
-    frame.addEventListener('load', function onLoad() {
-      clearTimeout(frameTimeout);
-      onFrameLoad();
-    });
+    frame.addEventListener('load', _frameLoadHandler);
     frame.src = item.url;
   }, 560);
 }
@@ -3292,13 +3294,17 @@ function closeServiceFrame() {
   var overlay = document.getElementById('open-flash');
   var root    = document.getElementById('xmb-root');
 
-  // Fade out the iframe
+  // Remove load listener BEFORE changing src to avoid triggering it
+  if (_frameLoadHandler) {
+    frame.removeEventListener('load', _frameLoadHandler);
+    _frameLoadHandler = null;
+  }
+
   frame.classList.remove('loaded');
   wrap.classList.remove('visible');
   if (overlay) overlay.classList.add('launching');
 
   setTimeout(function() {
-    // Hide iframe, fade dashboard back in
     wrap.style.display = 'none';
     frame.src = 'about:blank';
     if (root) root.classList.remove('launching');
@@ -3314,7 +3320,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (closeBtn) closeBtn.addEventListener('click', closeServiceFrame);
 });
 
-// Also close on Escape key
+// Escape key closes iframe
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     var wrap = document.getElementById('service-frame-wrap');
