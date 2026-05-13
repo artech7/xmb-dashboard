@@ -361,17 +361,28 @@ html, body {
 }
 
 /* ── OPEN OVERLAY ── */
+/* Launch overlay — covers screen during zoom-out transition */
 #open-flash {
   position: fixed;
   inset: 0;
-  z-index: 100;
-  background: #fff;
+  z-index: 200;
+  background: #000;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity 0.55s ease-in;
 }
+#open-flash.launching { opacity: 1; pointer-events: all; }
 
-#open-flash.flash { opacity: 0.15; }
+/* Dashboard wrapper — zoom+fade on launch */
+#xmb-root {
+  transition: transform 0.50s cubic-bezier(0.4, 0, 1, 1),
+              opacity   0.50s cubic-bezier(0.4, 0, 1, 1);
+  transform-origin: center center;
+}
+#xmb-root.launching {
+  transform: scale(1.18);
+  opacity: 0;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    MOBILE LAYOUT  (max-width: 768px)
@@ -531,6 +542,7 @@ html, body {
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
 </div>
 <div id="open-flash"></div>
+<div id="xmb-root">
 
 <div id="topbar">
   <div id="topbar-title">HOMELAB</div>
@@ -3158,10 +3170,18 @@ function scrollItemList() {
 function openItem(item) {
   if (item.url === '#admin') { openSettings(); return; }
   if (item.url === '#prefs') { openPrefs(); return; }
-  const flash = document.getElementById('open-flash');
-  flash.classList.add('flash');
-  setTimeout(() => flash.classList.remove('flash'), 200);
-  setTimeout(() => window.open(item.url, '_blank'), 100);
+
+  var root    = document.getElementById('xmb-root');
+  var overlay = document.getElementById('open-flash');
+
+  // Zoom UI outward + fade to black simultaneously
+  if (root)    root.classList.add('launching');
+  if (overlay) overlay.classList.add('launching');
+
+  // Navigate in same tab after animation completes
+  setTimeout(function() {
+    window.location.href = item.url;
+  }, 560);
 }
 
 // ─── KEYBOARD ─────────────────────────────────────────────────────────────────
@@ -5763,5 +5783,6 @@ document.addEventListener('keydown', function(e) {
 // Load prefs on startup
 loadPrefs();
 </script>
+</div><!-- #xmb-root -->
 </body>
 </html>
