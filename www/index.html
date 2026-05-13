@@ -915,13 +915,13 @@ function pfGetObstacles() {
                 || document.querySelector('.cat-icon-wrap'); // fallback: first one
   if (activeIcon) {
     var r = activeIcon.getBoundingClientRect();
-    if (r.width > 0) obs.push({ x: r.left + r.width*0.5, y: r.top + r.height*0.5, w: r.width + 40, h: r.height + 40 });
+    if (r.width > 0) obs.push({ x: r.left + r.width*0.5, y: r.top + r.height*0.5, w: r.width + 16, h: r.height + 16 });
   }
 
   // Only item cards currently visible (they all belong to active category)
   document.querySelectorAll('.xmb-item').forEach(function(el) {
     var r = el.getBoundingClientRect();
-    if (r.width > 0) obs.push({ x: r.left + r.width*0.5, y: r.top + r.height*0.5, w: r.width + 24, h: r.height + 16 });
+    if (r.width > 0) obs.push({ x: r.left + r.width*0.5, y: r.top + r.height*0.5, w: r.width + 8,  h: r.height + 8 });
   });
 
   return obs;
@@ -980,20 +980,29 @@ function drawParticleFlow() {
     p.vx += Math.cos(angle) * PF_NOISE_STR * 0.08;
     p.vy += Math.sin(angle) * PF_NOISE_STR * 0.08;
 
-    // ── Obstacle avoidance ───────────────────────────────────────────────
+    // ── Obstacle bounce ──────────────────────────────────────────────────
     for (var j = 0; j < pfObstacles.length; j++) {
       var o   = pfObstacles[j];
+      var hw  = o.w * 0.5;
+      var hh  = o.h * 0.5;
       var dx  = p.x - o.x;
       var dy  = p.y - o.y;
-      // Elliptical distance check matching the card shape
-      var ex  = dx / (o.w * 0.5 + PF_AVOID_R);
-      var ey  = dy / (o.h * 0.5 + PF_AVOID_R);
-      var dist = Math.sqrt(ex*ex + ey*ey);
-      if (dist < 1.0 && dist > 0.001) {
-        // Push away from obstacle, stronger when closer
-        var force = (1.0 - dist) * 0.9;
-        p.vx += (dx / (dist * (o.w * 0.5 + PF_AVOID_R))) * force;
-        p.vy += (dy / (dist * (o.h * 0.5 + PF_AVOID_R))) * force;
+      if (Math.abs(dx) < hw && Math.abs(dy) < hh) {
+        var overlapX = hw - Math.abs(dx);
+        var overlapY = hh - Math.abs(dy);
+        // Push particle outside the obstacle
+        if (overlapX < overlapY) {
+          p.x += dx > 0 ? overlapX + 1 : -(overlapX + 1);
+        } else {
+          p.y += dy > 0 ? overlapY + 1 : -(overlapY + 1);
+        }
+        // Fully randomize velocity on bounce — scatter in random outward direction
+        // Bias outward (away from obstacle centre) + strong random component
+        var outAngle = Math.atan2(p.y - o.y, p.x - o.x);
+        var spread   = (Math.random() - 0.5) * Math.PI * 1.2; // ±108 degrees spread
+        var bounceSpd = p.speed * PF_SPEED * (1.5 + Math.random() * 2.0);
+        p.vx = Math.cos(outAngle + spread) * bounceSpd;
+        p.vy = Math.sin(outAngle + spread) * bounceSpd;
       }
     }
 
