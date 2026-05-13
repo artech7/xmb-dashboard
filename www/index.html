@@ -3234,18 +3234,54 @@ function openItem(item) {
     wrap.style.display = 'block';
     wrap.classList.remove('visible');
 
-    // Listen for iframe load — fade it in once ready
+    // Detect iframe block — try to access contentDocument after load
+    // Blocked iframes (X-Frame-Options) fire load but content is inaccessible
     function onFrameLoad() {
       frame.removeEventListener('load', onFrameLoad);
-      // Brief pause so page has rendered
+      // Try to detect block: blocked frames throw on contentDocument access
+      var blocked = false;
+      try {
+        // Same-origin frames allow this; cross-origin blocked ones throw
+        var loc = frame.contentWindow && frame.contentWindow.location && frame.contentWindow.location.href;
+        // If about:blank it likely failed silently or was blocked
+        if (!loc || loc === 'about:blank') blocked = true;
+      } catch(e) {
+        // Cross-origin but loaded OK — this is fine, means iframe worked
+        blocked = false;
+      }
+
+      if (blocked) {
+        // Fallback: open in new tab, restore dashboard
+        frame.src = 'about:blank';
+        wrap.style.display = 'none';
+        if (root) root.classList.remove('launching');
+        if (overlay) overlay.classList.remove('launching');
+        window.open(item.url, '_blank');
+        return;
+      }
+
+      // Iframe loaded OK — fade it in
       setTimeout(function() {
-        // Fade out the black overlay, fade in the frame
         if (overlay) { overlay.classList.remove('launching'); }
         wrap.classList.add('visible');
         setTimeout(function() { frame.classList.add('loaded'); }, 80);
       }, 180);
     }
-    frame.addEventListener('load', onFrameLoad);
+
+    // Also set a timeout fallback — if load doesn't fire in 8s, open new tab
+    var frameTimeout = setTimeout(function() {
+      frame.removeEventListener('load', onFrameLoad);
+      frame.src = 'about:blank';
+      wrap.style.display = 'none';
+      if (root) root.classList.remove('launching');
+      if (overlay) overlay.classList.remove('launching');
+      window.open(item.url, '_blank');
+    }, 8000);
+
+    frame.addEventListener('load', function onLoad() {
+      clearTimeout(frameTimeout);
+      onFrameLoad();
+    });
     frame.src = item.url;
   }, 560);
 }
