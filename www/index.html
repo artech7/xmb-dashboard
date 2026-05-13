@@ -144,12 +144,29 @@ html, body {
   min-width: 380px;
   max-width: 500px;
   padding-top: 32px;
+  /* Fixed window — list scrolls inside via translateY */
+  overflow: hidden;
+  max-height: 460px;
+  /* Fade edges so list feels like it continues off screen */
+  mask-image: linear-gradient(to bottom,
+    transparent 0%,
+    black 8%,
+    black 92%,
+    transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom,
+    transparent 0%,
+    black 8%,
+    black 92%,
+    transparent 100%);
 }
 
 .item-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Smooth scroll via CSS transform */
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
 }
 
 .xmb-item {
@@ -2655,12 +2672,38 @@ function renderItems() {
 
     listEl.appendChild(el);
   });
+  // Reset scroll position for new category
+  listEl.style.transform = 'translateY(0px)';
+  scrollItemList();
 }
 
 function updateItemSelection() {
   document.querySelectorAll('.xmb-item').forEach((el, i) => {
     el.classList.toggle('selected', i === itemIdx);
   });
+  scrollItemList();
+}
+
+function scrollItemList() {
+  var listEl = document.querySelector('.item-list');
+  if (!listEl) return;
+  var items = listEl.querySelectorAll('.xmb-item');
+  if (!items.length) return;
+
+  var itemH     = items[0].offsetHeight + 2; // height + gap
+  var panelH    = document.getElementById('item-panel').offsetHeight - 32; // minus padding-top
+  var visCount  = Math.floor(panelH / itemH); // visible items
+  var centerPos = Math.floor(visCount / 2);   // selected stays at this index
+
+  // How far to translate so selected item is centered
+  var offset = -(itemIdx - centerPos) * itemH;
+
+  // Clamp: don't scroll past first or last item
+  var maxOffset = 0;
+  var minOffset = -(items.length - visCount) * itemH;
+  offset = Math.max(minOffset, Math.min(maxOffset, offset));
+
+  listEl.style.transform = 'translateY(' + offset + 'px)';
 }
 
 function openItem(item) {
