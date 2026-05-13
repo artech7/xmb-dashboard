@@ -4323,6 +4323,8 @@ async function loadIconListSelfhst(forceRefresh) {
         var first = d[0];
         if (first && first.slug) {
           names = d.map(function(e) { return e.slug; });
+        } else if (first && first.Reference) {
+          names = d.map(function(e) { return e.Reference; });
         } else if (first && first.name) {
           names = d.map(function(e) { return e.name; })
             .filter(function(n) { return !n.endsWith('-dark') && !n.endsWith('-light'); });
