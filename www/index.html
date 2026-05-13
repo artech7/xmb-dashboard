@@ -2075,10 +2075,7 @@ var GL_AURORA_FRAG = [
   '}'
 ].join('\n');
 
-// ── INK IN WATER — layered flow noise (no framebuffers needed) ──────────────
-// Looks like ink dropped into water: blooms, tendrils, slow diffusion.
-// Uses 4-level domain-warped FBM with time-varying warp chains.
-// Per-pixel, stateless — reliable on all WebGL hardware.
+// ── RAIN fragment shader ──────────────────────────────────────────────────────
 var GL_INK_FRAG = [
   'precision mediump float;',
   'uniform float u_time;',
@@ -2086,95 +2083,93 @@ var GL_INK_FRAG = [
   'uniform float u_intensity;',
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
-
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-  'float vn(vec2 p){',
-  '  vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
-  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),',
-  '             mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
-  'float fbm(vec2 p){',
-  '  float v=0.0,a=0.5;',
-  '  v+=a*vn(p);p=p*2.1+vec2(1.70,9.20);a*=0.5;',
-  '  v+=a*vn(p);p=p*2.1+vec2(3.51,4.37);a*=0.5;',
-  '  v+=a*vn(p);p=p*2.1+vec2(7.13,2.84);a*=0.5;',
-  '  v+=a*vn(p);p=p*2.1+vec2(2.29,6.71);a*=0.5;',
-  '  v+=a*vn(p);return v;}',
-  'vec2 fbm2(vec2 p){return vec2(fbm(p),fbm(p+vec2(5.2,1.3)));}',
-
-  // Ink palette — interpolates smoothly across all 6 theme colors
-  'vec3 inkPal(float t){',
-  '  float f=mod(t,1.0)*5.0;float fr=fract(f);',
-  '  vec3 a,b;',
-  '  if(f<1.0){a=u_c0;b=u_c1;}',
-  '  else if(f<2.0){a=u_c1;b=u_c2;}',
-  '  else if(f<3.0){a=u_c2;b=u_c3;}',
-  '  else if(f<4.0){a=u_c3;b=u_c4;}',
-  '  else{a=u_c4;b=u_c5;}',
-  '  return mix(a,b,fr);}',
-
+  'float h1(float v){return fract(sin(v*127.1)*43758.5453);}',
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  // Aspect-correct coordinate
-  '  vec2 p=vec2(uv.x*u_res.x/u_res.y, uv.y);',
-  // Very slow time — ink in still water barely moves
-  '  float t=u_time*0.000038;',
-
-  // ── Layer 1: large slow blooms ───────────────────────────────
-  // Three-level warp: p → q → r → f1
-  // Each level pulls the sample point further from its origin
-  // creating the characteristic billowing cloud shape
-  '  vec2 q1=fbm2(p*1.4+vec2(t*0.8,t*0.5));',
-  '  vec2 r1=fbm2(p*1.4+4.8*q1+vec2(1.7,9.2)+vec2(t*0.15,t*0.10));',
-  '  float f1=fbm(p*1.4+4.2*r1);',
-
-  // ── Layer 2: medium swirls at different speed ────────────────
-  '  vec2 p2=p*2.2+vec2(3.1,1.7);',
-  '  vec2 q2=fbm2(p2+vec2(t*1.1,t*0.7));',
-  '  vec2 r2=fbm2(p2+4.0*q2+vec2(4.3,2.1));',
-  '  float f2=fbm(p2+3.8*r2);',
-
-  // ── Layer 3: fine detail wisps ───────────────────────────────
-  '  vec2 p3=p*4.6+vec2(-1.5,3.3);',
-  '  float f3=fbm(p3+fbm2(p3+vec2(t*0.6,t*0.4))*3.5);',
-
-  // ── Layer 4: slow large-scale flow field ─────────────────────
-  // Gives the overall sense of currents moving across the frame
-  '  vec2 p4=p*0.7+vec2(t*0.3,t*0.2);',
-  '  float f4=fbm(p4+fbm2(p4)*2.2);',
-
-  // ── Combine: modulate layers by flow field ───────────────────
-  // f4 acts as a slow tide that reveals/hides the fine detail
-  '  float combined=f1*0.55+f2*0.28+f3*0.17;',
-  '  combined=combined*(0.6+f4*0.8);',
-
-  // ── Dark water background ────────────────────────────────────
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.5+0.5)*0.22;',
-
-  // ── Ink bloom — sharp threshold creates clear ink vs water ───
-  '  float bloom=smoothstep(0.28,0.62,combined);',
-  '  float sharp=pow(bloom,0.65);',
-  '  vec3 inkCol=inkPal(f1*1.4+f4*0.3);',
-  // White-hot at densest centres
-  '  inkCol=mix(inkCol,vec3(1.0),sharp*sharp*0.25);',
-  '  col=mix(col,inkCol,sharp*u_intensity*0.95);',
-
-  // ── Secondary color layer ────────────────────────────────────
-  '  float bloom2=smoothstep(0.32,0.64,f2);',
-  '  col=mix(col,inkPal(f2+0.45),pow(bloom2,0.72)*u_intensity*0.55);',
-
-  // ── Fine wisps on top ────────────────────────────────────────
-  '  float wisp=smoothstep(0.40,0.58,f3);',
-  '  col+=mix(inkPal(f3+0.72),vec3(1.0),wisp*0.18)*wisp*u_intensity*0.22;',
-
-  // ── Dark water gaps: areas of low combined stay very dark ────
-  '  float water=smoothstep(0.42,0.18,combined);',
-  '  col=mix(col,col*0.3,water*0.65);',
-
-  // ── Vignette ─────────────────────────────────────────────────
+  '  float t=u_time*0.00055;',
+  '  float asp=u_res.x/u_res.y;',
+  '  vec3 bg=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.6+0.4);',
+  '  vec3 col=bg*0.28;',
+  '  float cloudGlow=0.5+0.5*sin(uv.x*asp*1.8+t*0.3)*sin(uv.y*1.2+t*0.2);',
+  '  col+=u_bg2*cloudGlow*0.04;',
+  '  float windAngle=0.08;',
+  '  float rainCol=0.0;',
+  '  float sc1=asp*55.0;',
+  '  vec2 g1=vec2(floor((uv.x+uv.y*windAngle)*sc1), 0.0);',
+  '  float spd1=0.55+h1(g1.x)*0.35;',
+  '  float phase1=h1(g1.x+13.7);',
+  '  float streak1=fract(uv.y+phase1+t*spd1);',
+  '  float len1=0.06+h1(g1.x+3.1)*0.10;',
+  '  float w1=fract((uv.x+uv.y*windAngle)*sc1);',
+  '  float width1=0.10+h1(g1.x)*0.08;',
+  '  float col1=smoothstep(width1,0.0,abs(w1-0.5))',
+  '            *smoothstep(0.0,0.012,streak1)',
+  '            *smoothstep(len1,0.0,streak1);',
+  '  rainCol+=col1*(0.55+h1(g1.x+7.3)*0.45);',
+  '  float sc2=asp*100.0;',
+  '  vec2 g2=vec2(floor((uv.x+uv.y*windAngle)*sc2), 0.0);',
+  '  float spd2=0.40+h1(g2.x+2.1)*0.25;',
+  '  float phase2=h1(g2.x+27.3);',
+  '  float streak2=fract(uv.y+phase2+t*spd2);',
+  '  float len2=0.04+h1(g2.x+5.7)*0.07;',
+  '  float w2=fract((uv.x+uv.y*windAngle)*sc2);',
+  '  float width2=0.12+h1(g2.x+1.9)*0.06;',
+  '  float col2=smoothstep(width2,0.0,abs(w2-0.5))',
+  '            *smoothstep(0.0,0.008,streak2)',
+  '            *smoothstep(len2,0.0,streak2);',
+  '  rainCol+=col2*(0.30+h1(g2.x+11.1)*0.30)*0.70;',
+  '  float sc3=asp*190.0;',
+  '  vec2 g3=vec2(floor((uv.x+uv.y*windAngle)*sc3), 0.0);',
+  '  float spd3=0.30+h1(g3.x+4.3)*0.20;',
+  '  float phase3=h1(g3.x+41.7);',
+  '  float streak3=fract(uv.y+phase3+t*spd3);',
+  '  float len3=0.025+h1(g3.x+8.1)*0.04;',
+  '  float w3=fract((uv.x+uv.y*windAngle)*sc3);',
+  '  float width3=0.15+h1(g3.x+0.7)*0.05;',
+  '  float col3=smoothstep(width3,0.0,abs(w3-0.5))',
+  '            *smoothstep(0.0,0.005,streak3)',
+  '            *smoothstep(len3,0.0,streak3);',
+  '  rainCol+=col3*(0.15+h1(g3.x+17.3)*0.20)*0.45;',
+  '  vec3 rainTint=mix(vec3(0.75,0.85,1.0),u_c1*0.6+vec3(0.4,0.45,0.5),0.30);',
+  '  col+=rainTint*rainCol*u_intensity;',
+  '  float puddleY=0.15;',
+  '  float ripple=0.0;',
+  '  vec2 rp0=vec2(0.15+h1(0.0)*0.70, h1(1.0)*puddleY);',
+  '  float rt0=fract(t*0.55+h1(2.0));',
+  '  float rd0=length((uv-rp0)*vec2(asp,1.0));',
+  '  ripple+=max(0.0,0.018-abs(rd0-rt0*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt0);',
+  '  vec2 rp1=vec2(0.15+h1(3.0)*0.70, h1(4.0)*puddleY);',
+  '  float rt1=fract(t*0.48+h1(5.0));',
+  '  float rd1=length((uv-rp1)*vec2(asp,1.0));',
+  '  ripple+=max(0.0,0.018-abs(rd1-rt1*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt1);',
+  '  vec2 rp2=vec2(0.15+h1(6.0)*0.70, h1(7.0)*puddleY);',
+  '  float rt2=fract(t*0.62+h1(8.0));',
+  '  float rd2=length((uv-rp2)*vec2(asp,1.0));',
+  '  ripple+=max(0.0,0.018-abs(rd2-rt2*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt2);',
+  '  vec2 rp3=vec2(0.15+h1(9.0)*0.70, h1(10.0)*puddleY);',
+  '  float rt3=fract(t*0.44+h1(11.0));',
+  '  float rd3=length((uv-rp3)*vec2(asp,1.0));',
+  '  ripple+=max(0.0,0.018-abs(rd3-rt3*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt3);',
+  '  vec2 rp4=vec2(0.15+h1(12.0)*0.70, h1(13.0)*puddleY);',
+  '  float rt4=fract(t*0.58+h1(14.0));',
+  '  float rd4=length((uv-rp4)*vec2(asp,1.0));',
+  '  ripple+=max(0.0,0.018-abs(rd4-rt4*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt4);',
+  '  vec2 rp5=vec2(0.15+h1(15.0)*0.70, h1(16.0)*puddleY);',
+  '  float rt5=fract(t*0.51+h1(17.0));',
+  '  float rd5=length((uv-rp5)*vec2(asp,1.0));',
+  '  ripple+=max(0.0,0.018-abs(rd5-rt5*0.22))*smoothstep(puddleY,0.0,uv.y)*(1.0-rt5);',
+  '  col+=vec3(0.6,0.75,0.9)*ripple*u_intensity*1.2;',
+  '  float reflY=uv.y/puddleY;',
+  '  float refl=rainCol*smoothstep(1.0,0.0,reflY)*0.35;',
+  '  col+=rainTint*refl*u_intensity;',
+  '  float fog=smoothstep(0.4,0.0,abs(uv.x-0.5))*0.08',
+  '           +smoothstep(0.3,0.0,uv.y)*0.05;',
+  '  col=mix(col,col+u_bg2*0.15,fog);',
   '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(1.0,0.85),vc*vec2(1.0,0.85))*1.15;',
+  '  col*=1.0-dot(vc*vec2(0.8,1.0),vc*vec2(0.8,1.0))*1.1;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
-  '}'
+  '}',
 ].join('\n');
 
 var GL_NEBULA_FRAG = [
@@ -4915,7 +4910,7 @@ document.addEventListener('keydown', function(e) {
             <button class="p-toggle" data-pref="animStyle" data-val="warp"       data-pref-row="1" data-pref-col="5">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"       data-pref-row="1" data-pref-col="6">XMB Wave</button>
             <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="1" data-pref-col="7">Bokeh</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="1" data-pref-col="8">Ink</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="1" data-pref-col="8">Rain</button>
           </div>
         </div>
       </div>
