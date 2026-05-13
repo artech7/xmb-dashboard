@@ -4319,6 +4319,7 @@ async function loadIconListSelfhst(forceRefresh) {
       var names = null;
       console.log('selfh.st index response type:', typeof d, Array.isArray(d) ? 'array len='+d.length : JSON.stringify(d).slice(0,120));
       if (Array.isArray(d) && d.length > 0) {
+        console.log('selfh.st first item:', JSON.stringify(d[0]).slice(0,200));
         var first = d[0];
         if (first && first.slug) {
           names = d.map(function(e) { return e.slug; });
