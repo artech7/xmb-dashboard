@@ -1103,46 +1103,43 @@ function drawParticleFlow() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HEX GRID — static honeycomb with animated palette glow behind it
+// HEX GRID — static honeycomb with per-hex pulsating edge glow
 // ══════════════════════════════════════════════════════════════════════════════
-var hexGridCanvas  = null; // offscreen canvas for static hex grid
-var hexGridSize    = 44;   // hex cell radius px
+var hexCells    = null;  // array of {cx,cy,verts,phase,spd,ci,glowMult}
+var hexS        = 46;    // hex radius px
 
-function buildHexGridCanvas() {
-  // Draw static hex grid to offscreen canvas — only rebuilt on resize
-  hexGridCanvas = document.createElement('canvas');
-  hexGridCanvas.width  = W;
-  hexGridCanvas.height = H;
-  var hx = hexGridCanvas.getContext('2d');
-  var s  = hexGridSize;
-  var sw = s * Math.sqrt(3);
-  var sh = s * 1.5;
+function buildHexCells() {
+  hexCells = [];
+  var sw   = hexS * Math.sqrt(3);
+  var sh   = hexS * 1.5;
   var cols = Math.ceil(W / sw) + 2;
   var rows = Math.ceil(H / sh) + 2;
-  hx.strokeStyle = 'rgba(255,255,255,0.12)';
-  hx.lineWidth   = 0.8;
   for (var row = -1; row < rows; row++) {
     for (var col = -1; col < cols; col++) {
       var cx = col * sw + (row % 2 === 0 ? 0 : sw * 0.5);
       var cy = row * sh;
-      hx.beginPath();
+      var verts = [];
       for (var i = 0; i < 6; i++) {
-        var angle = Math.PI / 180 * (60 * i - 30);
-        var vx = cx + s * Math.cos(angle);
-        var vy = cy + s * Math.sin(angle);
-        i === 0 ? hx.moveTo(vx, vy) : hx.lineTo(vx, vy);
+        var ang = Math.PI / 180 * (60 * i - 30);
+        verts.push({ x: cx + hexS * Math.cos(ang), y: cy + hexS * Math.sin(ang) });
       }
-      hx.closePath();
-      hx.stroke();
+      hexCells.push({
+        cx: cx, cy: cy,
+        verts: verts,
+        phase:    Math.random() * Math.PI * 2,   // random start phase
+        spd:      0.0004 + Math.random() * 0.0008, // random pulse speed
+        ci:       Math.floor(Math.random() * 6), // palette color index
+        glowMult: 0.4 + Math.random() * 0.6,    // max glow intensity varies per hex
+      });
     }
   }
 }
 
 function drawHexGrid() {
-  // Rebuild grid if canvas size changed
-  if (!hexGridCanvas || hexGridCanvas.width !== W || hexGridCanvas.height !== H) {
-    buildHexGridCanvas();
+  if (!hexCells || hexCells[0].verts[0].x !== (Math.ceil(W / (hexS * Math.sqrt(3))) + 2) * -1 * hexS * Math.sqrt(3)) {
+    if (!hexCells) buildHexCells();
   }
+  if (!hexCells) buildHexCells();
 
   // Dark background
   var bg0 = nebulaBackground[0] || '#050508';
@@ -1153,32 +1150,38 @@ function drawHexGrid() {
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // Animated palette glow blobs — drift slowly behind the grid
-  var bDefs = [
-    { xi: 0.18, yi: 0.28, spd: 0.00018, ph: 0.0, ci: 0 },
-    { xi: 0.72, yi: 0.18, spd: 0.00013, ph: 1.4, ci: 2 },
-    { xi: 0.58, yi: 0.68, spd: 0.00016, ph: 2.7, ci: 4 },
-    { xi: 0.30, yi: 0.55, spd: 0.00012, ph: 3.9, ci: 1 },
-    { xi: 0.82, yi: 0.55, spd: 0.00015, ph: 5.1, ci: 3 },
-    { xi: 0.45, yi: 0.35, spd: 0.00011, ph: 0.7, ci: 5 },
-  ];
-  bDefs.forEach(function(b) {
-    var bx  = (b.xi + Math.sin(t * b.spd + b.ph) * 0.16) * W;
-    var by  = (b.yi + Math.cos(t * b.spd * 0.8 + b.ph) * 0.13) * H;
-    var br  = Math.min(W, H) * 0.52;
-    var col = themeRgbPalette[b.ci] || [80, 100, 200];
-    var pulse = 0.65 + 0.35 * Math.sin(t * b.spd * 8 + b.ph);
-    var rg  = ctx.createRadialGradient(bx, by, 0, bx, by, br);
-    rg.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.30 * pulse * blobOpacityMult).toFixed(2)+')');
-    rg.addColorStop(0.4, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.12 * pulse * blobOpacityMult).toFixed(2)+')');
-    rg.addColorStop(1,   'rgba('+col[0]+','+col[1]+','+col[2]+',0)');
-    ctx.fillStyle = rg;
-    ctx.fillRect(0, 0, W, H);
-  });
+  // Draw each hexagon with pulsating glow
+  for (var i = 0; i < hexCells.length; i++) {
+    var h   = hexCells[i];
+    var col = themeRgbPalette[h.ci % themeRgbPalette.length] || [0, 200, 255];
 
-  // Draw static hex grid on top
-  ctx.drawImage(hexGridCanvas, 0, 0);
+    // Pulse value: 0 → 1, each hex at different phase and speed
+    var pulse = (Math.sin(t * h.spd + h.phase) * 0.5 + 0.5) * h.glowMult;
 
+    // Base dim grid line — always visible
+    ctx.beginPath();
+    ctx.moveTo(h.verts[0].x, h.verts[0].y);
+    for (var j = 1; j < 6; j++) ctx.lineTo(h.verts[j].x, h.verts[j].y);
+    ctx.closePath();
+
+    // Glow pass — only when pulse is significant
+    if (pulse > 0.05) {
+      ctx.shadowBlur   = 8 + pulse * 22;
+      ctx.shadowColor  = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(pulse * 0.9).toFixed(2)+')';
+      ctx.strokeStyle  = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.08 + pulse * 0.65).toFixed(2)+')';
+      ctx.lineWidth    = 0.8 + pulse * 1.0;
+    } else {
+      // Dim base line, no glow
+      ctx.shadowBlur   = 0;
+      ctx.shadowColor  = 'transparent';
+      ctx.strokeStyle  = 'rgba(255,255,255,0.05)';
+      ctx.lineWidth    = 0.5;
+    }
+    ctx.stroke();
+  }
+
+  ctx.shadowBlur  = 0;
+  ctx.shadowColor = 'transparent';
   drawVignette();
 }
 
@@ -5601,7 +5604,7 @@ function applyPrefs(prefs) {
   activeBlobs = BLOBS.map(function(b,i){ return {x:b.x,y:b.y,r:b.r,rgb:theme.blobs[i]||b.rgb,a:b.a,spd:b.spd}; });
   nebulaBackground = theme.bg;
   document.documentElement.style.setProperty('--bg-deep', theme.bg[0] || '#050508');
-  hexLines = null; // reinit hex grid so new palette colors apply immediately
+  hexCells = null; // reinit hex grid so new palette colors apply immediately
   // Build vivid palette from all 6 theme blob colors
   themeRgbPalette = theme.blobs.map(function(tb) {
     var tMax = Math.max(tb[0], tb[1], tb[2]) || 1;
@@ -5664,7 +5667,7 @@ function applyPrefs(prefs) {
     matrixCols = null; flameParticles = null; flameEmbers = null;
     auroraCurtains = null; bokehCircles = null; inkBlobs = null;
     pfParticles = null;
-    hexGridCanvas = null;
+    hexCells = null;
   }
 }
 
