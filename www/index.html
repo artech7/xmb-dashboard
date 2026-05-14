@@ -1150,38 +1150,53 @@ function drawHexGrid() {
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // Draw each hexagon with pulsating glow
+  // ── Pass 1: wide soft outer glow (thick, very transparent) ────────────────
+  // Fake glow with 3 layered strokes — NO shadowBlur (too expensive)
+  ctx.lineWidth = 6;
   for (var i = 0; i < hexCells.length; i++) {
     var h   = hexCells[i];
     var col = themeRgbPalette[h.ci % themeRgbPalette.length] || [0, 200, 255];
-
-    // Pulse value: 0 → 1, each hex at different phase and speed
     var pulse = (Math.sin(t * h.spd + h.phase) * 0.5 + 0.5) * h.glowMult;
-
-    // Base dim grid line — always visible
+    if (pulse < 0.08) continue; // skip dim hexes entirely
     ctx.beginPath();
     ctx.moveTo(h.verts[0].x, h.verts[0].y);
     for (var j = 1; j < 6; j++) ctx.lineTo(h.verts[j].x, h.verts[j].y);
     ctx.closePath();
-
-    // Glow pass — only when pulse is significant
-    if (pulse > 0.05) {
-      ctx.shadowBlur   = 8 + pulse * 22;
-      ctx.shadowColor  = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(pulse * 0.9).toFixed(2)+')';
-      ctx.strokeStyle  = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.08 + pulse * 0.65).toFixed(2)+')';
-      ctx.lineWidth    = 0.8 + pulse * 1.0;
-    } else {
-      // Dim base line, no glow
-      ctx.shadowBlur   = 0;
-      ctx.shadowColor  = 'transparent';
-      ctx.strokeStyle  = 'rgba(255,255,255,0.05)';
-      ctx.lineWidth    = 0.5;
-    }
+    ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(pulse * 0.10).toFixed(2)+')';
     ctx.stroke();
   }
 
-  ctx.shadowBlur  = 0;
-  ctx.shadowColor = 'transparent';
+  // ── Pass 2: medium glow ───────────────────────────────────────────────────
+  ctx.lineWidth = 2.5;
+  for (var i = 0; i < hexCells.length; i++) {
+    var h   = hexCells[i];
+    var col = themeRgbPalette[h.ci % themeRgbPalette.length] || [0, 200, 255];
+    var pulse = (Math.sin(t * h.spd + h.phase) * 0.5 + 0.5) * h.glowMult;
+    if (pulse < 0.08) continue;
+    ctx.beginPath();
+    ctx.moveTo(h.verts[0].x, h.verts[0].y);
+    for (var j = 1; j < 6; j++) ctx.lineTo(h.verts[j].x, h.verts[j].y);
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(pulse * 0.28).toFixed(2)+')';
+    ctx.stroke();
+  }
+
+  // ── Pass 3: bright core line ─────────────────────────────────────────────
+  ctx.lineWidth = 0.8;
+  for (var i = 0; i < hexCells.length; i++) {
+    var h   = hexCells[i];
+    var col = themeRgbPalette[h.ci % themeRgbPalette.length] || [0, 200, 255];
+    var pulse = (Math.sin(t * h.spd + h.phase) * 0.5 + 0.5) * h.glowMult;
+    // Dim base always drawn — glowing core when pulse is high
+    ctx.beginPath();
+    ctx.moveTo(h.verts[0].x, h.verts[0].y);
+    for (var j = 1; j < 6; j++) ctx.lineTo(h.verts[j].x, h.verts[j].y);
+    ctx.closePath();
+    ctx.strokeStyle = pulse > 0.08
+      ? 'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.06 + pulse * 0.55).toFixed(2)+')'
+      : 'rgba(255,255,255,0.04)';
+    ctx.stroke();
+  }
   drawVignette();
 }
 
