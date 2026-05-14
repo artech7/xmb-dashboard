@@ -1106,8 +1106,8 @@ function drawParticleFlow() {
 // ══════════════════════════════════════════════════════════════════════════════
 var hexPulses  = null;
 var hexGrid    = null;
-var HEX_SIZE   = 48;  // hex cell radius in px
-var HEX_PULSE_MAX = 55; // max concurrent pulses
+var HEX_SIZE   = 52;  // hex cell radius in px
+var HEX_PULSE_MAX = 180; // max concurrent pulses
 
 function hexCorner(cx, cy, size, i) {
   var angle = Math.PI / 180 * (60 * i - 30);
@@ -1161,7 +1161,7 @@ function hexSpawnPulse() {
     ex: e.x1, ey: e.y1,  // start
     tx: e.x2, ty: e.y2,  // end
     prog: 0,             // 0→1
-    spd:  0.018 + Math.random() * 0.028,
+    spd:  0.028 + Math.random() * 0.038,
     col:  col,
     alpha: 0.7 + Math.random() * 0.3,
     width: 1.0 + Math.random() * 1.5,
@@ -1185,7 +1185,7 @@ function drawHexGrid() {
   ctx.fillRect(0, 0, W, H);
 
   // Draw static hex grid — very dim
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
   ctx.lineWidth   = 0.5;
   var s = HEX_SIZE;
   hexGrid.forEach(function(h) {
@@ -1199,7 +1199,8 @@ function drawHexGrid() {
   });
 
   // Spawn new pulses
-  if (hexPulses.length < HEX_PULSE_MAX && Math.random() < 0.22) hexSpawnPulse();
+  var spawnN = Math.min(3, HEX_PULSE_MAX - hexPulses.length);
+  for (var si=0; si<spawnN; si++) { if (Math.random() < 0.55) hexSpawnPulse(); }
 
   // Draw + advance pulses
   var alive = [];
@@ -1247,7 +1248,7 @@ function drawHexGrid() {
     } else {
       // Fork: spawn new pulses from adjacent edges at the endpoint
       for (var f = 0; f < p.forks; f++) {
-        if (hexPulses.length + alive.length < HEX_PULSE_MAX && Math.random() < 0.72) {
+        if (hexPulses.length + alive.length < HEX_PULSE_MAX && Math.random() < 0.88) {
           // Find edges that share the endpoint
           var near = hexGrid.edges.filter(function(e) {
             var d1 = Math.hypot(e.x1-p.tx, e.y1-p.ty);
