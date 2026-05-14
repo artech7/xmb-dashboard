@@ -1127,7 +1127,7 @@ function buildHexCells() {
         cx: cx, cy: cy,
         verts: verts,
         phase:    Math.random() * Math.PI * 2,   // random start phase
-        spd:      0.0004 + Math.random() * 0.0008, // random pulse speed
+        spd:      0.0018 + Math.random() * 0.0032, // random pulse speed
         ci:       Math.floor(Math.random() * 6), // palette color index
         glowMult: 0.4 + Math.random() * 0.6,    // max glow intensity varies per hex
       });
@@ -1156,7 +1156,8 @@ function drawHexGrid() {
   for (var i = 0; i < hexCells.length; i++) {
     var h   = hexCells[i];
     var col = themeRgbPalette[h.ci % themeRgbPalette.length] || [0, 200, 255];
-    var pulse = (Math.sin(t * h.spd + h.phase) * 0.5 + 0.5) * h.glowMult;
+    var raw = Math.sin(t * h.spd + h.phase) * 0.5 + 0.5;
+    var pulse = Math.pow(raw, 2.5) * h.glowMult;
     if (pulse < 0.08) continue; // skip dim hexes entirely
     ctx.beginPath();
     ctx.moveTo(h.verts[0].x, h.verts[0].y);
@@ -1171,13 +1172,14 @@ function drawHexGrid() {
   for (var i = 0; i < hexCells.length; i++) {
     var h   = hexCells[i];
     var col = themeRgbPalette[h.ci % themeRgbPalette.length] || [0, 200, 255];
-    var pulse = (Math.sin(t * h.spd + h.phase) * 0.5 + 0.5) * h.glowMult;
+    var raw = Math.sin(t * h.spd + h.phase) * 0.5 + 0.5;
+    var pulse = Math.pow(raw, 2.5) * h.glowMult;
     if (pulse < 0.08) continue;
     ctx.beginPath();
     ctx.moveTo(h.verts[0].x, h.verts[0].y);
     for (var j = 1; j < 6; j++) ctx.lineTo(h.verts[j].x, h.verts[j].y);
     ctx.closePath();
-    ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(pulse * 0.28).toFixed(2)+')';
+    ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+(pulse * 0.50).toFixed(2)+')';
     ctx.stroke();
   }
 
@@ -1186,14 +1188,15 @@ function drawHexGrid() {
   for (var i = 0; i < hexCells.length; i++) {
     var h   = hexCells[i];
     var col = themeRgbPalette[h.ci % themeRgbPalette.length] || [0, 200, 255];
-    var pulse = (Math.sin(t * h.spd + h.phase) * 0.5 + 0.5) * h.glowMult;
+    var raw = Math.sin(t * h.spd + h.phase) * 0.5 + 0.5;
+    var pulse = Math.pow(raw, 2.5) * h.glowMult;
     // Dim base always drawn — glowing core when pulse is high
     ctx.beginPath();
     ctx.moveTo(h.verts[0].x, h.verts[0].y);
     for (var j = 1; j < 6; j++) ctx.lineTo(h.verts[j].x, h.verts[j].y);
     ctx.closePath();
     ctx.strokeStyle = pulse > 0.08
-      ? 'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.06 + pulse * 0.55).toFixed(2)+')'
+      ? 'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.04 + pulse * 0.85).toFixed(2)+')'
       : 'rgba(255,255,255,0.04)';
     ctx.stroke();
   }
