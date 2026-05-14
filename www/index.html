@@ -1107,16 +1107,21 @@ function drawParticleFlow() {
 // ══════════════════════════════════════════════════════════════════════════════
 var hexLines    = null;
 var hexTick     = 0;
-var HEX_LEN     = 22;   // grid unit size px
-var HEX_COUNT   = 80;   // concurrent lines
+var HEX_LEN     = 38;   // grid unit size px
+var HEX_COUNT   = 120;  // concurrent lines
 var hexBaseRad  = Math.PI * 2 / 6; // 60 degrees
 
 function HexLine() { this.reset(); }
 HexLine.prototype.reset = function() {
-  this.x = 0; this.y = 0;
+  // Spawn at random position across full screen
+  var dieX = W / 2 / HEX_LEN;
+  var dieY = H / 2 / HEX_LEN;
+  this.x = (Math.random() - 0.5) * 2 * dieX * 0.9;
+  this.y = (Math.random() - 0.5) * 2 * dieY * 0.9;
   this.addedX = 0; this.addedY = 0;
-  this.rad = 0;
+  this.rad = hexBaseRad * Math.floor(Math.random() * 6); // start on a hex angle
   this.cumulativeTime = 0;
+  // Pick theme palette color — refresh on reset so color changes take effect
   var ci  = Math.floor(Math.random() * themeRgbPalette.length);
   var col = themeRgbPalette[ci] || [0, 200, 255];
   this.r  = col[0]; this.g = col[1]; this.b = col[2];
@@ -1152,15 +1157,15 @@ HexLine.prototype.step = function() {
   var r = Math.min(255, this.r * (0.5 + light));
   var g = Math.min(255, this.g * (0.5 + light));
   var b = Math.min(255, this.b * (0.5 + light));
-  ctx.shadowBlur  = prop * 10;
+  ctx.shadowBlur  = prop * 18;
   ctx.shadowColor = 'rgba('+r+','+g+','+b+','+alpha.toFixed(2)+')';
   ctx.fillStyle   = 'rgba('+r+','+g+','+b+','+alpha.toFixed(2)+')';
-  ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+  ctx.fillRect(px - 2, py - 2, 4, 4);
   if (Math.random() < 0.12) {
     ctx.fillRect(
-      px + (Math.random() - 0.5) * 14 - 1,
-      py + (Math.random() - 0.5) * 14 - 1,
-      2, 2
+      px + (Math.random() - 0.5) * 20 - 1.5,
+      py + (Math.random() - 0.5) * 20 - 1.5,
+      3, 3
     );
   }
 };
@@ -1177,7 +1182,7 @@ function drawHexGrid() {
   // Semi-transparent black repaint creates trailing glow effect
   ctx.globalCompositeOperation = 'source-over';
   ctx.shadowBlur = 0;
-  ctx.fillStyle  = 'rgba(0,0,0,0.04)';
+  ctx.fillStyle  = 'rgba(0,0,0,0.03)';
   ctx.fillRect(0, 0, W, H);
   // Additive blending — lines glow and brighten where they overlap
   ctx.globalCompositeOperation = 'lighter';
@@ -5608,6 +5613,7 @@ function applyPrefs(prefs) {
   activeBlobs = BLOBS.map(function(b,i){ return {x:b.x,y:b.y,r:b.r,rgb:theme.blobs[i]||b.rgb,a:b.a,spd:b.spd}; });
   nebulaBackground = theme.bg;
   document.documentElement.style.setProperty('--bg-deep', theme.bg[0] || '#050508');
+  hexLines = null; // reinit hex grid so new palette colors apply immediately
   // Build vivid palette from all 6 theme blob colors
   themeRgbPalette = theme.blobs.map(function(tb) {
     var tMax = Math.max(tb[0], tb[1], tb[2]) || 1;
