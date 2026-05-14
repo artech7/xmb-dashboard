@@ -1102,182 +1102,90 @@ function drawParticleFlow() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HEX GRID — honeycomb mesh with tracing pulses along edges
+// HEX GRID — neon self-drawing lines along 60° hex angles, additive glow
+// Technique: globalCompositeOperation='lighter' + semi-transparent repaint
 // ══════════════════════════════════════════════════════════════════════════════
-var hexPulses  = null;
-var hexGrid    = null;
-var HEX_SIZE   = 52;  // hex cell radius in px
-var HEX_PULSE_MAX = 180; // max concurrent pulses
+var hexLines    = null;
+var hexTick     = 0;
+var HEX_LEN     = 22;   // grid unit size px
+var HEX_COUNT   = 80;   // concurrent lines
+var hexBaseRad  = Math.PI * 2 / 6; // 60 degrees
 
-function hexCorner(cx, cy, size, i) {
-  var angle = Math.PI / 180 * (60 * i - 30);
-  return { x: cx + size * Math.cos(angle), y: cy + size * Math.sin(angle) };
-}
+function HexLine() { this.reset(); }
+HexLine.prototype.reset = function() {
+  this.x = 0; this.y = 0;
+  this.addedX = 0; this.addedY = 0;
+  this.rad = 0;
+  this.cumulativeTime = 0;
+  var ci  = Math.floor(Math.random() * themeRgbPalette.length);
+  var col = themeRgbPalette[ci] || [0, 200, 255];
+  this.r  = col[0]; this.g = col[1]; this.b = col[2];
+  this.lightMult = 0.008 + 0.016 * Math.random();
+  this.beginPhase();
+};
+HexLine.prototype.beginPhase = function() {
+  this.x += this.addedX;
+  this.y += this.addedY;
+  this.time = 0;
+  this.targetTime = (12 + 14 * Math.random()) | 0;
+  this.rad += hexBaseRad * (Math.random() < 0.5 ? 1 : -1);
+  this.addedX = Math.cos(this.rad);
+  this.addedY = Math.sin(this.rad);
+  var dieX = W / 2 / HEX_LEN;
+  var dieY = H / 2 / HEX_LEN;
+  if (Math.random() < 0.05 ||
+      this.x > dieX || this.x < -dieX ||
+      this.y > dieY || this.y < -dieY) {
+    this.reset();
+  }
+};
+HexLine.prototype.step = function() {
+  this.time++;
+  this.cumulativeTime++;
+  if (this.time >= this.targetTime) this.beginPhase();
+  var prop  = this.time / this.targetTime;
+  var wave  = Math.sin(prop * Math.PI / 2);
+  var px    = W / 2 + (this.x + this.addedX * wave) * HEX_LEN;
+  var py    = H / 2 + (this.y + this.addedY * wave) * HEX_LEN;
+  var light = 0.5 + 0.45 * Math.sin(this.cumulativeTime * this.lightMult);
+  var alpha = (0.6 + 0.4 * light) * blobOpacityMult;
+  var r = Math.min(255, this.r * (0.5 + light));
+  var g = Math.min(255, this.g * (0.5 + light));
+  var b = Math.min(255, this.b * (0.5 + light));
+  ctx.shadowBlur  = prop * 10;
+  ctx.shadowColor = 'rgba('+r+','+g+','+b+','+alpha.toFixed(2)+')';
+  ctx.fillStyle   = 'rgba('+r+','+g+','+b+','+alpha.toFixed(2)+')';
+  ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+  if (Math.random() < 0.12) {
+    ctx.fillRect(
+      px + (Math.random() - 0.5) * 14 - 1,
+      py + (Math.random() - 0.5) * 14 - 1,
+      2, 2
+    );
+  }
+};
 
 function initHexGrid() {
-  var s  = HEX_SIZE;
-  var sw = s * Math.sqrt(3);
-  var sh = s * 1.5;
-  hexGrid = [];
-  // Build all hex centres
-  var cols = Math.ceil(W / sw) + 2;
-  var rows = Math.ceil(H / sh) + 2;
-  for (var row = -1; row < rows; row++) {
-    for (var col = -1; col < cols; col++) {
-      var x = col * sw + (row % 2 === 0 ? 0 : sw * 0.5);
-      var y = row * sh;
-      hexGrid.push({ x: x, y: y });
-    }
-  }
-  // Build edges — each unique edge between adjacent hexes
-  // Store as {x1,y1,x2,y2,pulse} for each of the 6 edges per hex
-  hexGrid.edges = [];
-  var seen = {};
-  hexGrid.forEach(function(h) {
-    for (var i = 0; i < 6; i++) {
-      var a = hexCorner(h.x, h.y, s, i);
-      var b = hexCorner(h.x, h.y, s, (i + 1) % 6);
-      // Deduplicate edges by rounded key
-      var key = [Math.round(a.x),Math.round(a.y),Math.round(b.x),Math.round(b.y)].join(',');
-      var key2= [Math.round(b.x),Math.round(b.y),Math.round(a.x),Math.round(a.y)].join(',');
-      if (!seen[key] && !seen[key2]) {
-        seen[key] = true;
-        hexGrid.edges.push({ x1:a.x,y1:a.y,x2:b.x,y2:b.y,
-          cx: h.x, cy: h.y }); // store parent hex centre for pulse targeting
-      }
-    }
-  });
-  hexPulses = [];
-}
-
-function hexSpawnPulse() {
-  if (!hexGrid || !hexGrid.edges) return;
-  // Pick a random edge to start from
-  var eIdx = Math.floor(Math.random() * hexGrid.edges.length);
-  var e = hexGrid.edges[eIdx];
-  var col = themeRgbPalette[Math.floor(Math.random() * themeRgbPalette.length)];
-  hexPulses.push({
-    // Parametric position along edge: 0=start, 1=end
-    ex: e.x1, ey: e.y1,  // start
-    tx: e.x2, ty: e.y2,  // end
-    prog: 0,             // 0→1
-    spd:  0.012 + Math.random() * 0.018,
-    col:  col,
-    alpha: 0.7 + Math.random() * 0.3,
-    width: 1.0 + Math.random() * 1.5,
-    tail:  0.55 + Math.random() * 0.40, // tail length (0-1)
-    // When pulse reaches end, it forks to adjacent edges
-    forks: 1 + (Math.random() < 0.35 ? 1 : 0),
-    edge:  e,
-  });
+  hexLines = [];
+  hexTick  = 0;
+  for (var i = 0; i < HEX_COUNT; i++) hexLines.push(new HexLine());
 }
 
 function drawHexGrid() {
-  if (!hexGrid) initHexGrid();
-
-  // Background
-  var bg0 = nebulaBackground[0] || '#050508';
-  var bg1 = nebulaBackground[1] || '#030306';
-  var grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, bg0);
-  grad.addColorStop(1, bg1);
-  ctx.fillStyle = grad;
+  if (!hexLines) initHexGrid();
+  hexTick++;
+  // Semi-transparent black repaint creates trailing glow effect
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0;
+  ctx.fillStyle  = 'rgba(0,0,0,0.04)';
   ctx.fillRect(0, 0, W, H);
-
-  // Draw static hex grid — very dim
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-  ctx.lineWidth   = 0.5;
-  var s = HEX_SIZE;
-  hexGrid.forEach(function(h) {
-    ctx.beginPath();
-    for (var i = 0; i < 6; i++) {
-      var c = hexCorner(h.x, h.y, s, i);
-      i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y);
-    }
-    ctx.closePath();
-    ctx.stroke();
-  });
-
-  // Spawn new pulses
-  var spawnN = Math.min(3, HEX_PULSE_MAX - hexPulses.length);
-  for (var si=0; si<spawnN; si++) { if (Math.random() < 0.55) hexSpawnPulse(); }
-
-  // Draw + advance pulses
-  var alive = [];
-  for (var i = 0; i < hexPulses.length; i++) {
-    var p = hexPulses[i];
-    p.prog += p.spd * animSpeed;
-
-    var col = p.col;
-    var r = col[0], g = col[1], b = col[2];
-
-    // Draw glowing trail along the edge
-    // Head position
-    var hx = p.ex + (p.tx - p.ex) * p.prog;
-    var hy = p.ey + (p.ty - p.ey) * p.prog;
-    // Tail position
-    var tailProg = Math.max(0, p.prog - p.tail);
-    var tx = p.ex + (p.tx - p.ex) * tailProg;
-    var ty = p.ey + (p.ty - p.ey) * tailProg;
-
-    // Outer glow
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(hx, hy);
-    ctx.strokeStyle = 'rgba('+r+','+g+','+b+','+(p.alpha * 0.3 * blobOpacityMult).toFixed(2)+')';
-    ctx.lineWidth   = p.width * 3;
-    ctx.lineCap     = 'round';
-    ctx.stroke();
-
-    // Core bright line
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(hx, hy);
-    ctx.strokeStyle = 'rgba('+r+','+g+','+b+','+(p.alpha * blobOpacityMult).toFixed(2)+')';
-    ctx.lineWidth   = p.width;
-    ctx.stroke();
-
-    // Head dot
-    ctx.beginPath();
-    ctx.arc(hx, hy, p.width * 1.8, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba('+r+','+g+','+b+','+(p.alpha * blobOpacityMult).toFixed(2)+')';
-    ctx.fill();
-
-    if (p.prog < 1.0) {
-      alive.push(p);
-    } else {
-      // Fork: spawn new pulses from adjacent edges at the endpoint
-      for (var f = 0; f < p.forks; f++) {
-        if (hexPulses.length + alive.length < HEX_PULSE_MAX && Math.random() < 0.88) {
-          // Find edges that share the endpoint
-          var near = hexGrid.edges.filter(function(e) {
-            var d1 = Math.hypot(e.x1-p.tx, e.y1-p.ty);
-            var d2 = Math.hypot(e.x2-p.tx, e.y2-p.ty);
-            return (d1 < 3 || d2 < 3) && !(Math.abs(e.x1-p.ex)<3 && Math.abs(e.y1-p.ey)<3);
-          });
-          if (near.length > 0) {
-            var ne = near[Math.floor(Math.random() * near.length)];
-            // Determine start direction — continue from endpoint
-            var startX = Math.hypot(ne.x1-p.tx, ne.y1-p.ty) < 3 ? ne.x1 : ne.x2;
-            var startY = Math.hypot(ne.x1-p.tx, ne.y1-p.ty) < 3 ? ne.y1 : ne.y2;
-            var endX   = startX === ne.x1 ? ne.x2 : ne.x1;
-            var endY   = startY === ne.y1 ? ne.y2 : ne.y1;
-            var newCol = Math.random() < 0.7 ? p.col :
-              themeRgbPalette[Math.floor(Math.random() * themeRgbPalette.length)];
-            alive.push({
-              ex: startX, ey: startY, tx: endX, ty: endY,
-              prog: 0, spd: p.spd * (0.85 + Math.random() * 0.3),
-              col: newCol, alpha: p.alpha * (0.7 + Math.random() * 0.25),
-              width: p.width * (0.75 + Math.random() * 0.35),
-              tail: p.tail, forks: Math.random() < 0.4 ? 1 : 0, edge: ne,
-            });
-          }
-        }
-      }
-    }
-  }
-  hexPulses = alive;
-
+  // Additive blending — lines glow and brighten where they overlap
+  ctx.globalCompositeOperation = 'lighter';
+  if (hexLines.length < HEX_COUNT) hexLines.push(new HexLine());
+  for (var i = 0; i < hexLines.length; i++) hexLines[i].step();
+  // Reset composite before vignette
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0;
   drawVignette();
 }
 
@@ -5762,7 +5670,7 @@ function applyPrefs(prefs) {
     matrixCols = null; flameParticles = null; flameEmbers = null;
     auroraCurtains = null; bokehCircles = null; inkBlobs = null;
     pfParticles = null;
-    hexPulses = null; hexGrid = null;
+    hexLines = null;
   }
 }
 
