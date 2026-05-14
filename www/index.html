@@ -1158,12 +1158,36 @@ function samplePalette(pos) {
 function drawHexGrid() {
   if (!hexCells) buildHexCells();
 
-  // Dark background
+  // Dark background gradient
   var bg0 = nebulaBackground[0] || '#050508';
   var bg1 = nebulaBackground[1] || '#030306';
+  var bg2 = nebulaBackground[2] || '#020205';
   var bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-  bgGrad.addColorStop(0, bg0); bgGrad.addColorStop(1, bg1);
+  bgGrad.addColorStop(0, bg0); bgGrad.addColorStop(0.5, bg1); bgGrad.addColorStop(1, bg2);
   ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+
+  // Drifting palette blobs behind the grid
+  var hbDefs = [
+    { xi:0.18, yi:0.25, spd:0.00012, ph:0.0, ci:0 },
+    { xi:0.75, yi:0.20, spd:0.00009, ph:1.4, ci:2 },
+    { xi:0.55, yi:0.70, spd:0.00013, ph:2.7, ci:4 },
+    { xi:0.28, yi:0.58, spd:0.00010, ph:3.9, ci:1 },
+    { xi:0.82, yi:0.55, spd:0.00011, ph:5.1, ci:3 },
+    { xi:0.45, yi:0.38, spd:0.00008, ph:0.7, ci:5 },
+  ];
+  hbDefs.forEach(function(b) {
+    var bx  = (b.xi + Math.sin(t * b.spd + b.ph) * 0.14) * W;
+    var by  = (b.yi + Math.cos(t * b.spd * 0.8 + b.ph) * 0.11) * H;
+    var br  = Math.min(W, H) * 0.55;
+    var col = themeRgbPalette[b.ci % themeRgbPalette.length] || [80,100,200];
+    var pulse = 0.70 + 0.30 * Math.sin(t * b.spd * 6 + b.ph);
+    var rg  = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+    rg.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.32 * pulse * blobOpacityMult).toFixed(2)+')');
+    rg.addColorStop(0.45,'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.12 * pulse * blobOpacityMult).toFixed(2)+')');
+    rg.addColorStop(1,   'rgba('+col[0]+','+col[1]+','+col[2]+',0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+  });
 
   var dominant = themeRgbPalette[0] || [0, 200, 255]; // main color at apex
 
@@ -1225,7 +1249,7 @@ function drawHexGrid() {
     ctx.closePath();
     ctx.strokeStyle = pulse > 0.06
       ? 'rgba('+col[0]+','+col[1]+','+col[2]+','+(0.05 + pulse * 0.80).toFixed(2)+')'
-      : 'rgba(255,255,255,0.04)';
+      : 'rgba(255,255,255,0.07)';
     ctx.stroke();
   }
 
