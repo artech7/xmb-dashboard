@@ -1113,16 +1113,14 @@ var hexBaseRad  = Math.PI * 2 / 6; // 60 degrees
 
 function HexLine() { this.reset(); }
 HexLine.prototype.reset = function() {
-  var dieX = W / 2 / HEX_LEN;
-  var dieY = H / 2 / HEX_LEN;
-  this.x = (Math.random() - 0.5) * 2 * dieX * 0.85;
-  this.y = (Math.random() - 0.5) * 2 * dieY * 0.85;
+  // Spawn in absolute pixel coords spread across full screen
+  this.px = Math.random() * W;
+  this.py = Math.random() * H;
   this.addedX = 0; this.addedY = 0;
   this.rad = hexBaseRad * Math.floor(Math.random() * 6);
   this.cumulativeTime = 0;
-  // Commit to a turn direction for a full hexagon (6 sides)
-  this.turnDir    = Math.random() < 0.5 ? 1 : -1;
-  this.sidesLeft  = 6; // complete a full hex before possibly dying
+  this.turnDir   = Math.random() < 0.5 ? 1 : -1;
+  this.sidesLeft = 6;
   var ci  = Math.floor(Math.random() * themeRgbPalette.length);
   var col = themeRgbPalette[ci] || [0, 200, 255];
   this.r  = col[0]; this.g = col[1]; this.b = col[2];
@@ -1130,28 +1128,26 @@ HexLine.prototype.reset = function() {
   this.beginPhase();
 };
 HexLine.prototype.beginPhase = function() {
-  this.x += this.addedX;
-  this.y += this.addedY;
+  // Advance position by one hex segment in pixel space
+  this.px += this.addedX * HEX_LEN;
+  this.py += this.addedY * HEX_LEN;
+  this.segStartX = this.px;
+  this.segStartY = this.py;
   this.time = 0;
-  this.targetTime = (18 + 10 * Math.random()) | 0; // longer per segment
-  // Always turn the same direction — traces a hexagon
+  this.targetTime = (10 + 8 * Math.random()) | 0; // faster
   this.rad += hexBaseRad * this.turnDir;
   this.addedX = Math.cos(this.rad);
   this.addedY = Math.sin(this.rad);
   this.sidesLeft--;
-  var dieX = W / 2 / HEX_LEN;
-  var dieY = H / 2 / HEX_LEN;
-  var outOfBounds = this.x > dieX || this.x < -dieX || this.y > dieY || this.y < -dieY;
+  var pad = HEX_LEN * 2;
+  var outOfBounds = this.px < -pad || this.px > W+pad || this.py < -pad || this.py > H+pad;
   if (outOfBounds) {
     this.reset();
   } else if (this.sidesLeft <= 0) {
-    // Finished a hexagon — small chance to die, otherwise start a new one
-    // from the current position (continuous chaining)
-    if (Math.random() < 0.25) {
+    if (Math.random() < 0.20) {
       this.reset();
     } else {
       this.sidesLeft = 6;
-      // Occasionally flip turn direction for variety
       if (Math.random() < 0.3) this.turnDir *= -1;
     }
   }
@@ -1161,24 +1157,34 @@ HexLine.prototype.step = function() {
   this.cumulativeTime++;
   if (this.time >= this.targetTime) this.beginPhase();
   var prop  = this.time / this.targetTime;
-  var wave  = Math.sin(prop * Math.PI / 2);
-  var px    = W / 2 + (this.x + this.addedX * wave) * HEX_LEN;
-  var py    = H / 2 + (this.y + this.addedY * wave) * HEX_LEN;
   var light = 0.5 + 0.45 * Math.sin(this.cumulativeTime * this.lightMult);
-  var alpha = (0.6 + 0.4 * light) * blobOpacityMult;
+  var alpha = (0.65 + 0.35 * light) * blobOpacityMult;
   var r = Math.min(255, this.r * (0.5 + light));
   var g = Math.min(255, this.g * (0.5 + light));
   var b = Math.min(255, this.b * (0.5 + light));
-  ctx.shadowBlur  = prop * 18;
-  ctx.shadowColor = 'rgba('+r+','+g+','+b+','+alpha.toFixed(2)+')';
-  ctx.fillStyle   = 'rgba('+r+','+g+','+b+','+alpha.toFixed(2)+')';
-  ctx.fillRect(px - 2, py - 2, 4, 4);
-  if (Math.random() < 0.12) {
-    ctx.fillRect(
-      px + (Math.random() - 0.5) * 20 - 1.5,
-      py + (Math.random() - 0.5) * 20 - 1.5,
-      3, 3
-    );
+  // Draw line segment from start to current progress point
+  var headX = this.segStartX + this.addedX * HEX_LEN * prop;
+  var headY = this.segStartY + this.addedY * HEX_LEN * prop;
+  ctx.shadowBlur  = 14;
+  ctx.shadowColor = 'rgba('+r+','+g+','+b+','+(alpha*0.8).toFixed(2)+')';
+  ctx.strokeStyle = 'rgba('+r+','+g+','+b+','+alpha.toFixed(2)+')';
+  ctx.lineWidth   = 2;
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(this.segStartX, this.segStartY);
+  ctx.lineTo(headX, headY);
+  ctx.stroke();
+  // Bright head dot
+  ctx.fillStyle = 'rgba('+Math.min(255,r+60)+','+Math.min(255,g+60)+','+Math.min(255,b+60)+','+alpha.toFixed(2)+')';
+  ctx.beginPath();
+  ctx.arc(headX, headY, 2.5, 0, Math.PI*2);
+  ctx.fill();
+  // Occasional spark
+  if (Math.random() < 0.10) {
+    ctx.fillStyle = 'rgba('+r+','+g+','+b+','+(alpha*0.7).toFixed(2)+')';
+    ctx.beginPath();
+    ctx.arc(headX+(Math.random()-0.5)*16, headY+(Math.random()-0.5)*16, 1.5, 0, Math.PI*2);
+    ctx.fill();
   }
 };
 
@@ -1191,10 +1197,36 @@ function initHexGrid() {
 function drawHexGrid() {
   if (!hexLines) initHexGrid();
   hexTick++;
-  // Semi-transparent black repaint creates trailing glow effect
+  // Dark background with theme-colored drifting blobs
   ctx.globalCompositeOperation = 'source-over';
   ctx.shadowBlur = 0;
-  ctx.fillStyle  = 'rgba(0,0,0,0.03)';
+  var bg0 = nebulaBackground[0] || '#050508';
+  var bg1 = nebulaBackground[1] || '#030306';
+  var bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, bg0); bgGrad.addColorStop(1, bg1);
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+  // 4 drifting palette blobs
+  var hbDefs = [
+    {xi:0.20,yi:0.25,spd:0.00010,ph:0.0, ci:0},
+    {xi:0.75,yi:0.20,spd:0.00008,ph:1.3, ci:2},
+    {xi:0.55,yi:0.70,spd:0.00011,ph:2.5, ci:4},
+    {xi:0.30,yi:0.60,spd:0.00009,ph:3.8, ci:1},
+  ];
+  hbDefs.forEach(function(b) {
+    var bx = (b.xi + Math.sin(t * b.spd + b.ph) * 0.14) * W;
+    var by = (b.yi + Math.cos(t * b.spd*0.8 + b.ph) * 0.11) * H;
+    var br = Math.min(W, H) * 0.50;
+    var col = themeRgbPalette[b.ci] || [80,100,180];
+    var rg = ctx.createRadialGradient(bx,by,0,bx,by,br);
+    rg.addColorStop(0,   'rgba('+col[0]+','+col[1]+','+col[2]+',0.22)');
+    rg.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+',0.07)');
+    rg.addColorStop(1,   'rgba('+col[0]+','+col[1]+','+col[2]+',0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+  });
+  // Semi-transparent repaint for trail fade effect
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
   ctx.fillRect(0, 0, W, H);
   // Additive blending — lines glow and brighten where they overlap
   ctx.globalCompositeOperation = 'lighter';
