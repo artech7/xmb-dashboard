@@ -1161,11 +1161,11 @@ function hexSpawnPulse() {
     ex: e.x1, ey: e.y1,  // start
     tx: e.x2, ty: e.y2,  // end
     prog: 0,             // 0→1
-    spd:  0.028 + Math.random() * 0.038,
+    spd:  0.012 + Math.random() * 0.018,
     col:  col,
     alpha: 0.7 + Math.random() * 0.3,
     width: 1.0 + Math.random() * 1.5,
-    tail:  0.18 + Math.random() * 0.22, // tail length (0-1)
+    tail:  0.55 + Math.random() * 0.40, // tail length (0-1)
     // When pulse reaches end, it forks to adjacent edges
     forks: 1 + (Math.random() < 0.35 ? 1 : 0),
     edge:  e,
