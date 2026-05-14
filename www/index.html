@@ -557,7 +557,7 @@ html, body {
   .s-nav-item { border-left: none; border-bottom: 2px solid transparent; padding: 8px 14px; font-size: 12px; flex-shrink: 0; }
   .s-nav-item.active { border-bottom-color: var(--accent); border-left-color: transparent; }
   #s-main { padding: 16px; overflow-y: auto; }
-  .s-item-row { grid-template-columns: 22px 1fr 36px; }
+  .s-item-row { grid-template-columns: 22px 1fr 46px 46px 36px; }
   .s-item-row input[data-field="url"],
   .s-item-row input[data-field="desc"],
   .s-icon-pick-btn,
@@ -3232,6 +3232,12 @@ function openItem(item) {
     _frameLoadHandler = null;
   }
 
+  // If service doesn't have iframe enabled, open in new tab immediately
+  if (!item.useIframe) {
+    window.open(item.url, '_blank');
+    return;
+  }
+
   // Step 1: zoom out + fade dashboard to black
   if (root)    root.classList.add('launching');
   if (overlay) overlay.classList.add('launching');
@@ -3644,7 +3650,7 @@ init().then(function() {
 .s-toggle { padding: 8px 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: rgba(255,255,255,0.5); font-family: 'Rajdhani', sans-serif; font-size: 14px; letter-spacing: 1px; cursor: pointer; transition: all 0.15s; }
 .s-toggle.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
 .s-items-header { display: flex; align-items: center; justify-content: space-between; margin: 28px 0 12px; }
-.s-item-row { display: grid; grid-template-columns: 22px 1fr 1fr 1fr 90px 46px 36px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); animation: itemSlideIn 0.2s ease both; }
+.s-item-row { display: grid; grid-template-columns: 22px 1fr 1fr 1fr 90px 46px 46px 36px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); animation: itemSlideIn 0.2s ease both; }
 .s-item-row .s-input { font-size: 13px; padding: 7px 10px; }
 .s-item-row .s-select { font-size: 13px; padding: 7px 10px; }
 .s-drag-handle {
@@ -3658,7 +3664,7 @@ init().then(function() {
 .s-item-row.dragging { opacity: 0.4; }
 .s-delete-item-btn { width: 32px; height: 32px; background: none; border: 1px solid rgba(255,68,102,0.2); border-radius: 4px; color: rgba(255,68,102,0.5); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
 .s-delete-item-btn:hover { border-color: #ff4466; color: #ff4466; background: rgba(255,68,102,0.1); }
-.s-items-col-headers { display: grid; grid-template-columns: 22px 1fr 1fr 1fr 90px 46px 36px; gap: 8px; padding: 0 0 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.s-items-col-headers { display: grid; grid-template-columns: 22px 1fr 1fr 1fr 90px 46px 46px 36px; gap: 8px; padding: 0 0 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .s-col-header { font-family: 'Exo 2', sans-serif; font-size: 8px; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.25); }
 </style>
 
@@ -3782,6 +3788,7 @@ init().then(function() {
               <div class="s-col-header">Description</div>
               <div class="s-col-header">Icon</div>
               <div class="s-col-header" style="text-align:center">Admin</div>
+              <div class="s-col-header" style="text-align:center" title="Open in iframe">iFrame</div>
               <div></div>
             </div>
             <div id="s-items-list"></div>
@@ -4068,6 +4075,7 @@ function renderItemRows() {
       '<input class="s-input" type="text" value="' + escHtml(item.desc || '') + '" placeholder="Description" data-field="desc">' +
       '<button class="s-icon-pick-btn" title="Choose icon">' + iconPreview + '<span style="font-size:9px;letter-spacing:1px">Change</span></button>' +
       '<label style="display:flex;align-items:center;justify-content:center;cursor:pointer" title="Admin only — hidden from non-admins"><input type="checkbox"' + (item.adminOnly ? ' checked' : '') + ' data-field="adminOnly" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer"></label>' +
+      '<label style="display:flex;align-items:center;justify-content:center;cursor:pointer" title="Open in iframe (for services that support it)"><input type="checkbox"' + (item.useIframe ? ' checked' : '') + ' data-field="useIframe" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer"></label>' +
       '<button class="s-delete-item-btn" title="Remove">&#x2715;</button>';
     row.querySelectorAll('[data-field]').forEach(function(el) {
       el.addEventListener('input',  function() { cat.items[i][el.dataset.field] = el.type === 'checkbox' ? el.checked : el.value; });
