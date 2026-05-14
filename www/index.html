@@ -1113,15 +1113,16 @@ var hexBaseRad  = Math.PI * 2 / 6; // 60 degrees
 
 function HexLine() { this.reset(); }
 HexLine.prototype.reset = function() {
-  // Spawn at random position across full screen
   var dieX = W / 2 / HEX_LEN;
   var dieY = H / 2 / HEX_LEN;
-  this.x = (Math.random() - 0.5) * 2 * dieX * 0.9;
-  this.y = (Math.random() - 0.5) * 2 * dieY * 0.9;
+  this.x = (Math.random() - 0.5) * 2 * dieX * 0.85;
+  this.y = (Math.random() - 0.5) * 2 * dieY * 0.85;
   this.addedX = 0; this.addedY = 0;
-  this.rad = hexBaseRad * Math.floor(Math.random() * 6); // start on a hex angle
+  this.rad = hexBaseRad * Math.floor(Math.random() * 6);
   this.cumulativeTime = 0;
-  // Pick theme palette color — refresh on reset so color changes take effect
+  // Commit to a turn direction for a full hexagon (6 sides)
+  this.turnDir    = Math.random() < 0.5 ? 1 : -1;
+  this.sidesLeft  = 6; // complete a full hex before possibly dying
   var ci  = Math.floor(Math.random() * themeRgbPalette.length);
   var col = themeRgbPalette[ci] || [0, 200, 255];
   this.r  = col[0]; this.g = col[1]; this.b = col[2];
@@ -1132,16 +1133,27 @@ HexLine.prototype.beginPhase = function() {
   this.x += this.addedX;
   this.y += this.addedY;
   this.time = 0;
-  this.targetTime = (12 + 14 * Math.random()) | 0;
-  this.rad += hexBaseRad * (Math.random() < 0.5 ? 1 : -1);
+  this.targetTime = (18 + 10 * Math.random()) | 0; // longer per segment
+  // Always turn the same direction — traces a hexagon
+  this.rad += hexBaseRad * this.turnDir;
   this.addedX = Math.cos(this.rad);
   this.addedY = Math.sin(this.rad);
+  this.sidesLeft--;
   var dieX = W / 2 / HEX_LEN;
   var dieY = H / 2 / HEX_LEN;
-  if (Math.random() < 0.05 ||
-      this.x > dieX || this.x < -dieX ||
-      this.y > dieY || this.y < -dieY) {
+  var outOfBounds = this.x > dieX || this.x < -dieX || this.y > dieY || this.y < -dieY;
+  if (outOfBounds) {
     this.reset();
+  } else if (this.sidesLeft <= 0) {
+    // Finished a hexagon — small chance to die, otherwise start a new one
+    // from the current position (continuous chaining)
+    if (Math.random() < 0.25) {
+      this.reset();
+    } else {
+      this.sidesLeft = 6;
+      // Occasionally flip turn direction for variety
+      if (Math.random() < 0.3) this.turnDir *= -1;
+    }
   }
 };
 HexLine.prototype.step = function() {
