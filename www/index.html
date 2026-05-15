@@ -3175,6 +3175,7 @@ function updateClock(format24h) {
 let config = null;
 let catIdx  = 0;
 let itemIdx = 0;
+var allItems = []; // unified: config items + subsonic items
 
 function setAccent(color) {
   accentColor = color;
@@ -3264,6 +3265,7 @@ function renderItems() {
   const listEl   = document.querySelector('.item-list');
   listEl.innerHTML = '';
 
+  allItems = cat.items.slice(); // start with config items, subsonic items appended later
   cat.items.forEach((item, i) => {
     const el = document.createElement('div');
     el.className = 'xmb-item' + (i === itemIdx ? ' selected' : '');
@@ -3312,26 +3314,28 @@ function updateItemSelection() {
 }
 
 function scrollItemList() {
-  if (isMobile) return; // mobile uses native overflow scroll, not translateY
+  if (isMobile) return;
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
   var items = listEl.querySelectorAll('.xmb-item');
   if (!items.length) return;
 
   var itemH = items[0].offsetHeight + 2;
-  if (itemH <= 2) return; // not rendered yet, skip
+  if (itemH <= 2) return;
 
   var panelEl = document.getElementById('item-panel');
   if (!panelEl) return;
   var panelH    = panelEl.offsetHeight - 32;
   if (panelH <= 0) return;
 
+  // Use DOM item count (includes subsonic items once injected)
+  var totalItems = items.length;
   var visCount  = Math.floor(panelH / itemH);
   var centerPos = Math.floor(visCount / 2);
   var offset    = -(itemIdx - centerPos) * itemH;
   var maxOffset = 0;
-  var minOffset = -(items.length - visCount) * itemH;
-  if (minOffset > maxOffset) minOffset = maxOffset; // fewer items than visible slots
+  var minOffset = -(totalItems - visCount) * itemH;
+  if (minOffset > maxOffset) minOffset = maxOffset;
   offset = Math.max(minOffset, Math.min(maxOffset, offset));
 
   listEl.style.transform = 'translateY(' + offset + 'px)';
@@ -3481,11 +3485,14 @@ document.addEventListener('keydown', e => {
       break;
     case 'ArrowDown':
       e.preventDefault();
-      if (itemIdx < cats[catIdx].items.length - 1) { itemIdx++; updateItemSelection(); }
+      var domItems = document.querySelectorAll('.item-list .xmb-item');
+      var maxIdx = Math.max(allItems.length, domItems.length) - 1;
+      if (itemIdx < maxIdx) { itemIdx++; updateItemSelection(); }
       break;
     case 'Enter':
       e.preventDefault();
-      const item = cats[catIdx].items[itemIdx];
+      const item = allItems[itemIdx];
+      if (!item) break; // subsonic items handle their own click
       if (item) openItem(item);
       break;
   }
@@ -6376,6 +6383,7 @@ function injectSubsonicItems() {
 
   loadSubsonicItems(cat.id).then(function(subItemList) {
     if (!subItemList.length) return;
+    allItems = allItems.concat(subItemList); // add to unified nav array
     subItemList.forEach(function(item) {
       var el = document.createElement('div');
       el.className = 'xmb-item';
@@ -6390,8 +6398,7 @@ function injectSubsonicItems() {
         '</div>' +
         '<span class="xmb-item-arrow">›</span>';
       el.addEventListener('click', function() {
-        if (item.url && item.url.startsWith('#sub-')) handleSubsonicItem(item);
-        else openItem(item);
+        handleSubsonicItem(item);
       });
       listEl.appendChild(el);
     });
