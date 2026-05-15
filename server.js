@@ -2,6 +2,8 @@ const express = require('express');
 const jwt     = require('jsonwebtoken');
 const fs      = require('fs');
 const path    = require('path');
+const http    = require('http');
+const https   = require('https');
 
 const app    = express();
 const PORT   = process.env.PORT           || 8484;
@@ -79,9 +81,44 @@ function auth(req, res, next) {
   }
 }
 
+// ── Subsonic proxy helper ─────────────────────────────────────────────────────
+
+function subsonicRequest(subsonicCfg, endpoint, params, res) {
+  const { url, username, password } = subsonicCfg;
+  if (!url || !username || !password) {
+    return res.status(400).json({ error: 'Subsonic not configured' });
+  }
+
+  const base   = url.replace(/\/$/, '');
+  const qp     = new URLSearchParams({
+    u: username,
+    p: password,
+    v: '1.16.1',
+    c: 'xmb-dashboard',
+    f: 'json',
+    ...params,
+  });
+  const fullUrl = `${base}/rest/${endpoint}?${qp.toString()}`;
+
+  const lib = fullUrl.startsWith('https') ? https : http;
+  const req2 = lib.get(fullUrl, (r2) => {
+    let data = '';
+    r2.on('data', chunk => data += chunk);
+    r2.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        res.json(json['subsonic-response'] || json);
+      } catch {
+        res.status(502).json({ error: 'Bad response from Subsonic' });
+      }
+    });
+  });
+  req2.on('error', err => res.status(502).json({ error: err.message }));
+  req2.setTimeout(8000, () => { req2.destroy(); res.status(504).json({ error: 'Timeout' }); });
+}
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 
-// Raised to 16mb to handle large base64 favicon/icon uploads
 app.use(express.json({ limit: '16mb' }));
 app.use(express.static(path.join(__dirname, 'www')));
 
@@ -94,7 +131,10 @@ app.get('/api/config', (req, res) => {
   if (header.startsWith('Bearer ')) {
     try { jwt.verify(header.slice(7), SECRET); isAdmin = true; } catch {}
   }
-  res.json(isAdmin ? cfg : filterForNonAdmin(cfg));
+  // Strip subsonic password from non-admin response
+  const out = isAdmin ? cfg : filterForNonAdmin(cfg);
+  if (!isAdmin && out.subsonic) { delete out.subsonic.password; }
+  res.json(out);
 });
 
 app.post('/api/login', (req, res) => {
@@ -121,6 +161,84 @@ app.put('/api/config', auth, (req, res) => {
 });
 
 app.get('/api/verify', auth, (_req, res) => res.json({ ok: true }));
+
+// ── Subsonic proxy routes ─────────────────────────────────────────────────────
+
+// Test connection
+app.get('/api/subsonic/ping', auth, (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'ping', {}, res);
+});
+
+app.get('/api/subsonic/artists', (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'getArtists', {}, res);
+});
+
+app.get('/api/subsonic/artist', (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'getArtist', { id: req.query.id }, res);
+});
+
+app.get('/api/subsonic/album', (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'getAlbum', { id: req.query.id }, res);
+});
+
+app.get('/api/subsonic/playlists', (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'getPlaylists', {}, res);
+});
+
+app.get('/api/subsonic/playlist', (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'getPlaylist', { id: req.query.id }, res);
+});
+
+app.get('/api/subsonic/genres', (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'getGenres', {}, res);
+});
+
+app.get('/api/subsonic/bygenre', (req, res) => {
+  const cfg = readConfig();
+  subsonicRequest(cfg.subsonic || {}, 'getSongsByGenre', { genre: req.query.genre, count: 500 }, res);
+});
+
+// Stream proxy — pipes audio through server so we don't expose credentials to client
+app.get('/api/subsonic/stream', (req, res) => {
+  const cfg = readConfig();
+  const { url, username, password } = cfg.subsonic || {};
+  if (!url || !username || !password) return res.status(400).send('Not configured');
+
+  const base   = url.replace(/\/$/, '');
+  const qp     = new URLSearchParams({ u: username, p: password, v: '1.16.1', c: 'xmb-dashboard', id: req.query.id });
+  const fullUrl = `${base}/rest/stream?${qp.toString()}`;
+
+  const lib = fullUrl.startsWith('https') ? https : http;
+  lib.get(fullUrl, (r2) => {
+    res.setHeader('Content-Type', r2.headers['content-type'] || 'audio/mpeg');
+    if (r2.headers['content-length']) res.setHeader('Content-Length', r2.headers['content-length']);
+    r2.pipe(res);
+  }).on('error', err => res.status(502).send(err.message));
+});
+
+// Cover art proxy
+app.get('/api/subsonic/coverart', (req, res) => {
+  const cfg = readConfig();
+  const { url, username, password } = cfg.subsonic || {};
+  if (!url || !username || !password) return res.status(400).send('Not configured');
+
+  const base   = url.replace(/\/$/, '');
+  const qp     = new URLSearchParams({ u: username, p: password, v: '1.16.1', c: 'xmb-dashboard', id: req.query.id, size: 64 });
+  const fullUrl = `${base}/rest/getCoverArt?${qp.toString()}`;
+
+  const lib = fullUrl.startsWith('https') ? https : http;
+  lib.get(fullUrl, (r2) => {
+    res.setHeader('Content-Type', r2.headers['content-type'] || 'image/jpeg');
+    r2.pipe(res);
+  }).on('error', err => res.status(502).send(err.message));
+});
 
 app.get('/admin', (_req, res) => {
   res.sendFile(path.join(__dirname, 'www', 'index.html'));
