@@ -3963,7 +3963,7 @@ init().then(function() {
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
               <button class="s-btn s-btn-primary" id="sub-save-btn">Save</button>
-              <button class="s-btn" id="sub-test-btn">Test Connection</button>
+              <button class="s-btn" id="sub-test-btn" disabled style="opacity:0.35;cursor:not-allowed">Test Connection</button>
               <span id="sub-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
             </div>
           </div>
@@ -5987,6 +5987,17 @@ function populateMusicIntegrationView() {
   document.getElementById('sub-genres').checked    = !!subCfg.showGenres;
 }
 
+['sub-url','sub-user','sub-pass','sub-cat','sub-artists','sub-playlists','sub-genres'].forEach(function(id) {
+  document.getElementById(id).addEventListener('input', function() {
+    var tb = document.getElementById('sub-test-btn');
+    tb.disabled = true; tb.style.opacity = '0.35'; tb.style.cursor = 'not-allowed';
+  });
+  document.getElementById(id).addEventListener('change', function() {
+    var tb = document.getElementById('sub-test-btn');
+    tb.disabled = true; tb.style.opacity = '0.35'; tb.style.cursor = 'not-allowed';
+  });
+});
+
 document.getElementById('sub-save-btn').addEventListener('click', function() {
   if (!settingsConfig) return;
   settingsConfig.subsonic = {
@@ -6001,6 +6012,8 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
   saveConfig().then(function() {
     document.getElementById('sub-status').textContent = '✓ Saved';
     setTimeout(function() { document.getElementById('sub-status').textContent = ''; }, 2500);
+    var tb = document.getElementById('sub-test-btn');
+    tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = '';
   }).catch(function(e) {
     document.getElementById('sub-status').textContent = '✗ ' + e.message;
   });
@@ -6009,7 +6022,11 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
 document.getElementById('sub-test-btn').addEventListener('click', function() {
   var status = document.getElementById('sub-status');
   status.textContent = 'Testing…';
-  fetch('/api/subsonic/ping', { headers: { Authorization: 'Bearer ' + settingsToken } })
+  var url  = document.getElementById('sub-url').value.trim();
+  var user = document.getElementById('sub-user').value.trim();
+  var pass = document.getElementById('sub-pass').value;
+  var params = new URLSearchParams({ url: url, username: user, password: pass });
+  fetch('/api/subsonic/ping?' + params.toString(), { headers: { Authorization: 'Bearer ' + settingsToken } })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       status.textContent = d.status === 'ok' ? '✓ Connected — Navidrome ' + (d.version || '') : '✗ ' + (d.error || 'Failed');

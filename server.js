@@ -164,10 +164,15 @@ app.get('/api/verify', auth, (_req, res) => res.json({ ok: true }));
 
 // ── Subsonic proxy routes ─────────────────────────────────────────────────────
 
-// Test connection
+// Test connection — accepts credentials from query params OR saved config
 app.get('/api/subsonic/ping', auth, (req, res) => {
   const cfg = readConfig();
-  subsonicRequest(cfg.subsonic || {}, 'ping', {}, res);
+  const sub = {
+    url:      req.query.url      || (cfg.subsonic && cfg.subsonic.url)      || '',
+    username: req.query.username || (cfg.subsonic && cfg.subsonic.username) || '',
+    password: req.query.password || (cfg.subsonic && cfg.subsonic.password) || '',
+  };
+  subsonicRequest(sub, 'ping', {}, res);
 });
 
 app.get('/api/subsonic/artists', (req, res) => {
