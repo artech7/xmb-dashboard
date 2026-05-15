@@ -3271,7 +3271,7 @@ function renderItems() {
   const listEl   = document.querySelector('.item-list');
   listEl.innerHTML = '';
 
-  allItems = cat.items.slice(); // start with config items, subsonic items appended later
+  allItems = cat.items.slice(); // subsonic items appended async below
   cat.items.forEach((item, i) => {
     const el = document.createElement('div');
     el.className = 'xmb-item' + (i === itemIdx ? ' selected' : '');
@@ -3498,7 +3498,12 @@ document.addEventListener('keydown', e => {
     case 'Enter':
       e.preventDefault();
       const item = allItems[itemIdx];
-      if (!item) break; // subsonic items handle their own click
+      if (!item) {
+        // Subsonic item — find it via DOM and simulate click
+        var domItems2 = document.querySelectorAll('.item-list .xmb-item');
+        if (domItems2[itemIdx]) domItems2[itemIdx].click();
+        break;
+      }
       if (item) openItem(item);
       break;
   }
@@ -6376,46 +6381,81 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ── Inject Subsonic items after category renders ─────────────────────────────
+var _subItemCache = null; // cache subsonic items for current session
+var _subCacheForCat = null;
+
 function injectSubsonicItems() {
-  if (!config || !config.subsonic || !config.subsonic.url) return;
+  if (!config || !config.subsonic) return;
   var sub = config.subsonic;
+  if (!sub.url || !sub.username) return;
+
+  // Strict category match — both must be non-empty strings
   var cats = config.categories;
   if (!cats) return;
   var cat = cats[catIdx];
-  if (!cat || cat.id !== sub.categoryId) return;
+  if (!cat) return;
+  // Use cat.id if set, otherwise cat.name as fallback key
+  var catKey = cat.id || cat.name;
+  if (!catKey || !sub.categoryId) return;
+  if (catKey !== sub.categoryId) return;
 
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
 
-  if (cat.items && cat.items.length > 0) {
+  // Use cache if available for this category
+  if (_subItemCache && _subCacheForCat === catKey) {
+    _appendSubItems(listEl, _subItemCache);
+    return;
+  }
+
+  loadSubsonicItems(catKey).then(function(subItemList) {
+    if (!subItemList.length) return;
+    _subItemCache = subItemList;
+    _subCacheForCat = catKey;
+    _appendSubItems(listEl, subItemList);
+  });
+}
+
+function _appendSubItems(listEl, subItemList) {
+  // Don't re-append if already there
+  if (listEl.querySelector('[data-subsonic]')) return;
+
+  if (allItems.length > 0) {
     var div = document.createElement('div');
+    div.setAttribute('data-subsonic', 'divider');
     div.style.cssText = 'padding:6px 16px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
     div.textContent = 'Navidrome';
     listEl.appendChild(div);
   }
 
-  loadSubsonicItems(cat.id).then(function(subItemList) {
-    if (!subItemList.length) return;
-    allItems = allItems.concat(subItemList);
-    showItemSearch(true); // show search when subsonic items are present
-    subItemList.forEach(function(item) {
-      var el = document.createElement('div');
-      el.className = 'xmb-item';
-      var iconHtml = item.icon
-        ? '<img src="'+item.icon+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
-        : '<span style="font-size:20px">♪</span>';
-      el.innerHTML =
-        '<div class="xmb-item-icon">'+iconHtml+'</div>' +
-        '<div class="xmb-item-text">' +
-          '<div class="xmb-item-name">'+escHtml(item.name)+'</div>' +
-          (item.desc ? '<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>' : '') +
-        '</div>' +
-        '<span class="xmb-item-arrow">›</span>';
-      el.addEventListener('click', function() {
-        handleSubsonicItem(item);
-      });
-      listEl.appendChild(el);
+  // Track start index of subsonic items in allItems
+  var subStartIdx = allItems.length;
+  allItems = allItems.concat(subItemList);
+  showItemSearch(true);
+
+  subItemList.forEach(function(item, si) {
+    var el = document.createElement('div');
+    el.className = 'xmb-item';
+    el.setAttribute('data-subsonic', 'item');
+    el.setAttribute('data-sub-idx', subStartIdx + si);
+    var iconHtml = item.icon
+      ? '<img src="'+item.icon+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
+      : '<span style="font-size:20px">♪</span>';
+    el.innerHTML =
+      '<div class="xmb-item-icon">'+iconHtml+'</div>' +
+      '<div class="xmb-item-text">' +
+        '<div class="xmb-item-name">'+escHtml(item.name)+'</div>' +
+        (item.desc ? '<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>' : '') +
+      '</div>' +
+      '<span class="xmb-item-arrow">›</span>';
+    el.addEventListener('click', function() {
+      // Sync itemIdx to this item
+      var domItems = document.querySelectorAll('.item-list .xmb-item');
+      domItems.forEach(function(d, di) { if (d === el) itemIdx = di; });
+      updateItemSelection();
+      handleSubsonicItem(item);
     });
+    listEl.appendChild(el);
   });
 }
 
@@ -6446,14 +6486,31 @@ function filterItemList(query) {
 document.getElementById('item-search').addEventListener('input', function() {
   filterItemList(this.value);
 });
+document.getElementById('item-search').addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { this.value = ''; filterItemList(''); this.blur(); e.stopPropagation(); }
+  if (e.key === 'ArrowDown') { this.blur(); e.preventDefault(); }
+});
 
 // Clear search and hide on category change
 var _origUpdateCatForSearch = updateCategoryUI;
 updateCategoryUI = function() {
+  _subItemCache = null; _subCacheForCat = null; // clear cache on category switch
   _origUpdateCatForSearch();
   showItemSearch(false);
   filterItemList('');
 };
+
+// Focus search bar with '/' key
+document.addEventListener('keydown', function(e) {
+  var searchWrap = document.getElementById('item-search-wrap');
+  var searchEl   = document.getElementById('item-search');
+  if (e.key === '/' && searchWrap && searchWrap.style.display !== 'none'
+      && document.activeElement !== searchEl) {
+    e.preventDefault();
+    searchEl.focus();
+    searchEl.select();
+  }
+});
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
