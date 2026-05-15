@@ -720,9 +720,7 @@ html, body {
     <button class="np-btn" id="np-close" title="Stop">✕</button>
   </div>
 </div>
-<div id="music-columns">
-  <button id="music-cols-close" style="position:absolute;top:16px;right:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:50%;width:32px;height:32px;color:#fff;font-size:16px;cursor:pointer;z-index:1;line-height:32px;text-align:center" title="Close (Esc)">✕</button>
-</div>
+<div id="music-columns" style="display:none"></div>
 <audio id="xmb-audio"></audio>
 <div id="service-frame-wrap" id="service-frame-wrap">
   <div id="service-close" title="Back to dashboard">✕</div>
@@ -3702,8 +3700,8 @@ renderItems = function() {
 // ── Patch updateCategoryUI to also update mobile strip ────────────────────────
 var _origUpdateCategoryUI = updateCategoryUI;
 updateCategoryUI = function() {
-  closeMusicCols();
-  _subItems = [];
+  // Reset music drill-down on category change
+  musicStack = []; inMusicDrill = false; _subItems = [];
   _origUpdateCategoryUI();
   updateMobileCatStrip();
 };
@@ -5986,58 +5984,54 @@ function applyPrefs(prefs) {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MUSIC INTEGRATION — Subsonic/Navidrome (clean rewrite)
+// MUSIC INTEGRATION — Subsonic/Navidrome
+// Drill-down reuses the XMB item panel — same look, same keyboard nav
+// Navigation stack: each level pushed, Escape pops back
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── Admin: Music nav ──────────────────────────────────────────────────────────
+// ── Admin wiring ──────────────────────────────────────────────────────────────
 document.getElementById('s-nav-music-integration').addEventListener('click', function() {
   activeCatIdx = null;
   showView('music-integration');
 });
 
 function populateMusicIntegrationView() {
-  var subCfg = (settingsConfig && settingsConfig.subsonic) || {};
+  var sub = (settingsConfig && settingsConfig.subsonic) || {};
   var sel = document.getElementById('sub-cat');
   sel.innerHTML = '<option value="">— select category —</option>';
-  if (settingsConfig && settingsConfig.categories) {
-    settingsConfig.categories.forEach(function(cat) {
-      if (!cat.id) return;
-      var opt = document.createElement('option');
-      opt.value = cat.id;
-      opt.textContent = cat.name;
-      if (cat.id === subCfg.categoryId) opt.selected = true;
-      sel.appendChild(opt);
-    });
-  }
-  document.getElementById('sub-url').value        = subCfg.url      || '';
-  document.getElementById('sub-user').value       = subCfg.username || '';
-  document.getElementById('sub-pass').value       = subCfg.password || '';
-  document.getElementById('sub-artists').checked   = !!subCfg.showArtists;
-  document.getElementById('sub-playlists').checked = !!subCfg.showPlaylists;
-  document.getElementById('sub-genres').checked    = !!subCfg.showGenres;
+  (settingsConfig && settingsConfig.categories || []).forEach(function(cat) {
+    if (!cat.id) return;
+    var o = document.createElement('option');
+    o.value = cat.id; o.textContent = cat.name;
+    if (cat.id === sub.categoryId) o.selected = true;
+    sel.appendChild(o);
+  });
+  document.getElementById('sub-url').value        = sub.url      || '';
+  document.getElementById('sub-user').value       = sub.username || '';
+  document.getElementById('sub-pass').value       = sub.password || '';
+  document.getElementById('sub-artists').checked   = !!sub.showArtists;
+  document.getElementById('sub-playlists').checked = !!sub.showPlaylists;
+  document.getElementById('sub-genres').checked    = !!sub.showGenres;
 }
 
 document.getElementById('sub-save-btn').addEventListener('click', function() {
   if (!settingsConfig) return;
   settingsConfig.subsonic = {
-    url:          document.getElementById('sub-url').value.trim(),
-    username:     document.getElementById('sub-user').value.trim(),
-    password:     document.getElementById('sub-pass').value,
-    categoryId:   document.getElementById('sub-cat').value,
+    url: document.getElementById('sub-url').value.trim(),
+    username: document.getElementById('sub-user').value.trim(),
+    password: document.getElementById('sub-pass').value,
+    categoryId: document.getElementById('sub-cat').value,
     showArtists:  document.getElementById('sub-artists').checked,
     showPlaylists:document.getElementById('sub-playlists').checked,
     showGenres:   document.getElementById('sub-genres').checked,
   };
-  // Reset cache so fresh data loads after config change
   subCache = {};
   saveConfig().then(function() {
     document.getElementById('sub-status').textContent = '✓ Saved';
     var tb = document.getElementById('sub-test-btn');
     tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = '';
-    setTimeout(function() { document.getElementById('sub-status').textContent = ''; }, 2500);
-  }).catch(function(e) {
-    document.getElementById('sub-status').textContent = '✗ ' + e.message;
-  });
+    setTimeout(function(){ document.getElementById('sub-status').textContent = ''; }, 2500);
+  }).catch(function(e){ document.getElementById('sub-status').textContent = '✗ ' + e.message; });
 });
 
 ['sub-url','sub-user','sub-pass','sub-cat','sub-artists','sub-playlists','sub-genres'].forEach(function(id) {
@@ -6052,356 +6046,309 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
 });
 
 document.getElementById('sub-test-btn').addEventListener('click', function() {
-  var status = document.getElementById('sub-status');
-  status.textContent = 'Testing…';
-  var params = new URLSearchParams({
-    url:      document.getElementById('sub-url').value.trim(),
+  var st = document.getElementById('sub-status');
+  st.textContent = 'Testing…';
+  var p = new URLSearchParams({
+    url: document.getElementById('sub-url').value.trim(),
     username: document.getElementById('sub-user').value.trim(),
-    password: document.getElementById('sub-pass').value,
+    password: document.getElementById('sub-pass').value
   });
-  fetch('/api/subsonic/ping?' + params, { headers: { Authorization: 'Bearer ' + settingsToken } })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      status.textContent = d.status === 'ok'
-        ? '✓ Connected — Navidrome ' + (d.version || '')
-        : '✗ ' + (d.error || 'Failed');
-    })
-    .catch(function() { status.textContent = '✗ Connection failed'; });
+  fetch('/api/subsonic/ping?' + p, { headers:{ Authorization:'Bearer '+settingsToken } })
+    .then(function(r){ return r.json(); })
+    .then(function(d){ st.textContent = d.status==='ok' ? '✓ Connected' : '✗ '+(d.error||'Failed'); })
+    .catch(function(){ st.textContent = '✗ Connection failed'; });
 });
 
-// ── Subsonic API fetch ────────────────────────────────────────────────────────
-var subCache = {}; // session cache keyed by endpoint+params
-
+// ── Subsonic API fetch with session cache ─────────────────────────────────────
+var subCache = {};
 function subFetch(endpoint, params) {
-  var url = '/api/subsonic/' + endpoint;
-  if (params) url += '?' + new URLSearchParams(params).toString();
+  var url = '/api/subsonic/' + endpoint + (params ? '?'+new URLSearchParams(params) : '');
   if (subCache[url]) return Promise.resolve(subCache[url]);
-  return fetch(url).then(function(r) { return r.json(); }).then(function(d) {
-    subCache[url] = d;
-    return d;
-  });
+  return fetch(url).then(function(r){ return r.json(); }).then(function(d){ subCache[url]=d; return d; });
+}
+function toArr(x) { return !x ? [] : Array.isArray(x) ? x : [x]; }
+
+// ── Music navigation stack ────────────────────────────────────────────────────
+// Each level: { title, items, selectedIdx }
+// items: array of { name, desc, coverArt, url, _song, _queue }
+var musicStack = [];
+var inMusicDrill = false; // true when showing drill-down level
+
+function musicPushLevel(title, items) {
+  // Save current item list scroll position and selection
+  if (musicStack.length === 0) {
+    // First push: snapshot the current XMB state
+    musicStack.push({ title: null, items: allItems.slice(), selectedIdx: itemIdx, isRoot: true });
+  }
+  musicStack.push({ title: title, items: items, selectedIdx: 0 });
+  inMusicDrill = true;
+  musicRenderLevel();
 }
 
-// ── Load top-level subsonic items for a category ──────────────────────────────
+function musicPopLevel() {
+  if (musicStack.length <= 1) {
+    // Back to root XMB state
+    musicStack = [];
+    inMusicDrill = false;
+    // Restore original list
+    var cat = config.categories[catIdx];
+    if (cat) { renderItems(); injectSubsonicItems(); }
+    return;
+  }
+  musicStack.pop();
+  musicRenderLevel();
+}
+
+function musicRenderLevel() {
+  var level = musicStack[musicStack.length - 1];
+  if (!level) return;
+
+  // Slide current panel out to left (visual cue)
+  var panel = document.getElementById('item-panel');
+
+  // Replace item list content with this level's items
+  var listEl = document.querySelector('.item-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  listEl.style.transform = '';
+
+  // Update allItems and itemIdx for keyboard nav
+  allItems = level.items;
+  itemIdx  = level.selectedIdx || 0;
+
+  level.items.forEach(function(item, i) {
+    var el = document.createElement('div');
+    el.className = 'xmb-item';
+    el.classList.toggle('selected', i === itemIdx);
+
+    var art = item.coverArt
+      ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
+      : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
+
+    var hasChild = !!(item._type || (item._song === undefined));
+    el.innerHTML =
+      '<div class="xmb-item-icon">'+art+'</div>' +
+      '<div class="xmb-item-text">' +
+        '<div class="xmb-item-name">'+escHtml(item.name)+'</div>' +
+        (item.desc ? '<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>' : '') +
+      '</div>' +
+      (hasChild && !item._song ? '<span class="xmb-item-arrow">›</span>' : '');
+
+    el.addEventListener('click', function() {
+      musicStack[musicStack.length-1].selectedIdx = i;
+      itemIdx = i;
+      updateItemSelection();
+      musicItemAction(item);
+    });
+    listEl.appendChild(el);
+  });
+
+  // Update panel title area
+  var catLabel = document.querySelector('.cat-label');
+  if (level.title && catLabel) {
+    catLabel.textContent = level.title;
+  }
+
+  scrollItemList();
+}
+
+function musicItemAction(item) {
+  if (item._song) {
+    // Play song
+    var queue = item._queue || [item._song];
+    var idx   = queue.indexOf(item._song);
+    musicPlay(queue, idx < 0 ? 0 : idx);
+    return;
+  }
+  if (item._type === 'artist') {
+    subFetch('artist', {id: item._id}).then(function(d) {
+      var albums = toArr(d.artist && d.artist.album);
+      var items = albums.map(function(a) {
+        return { name:a.name, desc:(a.year||'')+(a.year&&a.songCount?' · ':'')+((a.songCount||0)+' songs'),
+          coverArt:a.coverArt||null, _type:'album', _id:a.id,
+          url:'#sub-album:'+a.id };
+      });
+      musicPushLevel(item.name, items);
+    });
+  } else if (item._type === 'album') {
+    subFetch('album', {id: item._id}).then(function(d) {
+      var songs = toArr(d.album && d.album.song);
+      var items = songs.map(function(s) {
+        return { name:s.title,
+          desc:(s.artist||'')+(s.duration?' · '+Math.floor(s.duration/60)+':'+(s.duration%60<10?'0':'')+s.duration%60:''),
+          coverArt:s.coverArt||null, _song:s, _queue:songs, url:'#sub-song:'+s.id };
+      });
+      musicPushLevel(item.name, items);
+    });
+  } else if (item._type === 'playlist') {
+    subFetch('playlist', {id: item._id}).then(function(d) {
+      var songs = toArr(d.playlist && d.playlist.entry);
+      var items = songs.map(function(s) {
+        return { name:s.title, desc:s.artist||'', coverArt:s.coverArt||null,
+          _song:s, _queue:songs, url:'#sub-song:'+s.id };
+      });
+      musicPushLevel(item.name, items);
+    });
+  } else if (item._type === 'genre') {
+    subFetch('bygenre', {genre: decodeURIComponent(item._id)}).then(function(d) {
+      var songs = toArr(d.songsByGenre && d.songsByGenre.song);
+      var items = songs.map(function(s) {
+        return { name:s.title, desc:s.artist||'', coverArt:s.coverArt||null,
+          _song:s, _queue:songs, url:'#sub-song:'+s.id };
+      });
+      musicPushLevel(item.name, items);
+    });
+  }
+}
+
+// ── Load top-level subsonic items ─────────────────────────────────────────────
+var _subItems = [];
+
 function loadSubsonicItems(sub) {
-  var promises = [];
-  var items = [];
+  var promises = [], items = [];
   if (sub.showArtists) {
     promises.push(subFetch('artists').then(function(d) {
-      var idx = (d.artists && d.artists.index) || [];
-      idx.forEach(function(g) {
-        (Array.isArray(g.artist) ? g.artist : (g.artist ? [g.artist] : [])).forEach(function(a) {
-          items.push({ _type:'artist', _id:a.id, name:a.name,
-            desc:(a.albumCount||0)+' album'+(a.albumCount!==1?'s':''),
-            coverArt:a.coverArt||null, url:'#sub-artist:'+a.id });
+      toArr(d.artists && d.artists.index).forEach(function(g) {
+        toArr(g.artist).forEach(function(a) {
+          items.push({ name:a.name, desc:(a.albumCount||0)+' album'+(a.albumCount!==1?'s':''),
+            coverArt:a.coverArt||null, _type:'artist', _id:a.id,
+            url:'#sub-artist:'+a.id });
         });
       });
     }).catch(function(){}));
   }
   if (sub.showPlaylists) {
     promises.push(subFetch('playlists').then(function(d) {
-      var lists = (d.playlists && d.playlists.playlist) || [];
-      if (!Array.isArray(lists)) lists = [lists];
-      lists.forEach(function(pl) {
-        items.push({ _type:'playlist', _id:pl.id, name:pl.name,
-          desc:(pl.songCount||0)+' song'+(pl.songCount!==1?'s':''),
-          coverArt:pl.coverArt||null, url:'#sub-playlist:'+pl.id });
+      toArr(d.playlists && d.playlists.playlist).forEach(function(pl) {
+        items.push({ name:pl.name, desc:(pl.songCount||0)+' song'+(pl.songCount!==1?'s':''),
+          coverArt:pl.coverArt||null, _type:'playlist', _id:pl.id,
+          url:'#sub-playlist:'+pl.id });
       });
     }).catch(function(){}));
   }
   if (sub.showGenres) {
     promises.push(subFetch('genres').then(function(d) {
-      var genres = (d.genres && d.genres.genre) || [];
-      if (!Array.isArray(genres)) genres = [genres];
-      genres.sort(function(a,b){ return (b.songCount||0)-(a.songCount||0); });
-      genres.forEach(function(g) {
-        items.push({ _type:'genre', _id:encodeURIComponent(g.value), name:g.value,
-          desc:(g.songCount||0)+' songs', coverArt:null, url:'#sub-genre:'+encodeURIComponent(g.value) });
+      var gs = toArr(d.genres && d.genres.genre);
+      gs.sort(function(a,b){ return (b.songCount||0)-(a.songCount||0); });
+      gs.forEach(function(g) {
+        items.push({ name:g.value, desc:(g.songCount||0)+' songs',
+          coverArt:null, _type:'genre', _id:encodeURIComponent(g.value),
+          url:'#sub-genre:'+encodeURIComponent(g.value) });
       });
     }).catch(function(){}));
   }
-  return Promise.all(promises).then(function() { return items; });
+  return Promise.all(promises).then(function(){ return items; });
 }
-
-// ── Inject subsonic items into the item list ─────────────────────────────────
-var _subItems = []; // current subsonic items for active category
 
 function injectSubsonicItems() {
   if (!config || !config.subsonic) return;
   var sub = config.subsonic;
-  if (!sub.url || !sub.username || !sub.categoryId || sub.categoryId === 'undefined') return;
+  if (!sub.url || !sub.username || !sub.categoryId || sub.categoryId==='undefined') return;
   var cat = config.categories && config.categories[catIdx];
   if (!cat || !cat.id || cat.id !== sub.categoryId) return;
-
   var listEl = document.querySelector('.item-list');
-  if (!listEl) return;
-  if (listEl.querySelector('[data-sub-injected]')) return; // already injected
-
+  if (!listEl || listEl.querySelector('[data-sub]')) return;
   var snapIdx = catIdx;
 
   loadSubsonicItems(sub).then(function(items) {
-    if (catIdx !== snapIdx) return; // user moved away
+    if (catIdx !== snapIdx) return;
     var currentList = document.querySelector('.item-list');
-    if (currentList !== listEl) return; // list was rebuilt
-
+    if (!currentList || currentList !== listEl) return;
     _subItems = items;
 
     // Divider
-    var divider = document.createElement('div');
-    divider.setAttribute('data-sub-injected', 'divider');
-    divider.style.cssText = 'padding:6px 16px 4px;font-size:10px;letter-spacing:0.12em;' +
-      'color:rgba(255,255,255,0.25);text-transform:uppercase;' +
-      'border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
-    divider.textContent = 'Navidrome';
-    listEl.appendChild(divider);
+    var div = document.createElement('div');
+    div.setAttribute('data-sub', 'divider');
+    div.style.cssText = 'padding:6px 16px 4px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
+    div.textContent = 'Navidrome';
+    listEl.appendChild(div);
 
     // Search bar
-    var searchDiv = document.createElement('div');
-    searchDiv.setAttribute('data-sub-injected', 'search');
-    searchDiv.style.cssText = 'padding:4px 16px 8px';
-    searchDiv.innerHTML = '<input id="sub-search" type="text" placeholder="Search music… (press /)" autocomplete="off" ' +
-      'style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);' +
-      'border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;' +
-      'color:#fff;font-size:13px;outline:none">';
-    listEl.appendChild(searchDiv);
-
-    var searchEl = document.getElementById('sub-search');
-    searchEl.addEventListener('input', function() { subSearch(this.value); });
-    searchEl.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') { this.value=''; subSearch(''); this.blur(); e.stopPropagation(); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); this.blur(); }
+    var sw = document.createElement('div');
+    sw.setAttribute('data-sub', 'search');
+    sw.style.cssText = 'padding:4px 16px 8px';
+    sw.innerHTML = '<input id="sub-search" type="text" placeholder="Search music… (press /)" autocomplete="off" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;outline:none">';
+    listEl.appendChild(sw);
+    var si = document.getElementById('sub-search');
+    si.addEventListener('input', function() { subSearch(this.value); });
+    si.addEventListener('keydown', function(e) {
+      if (e.key==='Escape') { this.value=''; subSearch(''); this.blur(); e.stopPropagation(); }
+      if (e.key==='ArrowDown') { e.preventDefault(); this.blur(); }
     });
 
-    // Render items
-    renderSubItems(items, listEl);
+    // Items
+    items.forEach(function(item) {
+      var el = document.createElement('div');
+      el.className = 'xmb-item';
+      el.setAttribute('data-sub', 'item');
+      var art = item.coverArt
+        ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
+        : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
+      el.innerHTML =
+        '<div class="xmb-item-icon">'+art+'</div>'+
+        '<div class="xmb-item-text">'+
+          '<div class="xmb-item-name">'+escHtml(item.name)+'</div>'+
+          (item.desc?'<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>':'')+
+        '</div>'+
+        '<span class="xmb-item-arrow">›</span>';
+      el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        // sync itemIdx
+        var all = document.querySelectorAll('.item-list .xmb-item');
+        all.forEach(function(d,di){ if(d===el) itemIdx=di; });
+        updateItemSelection();
+        musicItemAction(item);
+      });
+      listEl.appendChild(el);
+    });
 
-    // Extend allItems for keyboard nav
-    allItems = allItems.concat(items);
+    allItems = (config.categories[catIdx].items || []).concat(items);
+    scrollItemList();
   });
 }
 
-function renderSubItems(items, listEl) {
-  // Remove old sub items
-  listEl.querySelectorAll('[data-sub-injected="item"]').forEach(function(el) { el.remove(); });
-
-  items.forEach(function(item) {
-    var el = document.createElement('div');
-    el.className = 'xmb-item';
-    el.setAttribute('data-sub-injected', 'item');
-    var art = item.coverArt
-      ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
-      : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
-    el.innerHTML =
-      '<div class="xmb-item-icon">'+art+'</div>' +
-      '<div class="xmb-item-text">' +
-        '<div class="xmb-item-name">'+escHtml(item.name)+'</div>' +
-        (item.desc?'<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>':'') +
-      '</div>' +
-      '<span class="xmb-item-arrow">›</span>';
-    el.addEventListener('click', function() { openSubItem(item); });
-    listEl.appendChild(el);
-  });
-}
-
-function subSearch(query) {
-  var q = query.trim().toLowerCase();
+function subSearch(q) {
+  q = q.trim().toLowerCase();
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
-  if (!q) {
-    renderSubItems(_subItems, listEl);
-    allItems = config.categories[catIdx].items.slice().concat(_subItems);
-    return;
-  }
-  var filtered = _subItems.filter(function(i) { return i.name.toLowerCase().indexOf(q) >= 0; });
-  renderSubItems(filtered, listEl);
-  allItems = config.categories[catIdx].items.slice().concat(filtered);
-}
-
-// Wire initial close button
-document.addEventListener('DOMContentLoaded', function() {
-  var cb = document.getElementById('music-cols-close');
-  if (cb) cb.addEventListener('click', closeMusicCols);
-});
-
-// '/' focuses search
-document.addEventListener('keydown', function(e) {
-  if (e.key === '/' && document.getElementById('sub-search') && document.activeElement !== document.getElementById('sub-search')) {
-    e.preventDefault();
-    document.getElementById('sub-search').focus();
-  }
-});
-
-// ── Open subsonic item (drill-down) ───────────────────────────────────────────
-function openSubItem(item) {
-  closeMusicCols();
-  if (item._type === 'artist')   fetchAndShowAlbums(item._id, item.name);
-  if (item._type === 'playlist') fetchAndShowPlaylistSongs(item._id, item.name);
-  if (item._type === 'genre')    fetchAndShowGenreSongs(item._id, item.name);
-}
-
-// ── Music drill-down columns ──────────────────────────────────────────────────
-var _musicCols = [];
-
-function closeMusicCols() {
-  var wrap = document.getElementById('music-columns');
-  if (!wrap) return;
-  // Remove all columns
-  _musicCols.forEach(function(col) { if (col && col.parentNode) col.parentNode.removeChild(col); });
-  _musicCols = [];
-  wrap.style.display = 'none';
-}
-
-function showMusicCol(title, rows, colLevel, onRowClick) {
-  var wrap = document.getElementById('music-columns');
-  wrap.style.display = 'block';
-
-  // Remove columns at this level and beyond
-  while (_musicCols.length > colLevel) {
-    var old = _musicCols.pop();
-    if (old && old.parentNode) old.parentNode.removeChild(old);
-  }
-
-  var col = document.createElement('div');
-  col.className = 'music-col';
-
-  var header = document.createElement('div');
-  header.className = 'music-col-header';
-  header.textContent = title;
-  col.appendChild(header);
-
-  var list = document.createElement('div');
-  list.className = 'music-col-list';
-  rows.forEach(function(row) {
-    var el = document.createElement('div');
-    el.className = 'music-col-item';
-    if (musicPlayer.currentId === row.id) el.classList.add('playing');
-    var art = row.coverArt
-      ? '<img class="music-col-art" src="/api/subsonic/coverart?id='+row.coverArt+'">'
-      : '<div class="music-col-art" style="display:flex;align-items:center;justify-content:center;font-size:14px;background:rgba(255,255,255,0.06)">♪</div>';
-    el.innerHTML = art +
-      '<div class="music-col-text">' +
-        '<div class="music-col-name">'+escHtml(row.name)+'</div>' +
-        (row.sub?'<div class="music-col-sub">'+escHtml(row.sub)+'</div>':'') +
-      '</div>' +
-      (row.hasChildren ? '<span class="music-col-arrow">›</span>' : '');
-    el.addEventListener('click', function(e) {
-      e.stopPropagation();
-      list.querySelectorAll('.music-col-item').forEach(function(r){r.classList.remove('selected');});
-      el.classList.add('selected');
-      onRowClick(row);
-    });
-    list.appendChild(el);
+  // Show/hide items
+  listEl.querySelectorAll('[data-sub="item"]').forEach(function(el) {
+    var name = (el.querySelector('.xmb-item-name')||el).textContent.toLowerCase();
+    el.style.display = (!q || name.indexOf(q)>=0) ? '' : 'none';
   });
-  col.appendChild(list);
-  wrap.appendChild(col);
-  _musicCols.push(col);
-  repositionMusicCols();
-}
-
-function repositionMusicCols() {
-  var w = 320, gap = 12;
-  // Anchor first column just to the right of the item panel
-  var panel = document.getElementById('item-panel');
-  var panelRight = panel ? panel.getBoundingClientRect().right : window.innerWidth * 0.75;
-  var startX = Math.min(panelRight + 16, window.innerWidth - w - 16);
-  _musicCols.forEach(function(col, i) {
-    col.style.left = Math.min(startX + i * (w + gap), window.innerWidth - w - 8) + 'px';
-    col.style.width = w + 'px';
-    col.style.top = '50%';
-    col.style.transform = 'translateY(-50%)';
+  listEl.querySelectorAll('[data-sub="divider"]').forEach(function(el) {
+    el.style.display = q ? 'none' : '';
   });
+  // Rebuild allItems for keyboard nav
+  var filtered = q ? _subItems.filter(function(i){ return i.name.toLowerCase().indexOf(q)>=0; }) : _subItems;
+  allItems = (config.categories[catIdx].items||[]).concat(filtered);
 }
 
-function fetchAndShowAlbums(artistId, artistName) {
-  subFetch('artist', {id: artistId}).then(function(d) {
-    var albums = d.artist && d.artist.album || [];
-    if (!Array.isArray(albums)) albums = [albums];
-    var rows = albums.map(function(a) {
-      return { id:a.id, name:a.name, coverArt:a.coverArt||null,
-        sub:(a.year||'')+(a.year&&a.songCount?' · ':'')+((a.songCount||0)+' songs'),
-        hasChildren:true };
-    });
-    showMusicCol(artistName, rows, 0, function(row) {
-      fetchAndShowSongs(row.id, row.name);
-    });
-  }).catch(function(e){ console.error('fetchAlbums error',e); });
-}
-
-function fetchAndShowSongs(albumId, albumName) {
-  subFetch('album', {id: albumId}).then(function(d) {
-    var songs = d.album && d.album.song || [];
-    if (!Array.isArray(songs)) songs = [songs];
-    var rows = songs.map(function(s) {
-      return { id:s.id, name:s.title, coverArt:s.coverArt||null,
-        sub:s.artist||(s.duration?Math.floor(s.duration/60)+':'+(s.duration%60<10?'0':'')+s.duration%60:''),
-        hasChildren:false, _song:s, _queue:songs };
-    });
-    showMusicCol(albumName, rows, 1, function(row) {
-      if (row._song) musicPlay(row._queue, row._queue.indexOf(row._song));
-    });
-  }).catch(function(e){ console.error('fetchSongs error',e); });
-}
-
-function fetchAndShowPlaylistSongs(plId, plName) {
-  subFetch('playlist', {id: plId}).then(function(d) {
-    var songs = (d.playlist && d.playlist.entry) || [];
-    if (!Array.isArray(songs)) songs = [songs];
-    var rows = songs.map(function(s) {
-      return { id:s.id, name:s.title, coverArt:s.coverArt||null,
-        sub:s.artist||'', hasChildren:false, _song:s, _queue:songs };
-    });
-    showMusicCol(plName, rows, 0, function(row) {
-      if (row._song) musicPlay(row._queue, row._queue.indexOf(row._song));
-    });
-  }).catch(function(e){ console.error('fetchPlaylist error',e); });
-}
-
-function fetchAndShowGenreSongs(genre, genreName) {
-  subFetch('bygenre', {genre: decodeURIComponent(genre)}).then(function(d) {
-    var songs = (d.songsByGenre && d.songsByGenre.song) || [];
-    if (!Array.isArray(songs)) songs = [songs];
-    var rows = songs.map(function(s) {
-      return { id:s.id, name:s.title, coverArt:s.coverArt||null,
-        sub:s.artist||'', hasChildren:false, _song:s, _queue:songs };
-    });
-    showMusicCol(genreName, rows, 0, function(row) {
-      if (row._song) musicPlay(row._queue, row._queue.indexOf(row._song));
-    });
-  }).catch(function(e){ console.error('fetchGenre error',e); });
-}
-
-// Click backdrop to close (only when clicking the backdrop itself, not columns)
-document.getElementById('music-columns').addEventListener('click', function(e) {
-  if (e.target === this || e.target.id === 'music-columns') closeMusicCols();
+// ── '/' key focuses search ────────────────────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+  var si = document.getElementById('sub-search');
+  if (e.key==='/' && si && document.activeElement !== si) { e.preventDefault(); si.focus(); }
 });
 
-// Close columns on Escape (when columns are open)
+// ── Escape: pop music level or close search ───────────────────────────────────
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && _musicCols.length > 0) {
-    if (_musicCols.length > 1) {
-      var old = _musicCols.pop();
-      if (old && old.parentNode) old.parentNode.removeChild(old);
-      repositionMusicCols();
-    } else {
-      closeMusicCols();
-    }
-  }
+  if (e.key !== 'Escape') return;
+  var si = document.getElementById('sub-search');
+  if (si && document.activeElement === si) { si.value=''; subSearch(''); si.blur(); return; }
+  if (inMusicDrill) { musicPopLevel(); }
 });
 
 // ── Audio player ──────────────────────────────────────────────────────────────
-var musicPlayer = { queue:[], queueIdx:0, currentId:null, audio: document.getElementById('xmb-audio') };
+var musicPlayer = { queue:[], queueIdx:0, currentId:null, audio:document.getElementById('xmb-audio') };
 
 function musicPlay(queue, idx) {
   if (!queue || idx < 0 || idx >= queue.length) return;
   var song = queue[idx];
-  if (!song || !song.id) { console.warn('[music] musicPlay: invalid song at idx', idx, song); return; }
-  musicPlayer.queue    = queue;
-  musicPlayer.queueIdx = idx;
-  musicPlayer.currentId = song.id;
-  var audio = musicPlayer.audio;
-  audio.src = '/api/subsonic/stream?id=' + song.id;
-  audio.play().catch(function(){});
-  // Update Now Playing
+  if (!song || !song.id) return;
+  musicPlayer.queue = queue; musicPlayer.queueIdx = idx; musicPlayer.currentId = song.id;
+  var a = musicPlayer.audio;
+  a.src = '/api/subsonic/stream?id=' + song.id;
+  a.play().catch(function(){});
   document.getElementById('now-playing-title').textContent  = song.title || '—';
   document.getElementById('now-playing-artist').textContent = song.artist || '';
   var art = document.getElementById('now-playing-art');
@@ -6412,11 +6359,10 @@ function musicPlay(queue, idx) {
 }
 
 musicPlayer.audio.addEventListener('ended', function() {
-  var next = musicPlayer.queueIdx + 1;
-  if (next < musicPlayer.queue.length) musicPlay(musicPlayer.queue, next);
+  var n = musicPlayer.queueIdx+1;
+  if (n < musicPlayer.queue.length) musicPlay(musicPlayer.queue, n);
   else document.getElementById('now-playing').classList.remove('visible');
 });
-
 document.getElementById('np-play').addEventListener('click', function() {
   var a = musicPlayer.audio;
   if (a.paused) { a.play(); this.textContent='⏸'; } else { a.pause(); this.textContent='▶'; }
@@ -6428,17 +6374,12 @@ document.getElementById('np-next').addEventListener('click', function() {
   if (musicPlayer.queueIdx < musicPlayer.queue.length-1) musicPlay(musicPlayer.queue, musicPlayer.queueIdx+1);
 });
 document.getElementById('np-close').addEventListener('click', function() {
-  musicPlayer.audio.pause(); musicPlayer.audio.src='';
-  musicPlayer.currentId=null;
+  musicPlayer.audio.pause(); musicPlayer.audio.src=''; musicPlayer.currentId=null;
   document.getElementById('now-playing').classList.remove('visible');
-  closeMusicCols();
 });
 
-// ── Hook into openItem for #sub- URLs ─────────────────────────────────────────
-// (called from within existing openItem function)
-
-// ── Hook renderItems to inject subsonic items ─────────────────────────────────
-// (called from existing renderItems variable patch)
+// openSubItem called from openItem for #sub- urls
+function openSubItem(item) { musicItemAction(item); }
 
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
