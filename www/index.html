@@ -576,35 +576,21 @@ html, body {
   .cat-item { padding: 6px 12px 6px 8px; }
 }
 
-/* ── Now Playing ribbon ── */
+/* ── Now Playing — inline in topbar-right ── */
 #now-playing {
-  position: fixed;
-  top: 0; right: 0;
-  z-index: 51;
-  display: flex;
+  display: none;
   align-items: center;
   gap: 8px;
-  padding: 6px 16px 6px 12px;
-  background: rgba(0,0,0,0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom-left-radius: 10px;
-  border-left: 1px solid rgba(255,255,255,0.10);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
   font-size: 11px;
   color: rgba(255,255,255,0.85);
   letter-spacing: 0.04em;
-  opacity: 0;
-  transform: translateY(-100%);
-  transition: opacity 0.4s, transform 0.4s;
-  max-width: 320px;
-  pointer-events: none;
-}
-#now-playing.visible {
-  opacity: 1;
-  transform: translateY(0);
+  max-width: 260px;
   pointer-events: all;
+  border-right: 1px solid rgba(255,255,255,0.10);
+  padding-right: 20px;
+  margin-right: 4px;
 }
+#now-playing.visible { display: flex; }
 #now-playing-art {
   width: 28px; height: 28px;
   border-radius: 3px;
@@ -707,21 +693,9 @@ html, body {
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
 </div>
 <div id="open-flash"></div>
-<div id="now-playing">
-  <img id="now-playing-art" src="" alt="">
-  <div id="now-playing-info">
-    <div id="now-playing-title">—</div>
-    <div id="now-playing-artist"></div>
-  </div>
-  <div id="now-playing-controls">
-    <button class="np-btn" id="np-prev" title="Previous">⏮</button>
-    <button class="np-btn" id="np-play" title="Play/Pause">⏸</button>
-    <button class="np-btn" id="np-next" title="Next">⏭</button>
-    <button class="np-btn" id="np-close" title="Stop">✕</button>
-  </div>
-</div>
+
 <div id="music-columns" style="display:none"></div>
-<audio id="xmb-audio"></audio>
+<audio id="xmb-audio" preload="auto"></audio>
 <div id="service-frame-wrap" id="service-frame-wrap">
   <div id="service-close" title="Back to dashboard">✕</div>
   <iframe id="service-frame" src="about:blank" allowfullscreen></iframe>
@@ -731,6 +705,19 @@ html, body {
 <div id="topbar">
   <div id="topbar-title">HOMELAB</div>
   <div id="topbar-right">
+    <div id="now-playing">
+      <img id="now-playing-art" src="" alt="" style="display:none">
+      <div id="now-playing-info">
+        <div id="now-playing-title">—</div>
+        <div id="now-playing-artist"></div>
+      </div>
+      <div id="now-playing-controls">
+        <button class="np-btn" id="np-prev" title="Previous">⏮</button>
+        <button class="np-btn" id="np-play" title="Play/Pause">⏸</button>
+        <button class="np-btn" id="np-next" title="Next">⏭</button>
+        <button class="np-btn" id="np-close" title="Stop">✕</button>
+      </div>
+    </div>
     <div id="date-display"></div>
     <div id="clock"></div>
   </div>
@@ -3702,8 +3689,7 @@ var _origUpdateCategoryUI = updateCategoryUI;
 updateCategoryUI = function() {
   // Reset music drill-down on category change
   musicStack = []; inMusicDrill = false; _subItems = [];
-  _origUpdateCategoryUI();
-  updateMobileCatStrip();
+  _origUpdateCategoryUI(); // already calls updateMobileCatStrip internally
 };
 
 // Init mobile on load
@@ -6308,20 +6294,24 @@ function injectSubsonicItems() {
 }
 
 function subSearch(q) {
-  q = q.trim().toLowerCase();
+  q = (q||'').trim().toLowerCase();
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
-  // Show/hide items
   listEl.querySelectorAll('[data-sub="item"]').forEach(function(el) {
     var name = (el.querySelector('.xmb-item-name')||el).textContent.toLowerCase();
-    el.style.display = (!q || name.indexOf(q)>=0) ? '' : 'none';
+    el.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
   });
   listEl.querySelectorAll('[data-sub="divider"]').forEach(function(el) {
     el.style.display = q ? 'none' : '';
   });
-  // Rebuild allItems for keyboard nav
-  var filtered = q ? _subItems.filter(function(i){ return i.name.toLowerCase().indexOf(q)>=0; }) : _subItems;
-  allItems = (config.categories[catIdx].items||[]).concat(filtered);
+  // Rebuild allItems so arrow nav only reaches visible items
+  var catItems = (config.categories && config.categories[catIdx] && config.categories[catIdx].items) || [];
+  var filtered = q ? _subItems.filter(function(i){ return i.name.toLowerCase().indexOf(q) >= 0; }) : _subItems;
+  allItems = catItems.concat(filtered);
+  // Reset selection to first visible item
+  itemIdx = Math.min(itemIdx, allItems.length - 1);
+  if (itemIdx < 0) itemIdx = 0;
+  updateItemSelection();
 }
 
 // ── '/' key focuses search ────────────────────────────────────────────────────
@@ -6330,12 +6320,32 @@ document.addEventListener('keydown', function(e) {
   if (e.key==='/' && si && document.activeElement !== si) { e.preventDefault(); si.focus(); }
 });
 
-// ── Escape: pop music level or close search ───────────────────────────────────
+// ── Escape: pop music level / clear search / jump to top ─────────────────────
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
+  // 1. If search focused, clear it
   var si = document.getElementById('sub-search');
-  if (si && document.activeElement === si) { si.value=''; subSearch(''); si.blur(); return; }
-  if (inMusicDrill) { musicPopLevel(); }
+  if (si && document.activeElement === si) {
+    si.value = ''; subSearch(''); si.blur(); return;
+  }
+  // 2. If in drill-down, pop level
+  if (inMusicDrill) { musicPopLevel(); return; }
+  // 3. If in music category with items, jump to top of list
+  var sub = config && config.subsonic;
+  var cat = config && config.categories && config.categories[catIdx];
+  if (sub && cat && cat.id === sub.categoryId && allItems.length > 0) {
+    itemIdx = 0; updateItemSelection(); return;
+  }
+});
+
+// ── Home key: jump to top of any list ────────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Home' && document.activeElement.tagName !== 'INPUT') {
+    itemIdx = 0; updateItemSelection();
+  }
+  if (e.key === 'End' && document.activeElement.tagName !== 'INPUT') {
+    itemIdx = Math.max(0, allItems.length - 1); updateItemSelection();
+  }
 });
 
 // ── Audio player ──────────────────────────────────────────────────────────────

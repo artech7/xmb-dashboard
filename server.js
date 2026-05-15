@@ -40,7 +40,10 @@ function ensureSystemItems(cfg) {
   return cfg;
 }
 
+let _configCache = null;
+
 function readConfig() {
+  if (_configCache) return _configCache;
   let cfg;
   if (fs.existsSync(DATA_CFG)) {
     cfg = JSON.parse(fs.readFileSync(DATA_CFG, 'utf8'));
@@ -50,10 +53,12 @@ function readConfig() {
     fs.writeFileSync(DATA_CFG, JSON.stringify(cfg, null, 2));
     console.log('First boot: seeded config to', DATA_CFG);
   }
-  return ensureSystemItems(cfg);
+  _configCache = ensureSystemItems(cfg);
+  return _configCache;
 }
 
 function writeConfig(cfg) {
+  _configCache = null; // invalidate cache
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(DATA_CFG, JSON.stringify(cfg, null, 2));
   console.log('Config saved to', DATA_CFG, '—', cfg.categories.length, 'categories');
