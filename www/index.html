@@ -734,7 +734,13 @@ html, body {
 
 <div id="cat-name-banner"></div>
 <div id="cat-row"></div>
-<div id="item-panel"><div class="item-list"></div></div>
+<div id="item-panel">
+  <div id="item-search-wrap" style="display:none;padding:0 0 8px">
+    <input id="item-search" type="text" placeholder="Search…" autocomplete="off"
+      style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;letter-spacing:0.04em;outline:none">
+  </div>
+  <div class="item-list"></div>
+</div>
 
 <div id="hints">
   <div class="hint"><div class="hint-key">←</div><div class="hint-key">→</div> Category</div>
@@ -6204,9 +6210,11 @@ function closeMusicColumns() {
 }
 
 function openArtistColumn(artistId, artistName) {
+  console.log('[music] fetching artist', artistId);
   subFetch('artist', { id: artistId }).then(function(d) {
+    console.log('[music] artist response:', JSON.stringify(d).slice(0,200));
     var artist  = d.artist || {};
-    var albums  = artist.album || [];
+    var albums  = Array.isArray(artist.album) ? artist.album : (artist.album ? [artist.album] : []);
     var colIdx  = musicColEls.length;
     var items   = albums.map(function(alb) {
       return { id: alb.id, name: alb.name, coverArt: alb.coverArt,
@@ -6334,14 +6342,19 @@ document.getElementById('np-close').addEventListener('click', function() {
 
 // ── Subsonic URL handler — called from within openItem ───────────────────────
 function handleSubsonicItem(item) {
-  var parts = item.url.slice(5).split(':');
-  var type  = parts[0];
-  var id    = parts.slice(1).join(':');
+  if (!item || !item.url) return;
+  // url format: '#sub-artist:ID' or '#sub-playlist:ID' or '#sub-genre:NAME'
+  var rest  = item.url.replace(/^#sub-/, '');
+  var colon = rest.indexOf(':');
+  var type  = colon >= 0 ? rest.slice(0, colon) : rest;
+  var id    = colon >= 0 ? rest.slice(colon + 1) : '';
+  console.log('[music] handleSubsonicItem type='+type+' id='+id);
   MUSIC_COL_START = Math.max(20, (window.innerWidth - MUSIC_COL_W) / 2);
   closeMusicColumns();
   if (type === 'artist')        openArtistColumn(id, item.name);
   else if (type === 'playlist') openPlaylistColumn(id, item.name);
   else if (type === 'genre')    openGenreColumn(id, item.name);
+  else console.warn('[music] unknown subsonic type:', type);
 }
 
 // Close columns on Escape
@@ -6383,7 +6396,8 @@ function injectSubsonicItems() {
 
   loadSubsonicItems(cat.id).then(function(subItemList) {
     if (!subItemList.length) return;
-    allItems = allItems.concat(subItemList); // add to unified nav array
+    allItems = allItems.concat(subItemList);
+    showItemSearch(true); // show search when subsonic items are present
     subItemList.forEach(function(item) {
       var el = document.createElement('div');
       el.className = 'xmb-item';
@@ -6405,6 +6419,41 @@ function injectSubsonicItems() {
   });
 }
 
+
+
+// ── Item search bar ───────────────────────────────────────────────────────────
+function showItemSearch(show) {
+  var wrap = document.getElementById('item-search-wrap');
+  if (wrap) {
+    wrap.style.display = show ? '' : 'none';
+    if (!show) document.getElementById('item-search').value = '';
+  }
+}
+
+function filterItemList(query) {
+  var q = query.trim().toLowerCase();
+  var items = document.querySelectorAll('.item-list .xmb-item');
+  items.forEach(function(el) {
+    var name = (el.querySelector('.xmb-item-name') || el).textContent.toLowerCase();
+    el.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
+  });
+  // Also hide/show separator divs
+  document.querySelectorAll('.item-list div:not(.xmb-item)').forEach(function(el) {
+    el.style.display = q ? 'none' : '';
+  });
+}
+
+document.getElementById('item-search').addEventListener('input', function() {
+  filterItemList(this.value);
+});
+
+// Clear search and hide on category change
+var _origUpdateCatForSearch = updateCategoryUI;
+updateCategoryUI = function() {
+  _origUpdateCatForSearch();
+  showItemSearch(false);
+  filterItemList('');
+};
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
