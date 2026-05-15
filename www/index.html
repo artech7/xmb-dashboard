@@ -644,16 +644,17 @@ html, body {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 340px;
-  max-height: 72vh;
+  width: 320px;
+  max-height: 70vh;
   overflow: hidden;
   pointer-events: all;
-  background: rgba(8,10,20,0.92);
+  background: rgba(8,10,20,0.88);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.10);
   box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  transition: left 0.25s cubic-bezier(0.4,0,0.2,1);
 }
 .music-col-header {
   padding: 10px 16px;
@@ -3329,25 +3330,27 @@ function scrollItemList() {
   var items = listEl.querySelectorAll('.xmb-item');
   if (!items.length) return;
 
-  var itemH = items[0].offsetHeight + 2;
+  // Use the selected item's actual position for precise centering
+  var selEl = items[itemIdx] || items[0];
+  var itemH = selEl.offsetHeight + 2;
   if (itemH <= 2) return;
 
   var panelEl = document.getElementById('item-panel');
   if (!panelEl) return;
-  var panelH    = panelEl.offsetHeight - 32;
+  var panelH = panelEl.offsetHeight - 32;
   if (panelH <= 0) return;
 
-  // Use DOM item count (includes subsonic items once injected)
-  var totalItems = items.length;
-  var visCount  = Math.floor(panelH / itemH);
-  var centerPos = Math.floor(visCount / 2);
-  var offset    = -(itemIdx - centerPos) * itemH;
-  var maxOffset = 0;
-  var minOffset = -(totalItems - visCount) * itemH;
-  if (minOffset > maxOffset) minOffset = maxOffset;
-  offset = Math.max(minOffset, Math.min(maxOffset, offset));
+  // Target: selected item's top edge should be at panelH/2 - itemH/2
+  // i.e. offset = -(itemIdx * itemH) + (panelH/2 - itemH/2)
+  var targetOffset = -(itemIdx * itemH) + Math.floor(panelH / 2) - Math.floor(itemH / 2);
 
-  listEl.style.transform = 'translateY(' + offset + 'px)';
+  // Clamp: never show blank space above first item or below last item
+  var listH     = items.length * itemH;
+  var maxOffset = 0;
+  var minOffset = Math.min(0, panelH - listH); // negative or 0
+  targetOffset  = Math.max(minOffset, Math.min(maxOffset, targetOffset));
+
+  listEl.style.transform = 'translateY(' + targetOffset + 'px)';
 }
 
 var _frameLoadHandler = null; // track active listener so we can remove it
@@ -6289,11 +6292,13 @@ function showMusicCol(title, rows, colLevel, onRowClick) {
 }
 
 function repositionMusicCols() {
-  var w = 340, gap = 16;
-  var total = _musicCols.length * w + (_musicCols.length-1) * gap;
-  var startX = Math.max(16, (window.innerWidth - total) / 2);
+  var w = 320, gap = 12;
+  // Anchor first column just to the right of the item panel
+  var panel = document.getElementById('item-panel');
+  var panelRight = panel ? panel.getBoundingClientRect().right : window.innerWidth * 0.75;
+  var startX = Math.min(panelRight + 16, window.innerWidth - w - 16);
   _musicCols.forEach(function(col, i) {
-    col.style.left = (startX + i*(w+gap)) + 'px';
+    col.style.left = Math.min(startX + i * (w + gap), window.innerWidth - w - 8) + 'px';
     col.style.width = w + 'px';
     col.style.top = '50%';
     col.style.transform = 'translateY(-50%)';
