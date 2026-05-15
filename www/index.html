@@ -3352,7 +3352,7 @@ var _frameLoadHandler = null; // track active listener so we can remove it
 function openItem(item) {
   if (item.url === '#admin') { openSettings(); return; }
   if (item.url === '#prefs') { openPrefs(); return; }
-  if (item.url && item.url.startsWith('#sub-')) { handleSubsonicItem(item); return; }
+  if (item.url && item.url.startsWith('#sub-')) { openSubItem(item); return; }
 
   var root    = document.getElementById('xmb-root');
   var overlay = document.getElementById('open-flash');
@@ -3685,7 +3685,6 @@ renderItems = function() {
       });
     });
   }
-  // Inject Subsonic items after normal items render
   injectSubsonicItems();
 };
 
@@ -5974,10 +5973,10 @@ function applyPrefs(prefs) {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MUSIC INTEGRATION — Subsonic/Navidrome
+// MUSIC INTEGRATION — Subsonic/Navidrome (clean rewrite)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── Admin: Music nav item ─────────────────────────────────────────────────────
+// ── Admin: Music nav ──────────────────────────────────────────────────────────
 document.getElementById('s-nav-music-integration').addEventListener('click', function() {
   activeCatIdx = null;
   showView('music-integration');
@@ -5985,12 +5984,11 @@ document.getElementById('s-nav-music-integration').addEventListener('click', fun
 
 function populateMusicIntegrationView() {
   var subCfg = (settingsConfig && settingsConfig.subsonic) || {};
-  // Category dropdown
   var sel = document.getElementById('sub-cat');
   sel.innerHTML = '<option value="">— select category —</option>';
   if (settingsConfig && settingsConfig.categories) {
     settingsConfig.categories.forEach(function(cat) {
-      if (!cat.id) return; // skip categories without an id
+      if (!cat.id) return;
       var opt = document.createElement('option');
       opt.value = cat.id;
       opt.textContent = cat.name;
@@ -5998,24 +5996,13 @@ function populateMusicIntegrationView() {
       sel.appendChild(opt);
     });
   }
-  document.getElementById('sub-url').value      = subCfg.url      || '';
-  document.getElementById('sub-user').value     = subCfg.username || '';
-  document.getElementById('sub-pass').value     = subCfg.password || '';
+  document.getElementById('sub-url').value        = subCfg.url      || '';
+  document.getElementById('sub-user').value       = subCfg.username || '';
+  document.getElementById('sub-pass').value       = subCfg.password || '';
   document.getElementById('sub-artists').checked   = !!subCfg.showArtists;
   document.getElementById('sub-playlists').checked = !!subCfg.showPlaylists;
   document.getElementById('sub-genres').checked    = !!subCfg.showGenres;
 }
-
-['sub-url','sub-user','sub-pass','sub-cat','sub-artists','sub-playlists','sub-genres'].forEach(function(id) {
-  document.getElementById(id).addEventListener('input', function() {
-    var tb = document.getElementById('sub-test-btn');
-    tb.disabled = true; tb.style.opacity = '0.35'; tb.style.cursor = 'not-allowed';
-  });
-  document.getElementById(id).addEventListener('change', function() {
-    var tb = document.getElementById('sub-test-btn');
-    tb.disabled = true; tb.style.opacity = '0.35'; tb.style.cursor = 'not-allowed';
-  });
-});
 
 document.getElementById('sub-save-btn').addEventListener('click', function() {
   if (!settingsConfig) return;
@@ -6028,136 +6015,233 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
     showPlaylists:document.getElementById('sub-playlists').checked,
     showGenres:   document.getElementById('sub-genres').checked,
   };
+  // Reset cache so fresh data loads after config change
+  subCache = {};
   saveConfig().then(function() {
     document.getElementById('sub-status').textContent = '✓ Saved';
-    setTimeout(function() { document.getElementById('sub-status').textContent = ''; }, 2500);
     var tb = document.getElementById('sub-test-btn');
     tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = '';
+    setTimeout(function() { document.getElementById('sub-status').textContent = ''; }, 2500);
   }).catch(function(e) {
     document.getElementById('sub-status').textContent = '✗ ' + e.message;
+  });
+});
+
+['sub-url','sub-user','sub-pass','sub-cat','sub-artists','sub-playlists','sub-genres'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  ['input','change'].forEach(function(ev) {
+    el.addEventListener(ev, function() {
+      var tb = document.getElementById('sub-test-btn');
+      tb.disabled = true; tb.style.opacity = '0.35'; tb.style.cursor = 'not-allowed';
+    });
   });
 });
 
 document.getElementById('sub-test-btn').addEventListener('click', function() {
   var status = document.getElementById('sub-status');
   status.textContent = 'Testing…';
-  var url  = document.getElementById('sub-url').value.trim();
-  var user = document.getElementById('sub-user').value.trim();
-  var pass = document.getElementById('sub-pass').value;
-  var params = new URLSearchParams({ url: url, username: user, password: pass });
-  fetch('/api/subsonic/ping?' + params.toString(), { headers: { Authorization: 'Bearer ' + settingsToken } })
+  var params = new URLSearchParams({
+    url:      document.getElementById('sub-url').value.trim(),
+    username: document.getElementById('sub-user').value.trim(),
+    password: document.getElementById('sub-pass').value,
+  });
+  fetch('/api/subsonic/ping?' + params, { headers: { Authorization: 'Bearer ' + settingsToken } })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      status.textContent = d.status === 'ok' ? '✓ Connected — Navidrome ' + (d.version || '') : '✗ ' + (d.error || 'Failed');
+      status.textContent = d.status === 'ok'
+        ? '✓ Connected — Navidrome ' + (d.version || '')
+        : '✗ ' + (d.error || 'Failed');
     })
     .catch(function() { status.textContent = '✗ Connection failed'; });
 });
 
-// ── Subsonic data fetching ────────────────────────────────────────────────────
-
-var subItems   = [];   // injected items for current category
-var subLoaded  = {};   // cache: { artists: [], playlists: [], genres: [] }
+// ── Subsonic API fetch ────────────────────────────────────────────────────────
+var subCache = {}; // session cache keyed by endpoint+params
 
 function subFetch(endpoint, params) {
   var url = '/api/subsonic/' + endpoint;
   if (params) url += '?' + new URLSearchParams(params).toString();
-  return fetch(url).then(function(r) { return r.json(); });
+  if (subCache[url]) return Promise.resolve(subCache[url]);
+  return fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+    subCache[url] = d;
+    return d;
+  });
 }
 
-function loadSubsonicItems(catId) {
-  if (!config || !config.subsonic) return Promise.resolve([]);
-  var sub = config.subsonic;
-  if (!sub.url || !sub.username || sub.categoryId !== catId) return Promise.resolve([]);
-
+// ── Load top-level subsonic items for a category ──────────────────────────────
+function loadSubsonicItems(sub) {
   var promises = [];
   var items = [];
-
   if (sub.showArtists) {
-    promises.push(
-      subFetch('artists').then(function(d) {
-        var idx = (d.artists && d.artists.index) || [];
-        idx.forEach(function(group) {
-          (group.artist || []).forEach(function(a) {
-            items.push({
-              _sub: true, _type: 'artist', _id: a.id,
-              name: a.name,
-              desc: a.albumCount + ' album' + (a.albumCount !== 1 ? 's' : ''),
-              icon: a.coverArt ? '/api/subsonic/coverart?id=' + a.coverArt : '',
-              url:  '#sub-artist:' + a.id,
-            });
-          });
+    promises.push(subFetch('artists').then(function(d) {
+      var idx = (d.artists && d.artists.index) || [];
+      idx.forEach(function(g) {
+        (Array.isArray(g.artist) ? g.artist : (g.artist ? [g.artist] : [])).forEach(function(a) {
+          items.push({ _type:'artist', _id:a.id, name:a.name,
+            desc:(a.albumCount||0)+' album'+(a.albumCount!==1?'s':''),
+            coverArt:a.coverArt||null });
         });
-      }).catch(function() {})
-    );
+      });
+    }).catch(function(){}));
   }
-
   if (sub.showPlaylists) {
-    promises.push(
-      subFetch('playlists').then(function(d) {
-        var lists = (d.playlists && d.playlists.playlist) || [];
-        lists.forEach(function(pl) {
-          items.push({
-            _sub: true, _type: 'playlist', _id: pl.id,
-            name: pl.name,
-            desc: pl.songCount + ' song' + (pl.songCount !== 1 ? 's' : ''),
-            icon: pl.coverArt ? '/api/subsonic/coverart?id=' + pl.coverArt : '',
-            url:  '#sub-playlist:' + pl.id,
-          });
-        });
-      }).catch(function() {})
-    );
+    promises.push(subFetch('playlists').then(function(d) {
+      var lists = (d.playlists && d.playlists.playlist) || [];
+      if (!Array.isArray(lists)) lists = [lists];
+      lists.forEach(function(pl) {
+        items.push({ _type:'playlist', _id:pl.id, name:pl.name,
+          desc:(pl.songCount||0)+' song'+(pl.songCount!==1?'s':''),
+          coverArt:pl.coverArt||null });
+      });
+    }).catch(function(){}));
   }
-
   if (sub.showGenres) {
-    promises.push(
-      subFetch('genres').then(function(d) {
-        var genres = (d.genres && d.genres.genre) || [];
-        genres.sort(function(a, b) { return b.songCount - a.songCount; });
-        genres.forEach(function(g) {
-          items.push({
-            _sub: true, _type: 'genre', _id: encodeURIComponent(g.value),
-            name: g.value,
-            desc: g.songCount + ' songs',
-            icon: '',
-            url:  '#sub-genre:' + encodeURIComponent(g.value),
-          });
-        });
-      }).catch(function() {})
-    );
+    promises.push(subFetch('genres').then(function(d) {
+      var genres = (d.genres && d.genres.genre) || [];
+      if (!Array.isArray(genres)) genres = [genres];
+      genres.sort(function(a,b){ return (b.songCount||0)-(a.songCount||0); });
+      genres.forEach(function(g) {
+        items.push({ _type:'genre', _id:encodeURIComponent(g.value), name:g.value,
+          desc:(g.songCount||0)+' songs', coverArt:null });
+      });
+    }).catch(function(){}));
   }
-
   return Promise.all(promises).then(function() { return items; });
 }
 
-// ── Drill-down column navigation ──────────────────────────────────────────────
+// ── Inject subsonic items into the item list ─────────────────────────────────
+var _subItems = []; // current subsonic items for active category
 
-var musicCols    = [];   // stack of active column states
-var musicColEls  = [];   // DOM elements
-var musicColIdx  = 0;    // currently focused column
+function injectSubsonicItems() {
+  if (!config || !config.subsonic) return;
+  var sub = config.subsonic;
+  if (!sub.url || !sub.username || !sub.categoryId || sub.categoryId === 'undefined') return;
+  var cat = config.categories && config.categories[catIdx];
+  if (!cat || !cat.id || cat.id !== sub.categoryId) return;
 
-var MUSIC_COL_W  = 340;
-var MUSIC_COL_GAP = 20;
-var MUSIC_COL_START = 0; // set when first column opens
+  var listEl = document.querySelector('.item-list');
+  if (!listEl) return;
+  if (listEl.querySelector('[data-sub-injected]')) return; // already injected
 
-function musicColLeft(colIdx) {
-  return MUSIC_COL_START + colIdx * (MUSIC_COL_W + MUSIC_COL_GAP);
+  var snapIdx = catIdx;
+
+  loadSubsonicItems(sub).then(function(items) {
+    if (catIdx !== snapIdx) return; // user moved away
+    var currentList = document.querySelector('.item-list');
+    if (currentList !== listEl) return; // list was rebuilt
+
+    _subItems = items;
+
+    // Divider
+    var divider = document.createElement('div');
+    divider.setAttribute('data-sub-injected', 'divider');
+    divider.style.cssText = 'padding:6px 16px 4px;font-size:10px;letter-spacing:0.12em;' +
+      'color:rgba(255,255,255,0.25);text-transform:uppercase;' +
+      'border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
+    divider.textContent = 'Navidrome';
+    listEl.appendChild(divider);
+
+    // Search bar
+    var searchDiv = document.createElement('div');
+    searchDiv.setAttribute('data-sub-injected', 'search');
+    searchDiv.style.cssText = 'padding:4px 16px 8px';
+    searchDiv.innerHTML = '<input id="sub-search" type="text" placeholder="Search music… (press /)" autocomplete="off" ' +
+      'style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);' +
+      'border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;' +
+      'color:#fff;font-size:13px;outline:none">';
+    listEl.appendChild(searchDiv);
+
+    var searchEl = document.getElementById('sub-search');
+    searchEl.addEventListener('input', function() { subSearch(this.value); });
+    searchEl.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { this.value=''; subSearch(''); this.blur(); e.stopPropagation(); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); this.blur(); }
+    });
+
+    // Render items
+    renderSubItems(items, listEl);
+
+    // Extend allItems for keyboard nav
+    allItems = allItems.concat(items);
+  });
 }
 
-function openMusicColumn(title, items, colIdx, onSelect) {
+function renderSubItems(items, listEl) {
+  // Remove old sub items
+  listEl.querySelectorAll('[data-sub-injected="item"]').forEach(function(el) { el.remove(); });
+
+  items.forEach(function(item) {
+    var el = document.createElement('div');
+    el.className = 'xmb-item';
+    el.setAttribute('data-sub-injected', 'item');
+    var art = item.coverArt
+      ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
+      : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
+    el.innerHTML =
+      '<div class="xmb-item-icon">'+art+'</div>' +
+      '<div class="xmb-item-text">' +
+        '<div class="xmb-item-name">'+escHtml(item.name)+'</div>' +
+        (item.desc?'<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>':'') +
+      '</div>' +
+      '<span class="xmb-item-arrow">›</span>';
+    el.addEventListener('click', function() { openSubItem(item); });
+    listEl.appendChild(el);
+  });
+}
+
+function subSearch(query) {
+  var q = query.trim().toLowerCase();
+  var listEl = document.querySelector('.item-list');
+  if (!listEl) return;
+  if (!q) {
+    renderSubItems(_subItems, listEl);
+    allItems = config.categories[catIdx].items.slice().concat(_subItems);
+    return;
+  }
+  var filtered = _subItems.filter(function(i) { return i.name.toLowerCase().indexOf(q) >= 0; });
+  renderSubItems(filtered, listEl);
+  allItems = config.categories[catIdx].items.slice().concat(filtered);
+}
+
+// '/' focuses search
+document.addEventListener('keydown', function(e) {
+  if (e.key === '/' && document.getElementById('sub-search') && document.activeElement !== document.getElementById('sub-search')) {
+    e.preventDefault();
+    document.getElementById('sub-search').focus();
+  }
+});
+
+// ── Open subsonic item (drill-down) ───────────────────────────────────────────
+function openSubItem(item) {
+  closeMusicCols();
+  if (item._type === 'artist')   fetchAndShowAlbums(item._id, item.name);
+  if (item._type === 'playlist') fetchAndShowPlaylistSongs(item._id, item.name);
+  if (item._type === 'genre')    fetchAndShowGenreSongs(item._id, item.name);
+}
+
+// ── Music drill-down columns ──────────────────────────────────────────────────
+var _musicCols = [];
+
+function closeMusicCols() {
   var wrap = document.getElementById('music-columns');
-  wrap.classList.add('active');
+  wrap.innerHTML = '';
+  wrap.style.display = 'none';
+  _musicCols = [];
+}
+
+function showMusicCol(title, rows, colLevel, onRowClick) {
+  var wrap = document.getElementById('music-columns');
   wrap.style.display = 'block';
 
-  // Remove any columns beyond this index
-  while (musicColEls.length > colIdx) {
-    var old = musicColEls.pop();
-    if (old.parentNode) old.parentNode.removeChild(old);
-    musicCols.pop();
+  // Remove columns at this level and beyond
+  while (_musicCols.length > colLevel) {
+    var old = _musicCols.pop();
+    if (old && old.parentNode) old.parentNode.removeChild(old);
   }
 
   var col = document.createElement('div');
   col.className = 'music-col';
-  col.style.left = musicColLeft(colIdx) + 'px';
 
   var header = document.createElement('div');
   header.className = 'music-col-header';
@@ -6166,360 +6250,164 @@ function openMusicColumn(title, items, colIdx, onSelect) {
 
   var list = document.createElement('div');
   list.className = 'music-col-list';
-
-  items.forEach(function(item, i) {
-    var row = document.createElement('div');
-    row.className = 'music-col-item';
-    if (musicPlayer.currentId === item.id) row.classList.add('playing');
-
-    var art = '';
-    if (item.coverArt) {
-      art = '<img class="music-col-art" src="/api/subsonic/coverart?id='+item.coverArt+'" onerror="this.style.visibility=\'hidden\'">';;
-    } else {
-      art = '<div class="music-col-art" style="display:flex;align-items:center;justify-content:center;font-size:16px">♪</div>';
-    }
-    var sub = item.subtitle ? '<div class="music-col-sub">'+escHtml(item.subtitle)+'</div>' : '';
-    var arrow = item.hasChildren ? '<span class="music-col-arrow">›</span>' : '';
-    row.innerHTML = art + '<div class="music-col-text"><div class="music-col-name">'+escHtml(item.name)+'</div>'+sub+'</div>' + arrow;
-
-    row.addEventListener('click', function() {
-      list.querySelectorAll('.music-col-item').forEach(function(r) { r.classList.remove('selected'); });
-      row.classList.add('selected');
-      onSelect(item, colIdx);
+  rows.forEach(function(row) {
+    var el = document.createElement('div');
+    el.className = 'music-col-item';
+    if (musicPlayer.currentId === row.id) el.classList.add('playing');
+    var art = row.coverArt
+      ? '<img class="music-col-art" src="/api/subsonic/coverart?id='+row.coverArt+'">'
+      : '<div class="music-col-art" style="display:flex;align-items:center;justify-content:center;font-size:14px;background:rgba(255,255,255,0.06)">♪</div>';
+    el.innerHTML = art +
+      '<div class="music-col-text">' +
+        '<div class="music-col-name">'+escHtml(row.name)+'</div>' +
+        (row.sub?'<div class="music-col-sub">'+escHtml(row.sub)+'</div>':'') +
+      '</div>' +
+      (row.hasChildren ? '<span class="music-col-arrow">›</span>' : '');
+    el.addEventListener('click', function() {
+      list.querySelectorAll('.music-col-item').forEach(function(r){r.classList.remove('selected');});
+      el.classList.add('selected');
+      onRowClick(row);
     });
-    list.appendChild(row);
+    list.appendChild(el);
   });
-
   col.appendChild(list);
   wrap.appendChild(col);
-  musicColEls.push(col);
-  musicCols.push({ title: title, items: items, selectedIdx: -1 });
-
-  // Reposition all columns so they stay centered-ish
+  _musicCols.push(col);
   repositionMusicCols();
 }
 
 function repositionMusicCols() {
-  var totalW = musicColEls.length * (MUSIC_COL_W + MUSIC_COL_GAP) - MUSIC_COL_GAP;
-  var startX = Math.max(20, (window.innerWidth - totalW) / 2);
-  musicColEls.forEach(function(el, i) {
-    el.style.left = (startX + i * (MUSIC_COL_W + MUSIC_COL_GAP)) + 'px';
+  var w = 340, gap = 16;
+  var total = _musicCols.length * w + (_musicCols.length-1) * gap;
+  var startX = Math.max(16, (window.innerWidth - total) / 2);
+  _musicCols.forEach(function(col, i) {
+    col.style.left = (startX + i*(w+gap)) + 'px';
+    col.style.width = w + 'px';
   });
 }
 
-function closeMusicColumns() {
-  var wrap = document.getElementById('music-columns');
-  wrap.classList.remove('active');
-  wrap.innerHTML = '';
-  musicCols = [];
-  musicColEls = [];
+function fetchAndShowAlbums(artistId, artistName) {
+  subFetch('artist', {id: artistId}).then(function(d) {
+    var albums = d.artist && d.artist.album || [];
+    if (!Array.isArray(albums)) albums = [albums];
+    var rows = albums.map(function(a) {
+      return { id:a.id, name:a.name, coverArt:a.coverArt||null,
+        sub:(a.year||'')+(a.year&&a.songCount?' · ':'')+((a.songCount||0)+' songs'),
+        hasChildren:true };
+    });
+    showMusicCol(artistName, rows, 0, function(row) {
+      fetchAndShowSongs(row.id, row.name);
+    });
+  }).catch(function(e){ console.error('fetchAlbums error',e); });
 }
 
-function openArtistColumn(artistId, artistName) {
-  console.log('[music] fetching artist', artistId);
-  subFetch('artist', { id: artistId }).then(function(d) {
-    console.log('[music] artist response:', JSON.stringify(d).slice(0,200));
-    var artist  = d.artist || {};
-    var albums  = Array.isArray(artist.album) ? artist.album : (artist.album ? [artist.album] : []);
-    var colIdx  = musicColEls.length;
-    var items   = albums.map(function(alb) {
-      return { id: alb.id, name: alb.name, coverArt: alb.coverArt,
-               subtitle: (alb.year || '') + (alb.year && alb.songCount ? ' · ' : '') + (alb.songCount ? alb.songCount + ' songs' : ''),
-               hasChildren: true };
+function fetchAndShowSongs(albumId, albumName) {
+  subFetch('album', {id: albumId}).then(function(d) {
+    var songs = d.album && d.album.song || [];
+    if (!Array.isArray(songs)) songs = [songs];
+    var rows = songs.map(function(s) {
+      return { id:s.id, name:s.title, coverArt:s.coverArt||null,
+        sub:s.artist||(s.duration?Math.floor(s.duration/60)+':'+(s.duration%60<10?'0':'')+s.duration%60:''),
+        hasChildren:false, _song:s, _queue:songs };
     });
-    openMusicColumn(artistName, items, colIdx, function(item) {
-      openAlbumColumn(item.id, item.name);
+    showMusicCol(albumName, rows, 1, function(row) {
+      if (row._song) musicPlay(row._queue, row._queue.indexOf(row._song));
     });
-  });
+  }).catch(function(e){ console.error('fetchSongs error',e); });
 }
 
-function openAlbumColumn(albumId, albumName) {
-  subFetch('album', { id: albumId }).then(function(d) {
-    var album  = d.album || {};
-    var songs  = album.song || [];
-    var colIdx = musicColEls.length;
-    var items  = songs.map(function(s, i) {
-      return { id: s.id, name: s.title, coverArt: s.coverArt,
-               subtitle: (s.artist || '') + (s.duration ? ' · ' + Math.floor(s.duration/60)+':'+(s.duration%60<10?'0':'')+s.duration%60 : ''),
-               hasChildren: false, _song: s, _queue: songs, _queueIdx: i };
+function fetchAndShowPlaylistSongs(plId, plName) {
+  subFetch('playlist', {id: plId}).then(function(d) {
+    var songs = (d.playlist && d.playlist.entry) || [];
+    if (!Array.isArray(songs)) songs = [songs];
+    var rows = songs.map(function(s) {
+      return { id:s.id, name:s.title, coverArt:s.coverArt||null,
+        sub:s.artist||'', hasChildren:false, _song:s, _queue:songs };
     });
-    openMusicColumn(albumName, items, colIdx, function(item) {
-      if (item._song) musicPlay(item._queue, item._queueIdx);
+    showMusicCol(plName, rows, 0, function(row) {
+      if (row._song) musicPlay(row._queue, row._queue.indexOf(row._song));
     });
-  });
+  }).catch(function(e){ console.error('fetchPlaylist error',e); });
 }
 
-function openPlaylistColumn(playlistId, playlistName) {
-  subFetch('playlist', { id: playlistId }).then(function(d) {
-    var songs  = (d.playlist && d.playlist.entry) || [];
-    var colIdx = musicColEls.length;
-    var items  = songs.map(function(s, i) {
-      return { id: s.id, name: s.title, coverArt: s.coverArt,
-               subtitle: s.artist || '',
-               hasChildren: false, _song: s, _queue: songs, _queueIdx: i };
+function fetchAndShowGenreSongs(genre, genreName) {
+  subFetch('bygenre', {genre: decodeURIComponent(genre)}).then(function(d) {
+    var songs = (d.songsByGenre && d.songsByGenre.song) || [];
+    if (!Array.isArray(songs)) songs = [songs];
+    var rows = songs.map(function(s) {
+      return { id:s.id, name:s.title, coverArt:s.coverArt||null,
+        sub:s.artist||'', hasChildren:false, _song:s, _queue:songs };
     });
-    openMusicColumn(playlistName, items, colIdx, function(item) {
-      if (item._song) musicPlay(item._queue, item._queueIdx);
+    showMusicCol(genreName, rows, 0, function(row) {
+      if (row._song) musicPlay(row._queue, row._queue.indexOf(row._song));
     });
-  });
+  }).catch(function(e){ console.error('fetchGenre error',e); });
 }
 
-function openGenreColumn(genre, genreName) {
-  subFetch('bygenre', { genre: decodeURIComponent(genre) }).then(function(d) {
-    var songs  = (d.songsByGenre && d.songsByGenre.song) || [];
-    var colIdx = musicColEls.length;
-    var items  = songs.map(function(s, i) {
-      return { id: s.id, name: s.title, coverArt: s.coverArt,
-               subtitle: s.artist || '',
-               hasChildren: false, _song: s, _queue: songs, _queueIdx: i };
-    });
-    openMusicColumn(genreName, items, colIdx, function(item) {
-      if (item._song) musicPlay(item._queue, item._queueIdx);
-    });
-  });
-}
+// Close columns on Escape (when columns are open)
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && _musicCols.length > 0) {
+    if (_musicCols.length > 1) {
+      var old = _musicCols.pop();
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      repositionMusicCols();
+    } else {
+      closeMusicCols();
+    }
+  }
+});
 
 // ── Audio player ──────────────────────────────────────────────────────────────
-
-var musicPlayer = {
-  queue:      [],
-  queueIdx:   0,
-  currentId:  null,
-  audio:      document.getElementById('xmb-audio'),
-};
+var musicPlayer = { queue:[], queueIdx:0, currentId:null, audio: document.getElementById('xmb-audio') };
 
 function musicPlay(queue, idx) {
+  if (idx < 0 || idx >= queue.length) return;
   musicPlayer.queue    = queue;
   musicPlayer.queueIdx = idx;
   var song = queue[idx];
-  if (!song) return;
   musicPlayer.currentId = song.id;
-
   var audio = musicPlayer.audio;
   audio.src = '/api/subsonic/stream?id=' + song.id;
-  audio.play().catch(function() {});
-
+  audio.play().catch(function(){});
   // Update Now Playing
-  var np = document.getElementById('now-playing');
-  document.getElementById('now-playing-title').textContent  = song.title  || song.name || '—';
+  document.getElementById('now-playing-title').textContent  = song.title || '—';
   document.getElementById('now-playing-artist').textContent = song.artist || '';
   var art = document.getElementById('now-playing-art');
-  if (song.coverArt) {
-    art.src = '/api/subsonic/coverart?id=' + song.coverArt;
-    art.style.display = '';
-  } else {
-    art.style.display = 'none';
-  }
-  np.classList.add('visible');
+  art.src = song.coverArt ? '/api/subsonic/coverart?id='+song.coverArt : '';
+  art.style.display = song.coverArt ? '' : 'none';
+  document.getElementById('now-playing').classList.add('visible');
   document.getElementById('np-play').textContent = '⏸';
 }
 
 musicPlayer.audio.addEventListener('ended', function() {
   var next = musicPlayer.queueIdx + 1;
   if (next < musicPlayer.queue.length) musicPlay(musicPlayer.queue, next);
-  else {
-    document.getElementById('now-playing').classList.remove('visible');
-    musicPlayer.currentId = null;
-  }
+  else document.getElementById('now-playing').classList.remove('visible');
 });
 
 document.getElementById('np-play').addEventListener('click', function() {
-  var audio = musicPlayer.audio;
-  if (audio.paused) { audio.play(); this.textContent = '⏸'; }
-  else { audio.pause(); this.textContent = '▶'; }
+  var a = musicPlayer.audio;
+  if (a.paused) { a.play(); this.textContent='⏸'; } else { a.pause(); this.textContent='▶'; }
 });
-
 document.getElementById('np-prev').addEventListener('click', function() {
-  var prev = musicPlayer.queueIdx - 1;
-  if (prev >= 0) musicPlay(musicPlayer.queue, prev);
+  if (musicPlayer.queueIdx > 0) musicPlay(musicPlayer.queue, musicPlayer.queueIdx-1);
 });
-
 document.getElementById('np-next').addEventListener('click', function() {
-  var next = musicPlayer.queueIdx + 1;
-  if (next < musicPlayer.queue.length) musicPlay(musicPlayer.queue, next);
+  if (musicPlayer.queueIdx < musicPlayer.queue.length-1) musicPlay(musicPlayer.queue, musicPlayer.queueIdx+1);
 });
-
 document.getElementById('np-close').addEventListener('click', function() {
-  musicPlayer.audio.pause();
-  musicPlayer.audio.src = '';
-  musicPlayer.currentId = null;
+  musicPlayer.audio.pause(); musicPlayer.audio.src='';
+  musicPlayer.currentId=null;
   document.getElementById('now-playing').classList.remove('visible');
+  closeMusicCols();
 });
 
-// ── Subsonic URL handler — called from within openItem ───────────────────────
-function handleSubsonicItem(item) {
-  if (!item || !item.url) return;
-  // url format: '#sub-artist:ID' or '#sub-playlist:ID' or '#sub-genre:NAME'
-  var rest  = item.url.replace(/^#sub-/, '');
-  var colon = rest.indexOf(':');
-  var type  = colon >= 0 ? rest.slice(0, colon) : rest;
-  var id    = colon >= 0 ? rest.slice(colon + 1) : '';
-  console.log('[music] handleSubsonicItem type='+type+' id='+id);
-  MUSIC_COL_START = Math.max(20, (window.innerWidth - MUSIC_COL_W) / 2);
-  closeMusicColumns();
-  if (type === 'artist')        openArtistColumn(id, item.name);
-  else if (type === 'playlist') openPlaylistColumn(id, item.name);
-  else if (type === 'genre')    openGenreColumn(id, item.name);
-  else console.warn('[music] unknown subsonic type:', type);
-}
+// ── Hook into openItem for #sub- URLs ─────────────────────────────────────────
+// (called from within existing openItem function)
 
-// Close columns on Escape
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    var wrap = document.getElementById('music-columns');
-    if (wrap && wrap.classList.contains('active')) {
-      if (musicColEls.length > 1) {
-        // Pop last column
-        var old = musicColEls.pop();
-        if (old.parentNode) old.parentNode.removeChild(old);
-        musicCols.pop();
-        if (musicColEls.length === 0) closeMusicColumns();
-      } else {
-        closeMusicColumns();
-      }
-    }
-  }
-});
+// ── Hook renderItems to inject subsonic items ─────────────────────────────────
+// (called from existing renderItems variable patch)
 
-// ── Inject Subsonic items after category renders ─────────────────────────────
-var _subItemCache = null; // cache subsonic items for current session
-var _subCacheForCat = null;
-
-function injectSubsonicItems() {
-  if (!config || !config.subsonic) return;
-  var sub = config.subsonic;
-  // All three required — categoryId must be a real non-empty string
-  if (!sub.url || !sub.username || !sub.categoryId || sub.categoryId === 'undefined') return;
-
-  var cats = config.categories;
-  if (!cats) return;
-  var cat = cats[catIdx];
-  if (!cat) return;
-
-  // Match ONLY on cat.id — never fall back to name
-  // If cat.id is not set, this category cannot match
-  if (!cat.id || cat.id !== sub.categoryId) return;
-
-  var listEl = document.querySelector('.item-list');
-  if (!listEl) return;
-
-  // Snapshot the catIdx at call time — if user switches category during
-  // the async fetch, discard the result
-  var snapCatIdx = catIdx;
-
-  // Use cache if available
-  if (_subItemCache && _subCacheForCat === cat.id) {
-    _appendSubItems(listEl, _subItemCache);
-    return;
-  }
-
-  loadSubsonicItems(cat.id).then(function(subItemList) {
-    // Discard if user has navigated away
-    if (catIdx !== snapCatIdx) return;
-    // Discard if listEl has been replaced
-    if (!document.querySelector('.item-list') || document.querySelector('.item-list') !== listEl) return;
-    if (!subItemList.length) return;
-    _subItemCache = subItemList;
-    _subCacheForCat = cat.id;
-    _appendSubItems(listEl, subItemList);
-  });
-}
-
-function _appendSubItems(listEl, subItemList) {
-  // Don't re-append if already there
-  if (listEl.querySelector('[data-subsonic]')) return;
-
-  if (allItems.length > 0) {
-    var div = document.createElement('div');
-    div.setAttribute('data-subsonic', 'divider');
-    div.style.cssText = 'padding:6px 16px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
-    div.textContent = 'Navidrome';
-    listEl.appendChild(div);
-  }
-
-  // Track start index of subsonic items in allItems
-  var subStartIdx = allItems.length;
-  allItems = allItems.concat(subItemList);
-  showItemSearch(true);
-
-  subItemList.forEach(function(item, si) {
-    var el = document.createElement('div');
-    el.className = 'xmb-item';
-    el.setAttribute('data-subsonic', 'item');
-    el.setAttribute('data-sub-idx', subStartIdx + si);
-    var iconHtml = item.icon
-      ? '<img src="'+item.icon+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
-      : '<span style="font-size:20px">♪</span>';
-    el.innerHTML =
-      '<div class="xmb-item-icon">'+iconHtml+'</div>' +
-      '<div class="xmb-item-text">' +
-        '<div class="xmb-item-name">'+escHtml(item.name)+'</div>' +
-        (item.desc ? '<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>' : '') +
-      '</div>' +
-      '<span class="xmb-item-arrow">›</span>';
-    el.addEventListener('click', function() {
-      // Sync itemIdx to this item
-      var domItems = document.querySelectorAll('.item-list .xmb-item');
-      domItems.forEach(function(d, di) { if (d === el) itemIdx = di; });
-      updateItemSelection();
-      handleSubsonicItem(item);
-    });
-    listEl.appendChild(el);
-  });
-}
-
-
-
-// ── Item search bar ───────────────────────────────────────────────────────────
-function showItemSearch(show) {
-  var wrap = document.getElementById('item-search-wrap');
-  if (wrap) {
-    wrap.style.display = show ? '' : 'none';
-    if (!show) document.getElementById('item-search').value = '';
-  }
-}
-
-function filterItemList(query) {
-  var q = query.trim().toLowerCase();
-  var items = document.querySelectorAll('.item-list .xmb-item');
-  items.forEach(function(el) {
-    var name = (el.querySelector('.xmb-item-name') || el).textContent.toLowerCase();
-    el.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
-  });
-  // Also hide/show separator divs
-  document.querySelectorAll('.item-list div:not(.xmb-item)').forEach(function(el) {
-    el.style.display = q ? 'none' : '';
-  });
-}
-
-document.getElementById('item-search').addEventListener('input', function() {
-  filterItemList(this.value);
-});
-document.getElementById('item-search').addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { this.value = ''; filterItemList(''); this.blur(); e.stopPropagation(); }
-  if (e.key === 'ArrowDown') { this.blur(); e.preventDefault(); }
-});
-
-// Clear search and hide on category change
-var _origUpdateCatForSearch = updateCategoryUI;
-updateCategoryUI = function() {
-  _subItemCache = null; _subCacheForCat = null; // clear cache on category switch
-  _origUpdateCatForSearch();
-  showItemSearch(false);
-  filterItemList('');
-};
-
-// Focus search bar with '/' key
-document.addEventListener('keydown', function(e) {
-  var searchWrap = document.getElementById('item-search-wrap');
-  var searchEl   = document.getElementById('item-search');
-  if (e.key === '/' && searchWrap && searchWrap.style.display !== 'none'
-      && document.activeElement !== searchEl) {
-    e.preventDefault();
-    searchEl.focus();
-    searchEl.select();
-  }
-});
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
