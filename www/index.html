@@ -4013,8 +4013,17 @@ function showLogin() {
 function showEditor() {
   document.getElementById('s-login').style.display  = 'none';
   document.getElementById('s-editor').style.display = 'flex';
-  settingsConfig = JSON.parse(JSON.stringify(config));
-  populateEditor();
+  // Fetch full admin config (includes subsonic credentials)
+  fetch('/api/config', { headers: { 'Authorization': 'Bearer ' + settingsToken } })
+    .then(function(r) { return r.json(); })
+    .then(function(cfg) {
+      settingsConfig = cfg;
+      populateEditor();
+    })
+    .catch(function() {
+      settingsConfig = JSON.parse(JSON.stringify(config));
+      populateEditor();
+    });
 }
 
 async function verifyToken() {
@@ -5989,9 +5998,12 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
     showPlaylists:document.getElementById('sub-playlists').checked,
     showGenres:   document.getElementById('sub-genres').checked,
   };
-  sSave();
-  document.getElementById('sub-status').textContent = '✓ Saved';
-  setTimeout(function() { document.getElementById('sub-status').textContent = ''; }, 2000);
+  saveConfig().then(function() {
+    document.getElementById('sub-status').textContent = '✓ Saved';
+    setTimeout(function() { document.getElementById('sub-status').textContent = ''; }, 2500);
+  }).catch(function(e) {
+    document.getElementById('sub-status').textContent = '✗ ' + e.message;
+  });
 });
 
 document.getElementById('sub-test-btn').addEventListener('click', function() {
