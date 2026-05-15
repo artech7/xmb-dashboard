@@ -634,25 +634,26 @@ html, body {
 #music-columns {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 25;
+  z-index: 60;
   display: none;
-  pointer-events: none;
+  background: rgba(0,0,0,0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
-#music-columns.active { display: block; }
 .music-col {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
   width: 340px;
-  max-height: 70vh;
+  max-height: 72vh;
   overflow: hidden;
   pointer-events: all;
-  background: rgba(10,10,20,0.55);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.08);
-  transition: left 0.30s cubic-bezier(0.4,0,0.2,1), opacity 0.25s;
+  background: rgba(8,10,20,0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
 }
 .music-col-header {
   padding: 10px 16px;
@@ -662,7 +663,9 @@ html, body {
   text-transform: uppercase;
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
-.music-col-list { overflow-y: auto; max-height: calc(70vh - 38px); }
+.music-col-list { overflow-y: auto; max-height: calc(72vh - 42px); }
+.music-col-list::-webkit-scrollbar { width: 3px; }
+.music-col-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 .music-col-item {
   display: flex;
   align-items: center;
@@ -716,7 +719,7 @@ html, body {
     <button class="np-btn" id="np-close" title="Stop">✕</button>
   </div>
 </div>
-<div id="music-columns"></div>
+<div id="music-columns"><button id="music-cols-close" style="position:absolute;top:16px;right:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:50%;width:32px;height:32px;color:#fff;font-size:16px;cursor:pointer;z-index:1;line-height:32px;text-align:center" title="Close">✕</button></div>
 <audio id="xmb-audio"></audio>
 <div id="service-frame-wrap" id="service-frame-wrap">
   <div id="service-close" title="Back to dashboard">✕</div>
@@ -6204,6 +6207,12 @@ function subSearch(query) {
   allItems = config.categories[catIdx].items.slice().concat(filtered);
 }
 
+// Wire initial close button
+document.addEventListener('DOMContentLoaded', function() {
+  var cb = document.getElementById('music-cols-close');
+  if (cb) cb.addEventListener('click', closeMusicCols);
+});
+
 // '/' focuses search
 document.addEventListener('keydown', function(e) {
   if (e.key === '/' && document.getElementById('sub-search') && document.activeElement !== document.getElementById('sub-search')) {
@@ -6225,7 +6234,9 @@ var _musicCols = [];
 
 function closeMusicCols() {
   var wrap = document.getElementById('music-columns');
-  wrap.innerHTML = '';
+  // Rebuild with just the close button
+  wrap.innerHTML = '<button id="music-cols-close" style="position:absolute;top:16px;right:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:50%;width:32px;height:32px;color:#fff;font-size:16px;cursor:pointer;z-index:1;line-height:32px;text-align:center" title="Close">✕</button>';
+  document.getElementById('music-cols-close').addEventListener('click', closeMusicCols);
   wrap.style.display = 'none';
   _musicCols = [];
 }
@@ -6283,6 +6294,8 @@ function repositionMusicCols() {
   _musicCols.forEach(function(col, i) {
     col.style.left = (startX + i*(w+gap)) + 'px';
     col.style.width = w + 'px';
+    col.style.top = '50%';
+    col.style.transform = 'translateY(-50%)';
   });
 }
 
@@ -6343,6 +6356,11 @@ function fetchAndShowGenreSongs(genre, genreName) {
     });
   }).catch(function(e){ console.error('fetchGenre error',e); });
 }
+
+// Click backdrop to close
+document.getElementById('music-columns').addEventListener('click', function(e) {
+  if (e.target === this) closeMusicCols();
+});
 
 // Close columns on Escape (when columns are open)
 document.addEventListener('keydown', function(e) {
