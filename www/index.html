@@ -3925,7 +3925,7 @@ init().then(function() {
           </div>
 
           <!-- ── Music Integration View ── -->
-          <div id="s-view-music-integration" class="s-view" style="display:none">
+          <div id="s-view-music-integration" class="s-view">
             <div class="s-view-title">Music Integration</div>
             <div class="s-field-group">
               <label class="s-label">Navidrome / Subsonic Server URL</label>
@@ -4170,10 +4170,14 @@ function showView(view) {
   else if (view === 'category') {
     var items = document.querySelectorAll('#s-cat-nav .s-nav-item');
     if (items[activeCatIdx]) items[activeCatIdx].classList.add('active');
+  } else if (view === 'music-integration') {
+    document.getElementById('s-nav-music-integration').classList.add('active');
   }
   document.getElementById('s-view-general').classList.toggle('active', view === 'general');
   document.getElementById('s-view-category').classList.toggle('active', view === 'category');
+  document.getElementById('s-view-music-integration').classList.toggle('active', view === 'music-integration');
   if (view === 'category' && activeCatIdx !== null) populateCatView();
+  if (view === 'music-integration') populateMusicIntegrationView();
 }
 
 document.getElementById('s-nav-general').addEventListener('click', function() {
@@ -5948,14 +5952,14 @@ function applyPrefs(prefs) {
 
 // ── Admin: Music nav item ─────────────────────────────────────────────────────
 document.getElementById('s-nav-music-integration').addEventListener('click', function() {
-  document.querySelectorAll('.s-nav-item').forEach(function(el) { el.classList.remove('active'); });
-  document.querySelectorAll('.s-view').forEach(function(el) { el.style.display = 'none'; });
-  this.classList.add('active');
-  document.getElementById('s-view-music-integration').style.display = '';
+  activeCatIdx = null;
+  showView('music-integration');
+});
 
-  // Populate category dropdown
+function populateMusicIntegrationView() {
+  var subCfg = (settingsConfig && settingsConfig.subsonic) || {};
+  // Category dropdown
   var sel = document.getElementById('sub-cat');
-  var subCfg = settingsConfig && settingsConfig.subsonic || {};
   sel.innerHTML = '<option value="">— select category —</option>';
   if (settingsConfig && settingsConfig.categories) {
     settingsConfig.categories.forEach(function(cat) {
@@ -5966,14 +5970,13 @@ document.getElementById('s-nav-music-integration').addEventListener('click', fun
       sel.appendChild(opt);
     });
   }
-  // Populate fields
   document.getElementById('sub-url').value      = subCfg.url      || '';
   document.getElementById('sub-user').value     = subCfg.username || '';
   document.getElementById('sub-pass').value     = subCfg.password || '';
   document.getElementById('sub-artists').checked   = !!subCfg.showArtists;
   document.getElementById('sub-playlists').checked = !!subCfg.showPlaylists;
   document.getElementById('sub-genres').checked    = !!subCfg.showGenres;
-});
+}
 
 document.getElementById('sub-save-btn').addEventListener('click', function() {
   if (!settingsConfig) return;
