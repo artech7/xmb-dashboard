@@ -735,10 +735,6 @@ html, body {
 <div id="cat-name-banner"></div>
 <div id="cat-row"></div>
 <div id="item-panel">
-  <div id="item-search-wrap" style="display:none;padding:0 0 8px">
-    <input id="item-search" type="text" placeholder="Search…" autocomplete="off"
-      style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;letter-spacing:0.04em;outline:none">
-  </div>
   <div class="item-list"></div>
 </div>
 
@@ -3271,7 +3267,7 @@ function renderItems() {
   const listEl   = document.querySelector('.item-list');
   listEl.innerHTML = '';
 
-  allItems = cat.items.slice(); // subsonic items appended async below
+  allItems = cat.items.slice();
   cat.items.forEach((item, i) => {
     const el = document.createElement('div');
     el.className = 'xmb-item' + (i === itemIdx ? ' selected' : '');
@@ -3484,6 +3480,14 @@ document.addEventListener('keydown', e => {
     case 'ArrowRight':
       e.preventDefault();
       if (catIdx < cats.length - 1) { catIdx++; itemIdx = 0; updateCategoryUI(); renderItems(); }
+      break;
+    case '/':
+      var searchEl = document.getElementById('item-search');
+      if (searchEl && document.activeElement !== searchEl) {
+        e.preventDefault();
+        searchEl.focus();
+        searchEl.select();
+      }
       break;
     case 'ArrowUp':
       e.preventDefault();
@@ -6028,6 +6032,7 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
     showPlaylists:document.getElementById('sub-playlists').checked,
     showGenres:   document.getElementById('sub-genres').checked,
   };
+  _subItemCache = null; _subCacheForCat = null; // clear so Music category reloads fresh
   saveConfig().then(function() {
     document.getElementById('sub-status').textContent = '✓ Saved';
     setTimeout(function() { document.getElementById('sub-status').textContent = ''; }, 2500);
@@ -6437,10 +6442,28 @@ function _appendSubItems(listEl, subItemList) {
     listEl.appendChild(div);
   }
 
+  // Search bar — injected below the divider
+  var searchWrap = document.createElement('div');
+  searchWrap.setAttribute('data-subsonic', 'search');
+  searchWrap.style.cssText = 'padding:6px 16px 4px';
+  var searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.id   = 'item-search';
+  searchInput.placeholder = 'Search music… (press /)';
+  searchInput.autocomplete = 'off';
+  searchInput.style.cssText = 'width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:12px;letter-spacing:0.04em;outline:none';
+  searchInput.addEventListener('input', function() { filterItemList(this.value); });
+  searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { this.value = ''; filterItemList(''); this.blur(); e.stopPropagation(); }
+    if (e.key === 'ArrowDown') { this.blur(); e.preventDefault(); }
+  });
+  searchWrap.appendChild(searchInput);
+  listEl.appendChild(searchWrap);
+
   // Track start index of subsonic items in allItems
   var subStartIdx = allItems.length;
   allItems = allItems.concat(subItemList);
-  showItemSearch(true);
+
 
   subItemList.forEach(function(item, si) {
     var el = document.createElement('div');
@@ -6471,24 +6494,12 @@ function _appendSubItems(listEl, subItemList) {
 
 
 // ── Item search bar ───────────────────────────────────────────────────────────
-function showItemSearch(show) {
-  var wrap = document.getElementById('item-search-wrap');
-  if (wrap) {
-    wrap.style.display = show ? '' : 'none';
-    if (!show) document.getElementById('item-search').value = '';
-  }
-}
-
 function filterItemList(query) {
   var q = query.trim().toLowerCase();
-  var items = document.querySelectorAll('.item-list .xmb-item');
-  items.forEach(function(el) {
+  // Only filter subsonic items (data-subsonic="item"), not config service items
+  document.querySelectorAll('.item-list .xmb-item[data-subsonic="item"]').forEach(function(el) {
     var name = (el.querySelector('.xmb-item-name') || el).textContent.toLowerCase();
     el.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
-  });
-  // Also hide/show separator divs
-  document.querySelectorAll('.item-list div:not(.xmb-item)').forEach(function(el) {
-    el.style.display = q ? 'none' : '';
   });
 }
 
@@ -6503,23 +6514,9 @@ document.getElementById('item-search').addEventListener('keydown', function(e) {
 // Clear search and hide on category change
 var _origUpdateCatForSearch = updateCategoryUI;
 updateCategoryUI = function() {
-  _subItemCache = null; _subCacheForCat = null; // clear cache on category switch
   _origUpdateCatForSearch();
-  showItemSearch(false);
-  filterItemList('');
+  filterItemList(''); // clear any active filter
 };
-
-// Focus search bar with '/' key
-document.addEventListener('keydown', function(e) {
-  var searchWrap = document.getElementById('item-search-wrap');
-  var searchEl   = document.getElementById('item-search');
-  if (e.key === '/' && searchWrap && searchWrap.style.display !== 'none'
-      && document.activeElement !== searchEl) {
-    e.preventDefault();
-    searchEl.focus();
-    searchEl.select();
-  }
-});
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
@@ -6610,6 +6607,14 @@ document.addEventListener('keydown', function(e) {
       prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
       applyKbFocus(); break;
 
+    case '/':
+      var searchEl = document.getElementById('item-search');
+      if (searchEl && document.activeElement !== searchEl) {
+        e.preventDefault();
+        searchEl.focus();
+        searchEl.select();
+      }
+      break;
     case 'ArrowUp':
       e.preventDefault();
       prefFocusRow = Math.max(0, prefFocusRow - 1);
