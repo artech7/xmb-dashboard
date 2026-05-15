@@ -6274,7 +6274,8 @@ function showMusicCol(title, rows, colLevel, onRowClick) {
         (row.sub?'<div class="music-col-sub">'+escHtml(row.sub)+'</div>':'') +
       '</div>' +
       (row.hasChildren ? '<span class="music-col-arrow">›</span>' : '');
-    el.addEventListener('click', function() {
+    el.addEventListener('click', function(e) {
+      e.stopPropagation();
       list.querySelectorAll('.music-col-item').forEach(function(r){r.classList.remove('selected');});
       el.classList.add('selected');
       onRowClick(row);
@@ -6357,9 +6358,9 @@ function fetchAndShowGenreSongs(genre, genreName) {
   }).catch(function(e){ console.error('fetchGenre error',e); });
 }
 
-// Click backdrop to close
+// Click backdrop to close (only when clicking the backdrop itself, not columns)
 document.getElementById('music-columns').addEventListener('click', function(e) {
-  if (e.target === this) closeMusicCols();
+  if (e.target === this || e.target.id === 'music-columns') closeMusicCols();
 });
 
 // Close columns on Escape (when columns are open)
@@ -6379,10 +6380,11 @@ document.addEventListener('keydown', function(e) {
 var musicPlayer = { queue:[], queueIdx:0, currentId:null, audio: document.getElementById('xmb-audio') };
 
 function musicPlay(queue, idx) {
-  if (idx < 0 || idx >= queue.length) return;
+  if (!queue || idx < 0 || idx >= queue.length) return;
+  var song = queue[idx];
+  if (!song || !song.id) { console.warn('[music] musicPlay: invalid song at idx', idx, song); return; }
   musicPlayer.queue    = queue;
   musicPlayer.queueIdx = idx;
-  var song = queue[idx];
   musicPlayer.currentId = song.id;
   var audio = musicPlayer.audio;
   audio.src = '/api/subsonic/stream?id=' + song.id;
