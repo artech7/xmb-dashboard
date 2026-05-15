@@ -3342,6 +3342,7 @@ var _frameLoadHandler = null; // track active listener so we can remove it
 function openItem(item) {
   if (item.url === '#admin') { openSettings(); return; }
   if (item.url === '#prefs') { openPrefs(); return; }
+  if (item.url && item.url.startsWith('#sub-')) { handleSubsonicItem(item); return; }
 
   var root    = document.getElementById('xmb-root');
   var overlay = document.getElementById('open-flash');
@@ -3666,6 +3667,8 @@ renderItems = function() {
       });
     });
   }
+  // Inject Subsonic items after normal items render
+  injectSubsonicItems();
 };
 
 // ── Patch updateCategoryUI to also update mobile strip ────────────────────────
@@ -6290,27 +6293,14 @@ document.getElementById('np-close').addEventListener('click', function() {
   document.getElementById('now-playing').classList.remove('visible');
 });
 
-// ── Hook into openItem for Subsonic URLs ──────────────────────────────────────
-
-var _origOpenItem = openItem;
-function openItem(item) {
-  if (!item.url || !item.url.startsWith('#sub-')) {
-    // Close music columns if open and opening a non-music item
-    closeMusicColumns();
-    return _origOpenItem(item);
-  }
-
-  var parts = item.url.slice(5).split(':');  // strip '#sub-'
+// ── Subsonic URL handler — called from within openItem ───────────────────────
+function handleSubsonicItem(item) {
+  var parts = item.url.slice(5).split(':');
   var type  = parts[0];
   var id    = parts.slice(1).join(':');
-
-  // Position first column centered
   MUSIC_COL_START = Math.max(20, (window.innerWidth - MUSIC_COL_W) / 2);
-
-  // Clear existing columns and open fresh
   closeMusicColumns();
-
-  if (type === 'artist')   openArtistColumn(id, item.name);
+  if (type === 'artist')        openArtistColumn(id, item.name);
   else if (type === 'playlist') openPlaylistColumn(id, item.name);
   else if (type === 'genre')    openGenreColumn(id, item.name);
 }
@@ -6333,12 +6323,8 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-// ── Inject Subsonic items when category renders ───────────────────────────────
-
-var _origRenderItems = renderItems;
-function renderItems() {
-  _origRenderItems();
-
+// ── Inject Subsonic items after category renders ─────────────────────────────
+function injectSubsonicItems() {
   if (!config || !config.subsonic || !config.subsonic.url) return;
   var sub = config.subsonic;
   var cats = config.categories;
@@ -6346,11 +6332,9 @@ function renderItems() {
   var cat = cats[catIdx];
   if (!cat || cat.id !== sub.categoryId) return;
 
-  // Show loading indicator
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
 
-  // Add a divider if there are manual items
   if (cat.items && cat.items.length > 0) {
     var div = document.createElement('div');
     div.style.cssText = 'padding:6px 16px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
@@ -6358,9 +6342,9 @@ function renderItems() {
     listEl.appendChild(div);
   }
 
-  loadSubsonicItems(cat.id).then(function(subItems) {
-    if (!subItems.length) return;
-    subItems.forEach(function(item) {
+  loadSubsonicItems(cat.id).then(function(subItemList) {
+    if (!subItemList.length) return;
+    subItemList.forEach(function(item) {
       var el = document.createElement('div');
       el.className = 'xmb-item';
       var iconHtml = item.icon
@@ -6373,7 +6357,10 @@ function renderItems() {
           (item.desc ? '<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>' : '') +
         '</div>' +
         '<span class="xmb-item-arrow">›</span>';
-      el.addEventListener('click', function() { openItem(item); });
+      el.addEventListener('click', function() {
+        if (item.url && item.url.startsWith('#sub-')) handleSubsonicItem(item);
+        else openItem(item);
+      });
       listEl.appendChild(el);
     });
   });
