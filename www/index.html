@@ -3332,8 +3332,7 @@ function scrollItemList() {
   var items = listEl.querySelectorAll('.xmb-item');
   if (!items.length) return;
 
-  var selEl = items[itemIdx] || items[0];
-  var itemH = selEl.offsetHeight + 2;
+  var itemH = (items[0].offsetHeight || 62) + 2;
   if (itemH <= 2) return;
 
   var panelEl = document.getElementById('item-panel');
@@ -3341,14 +3340,15 @@ function scrollItemList() {
   var panelH = panelEl.offsetHeight - 32;
   if (panelH <= 0) return;
 
-  // XMB style: selected item anchored ~2 items from top of panel
-  // As you go down, list scrolls up keeping selection near the top
-  var anchorPos = Math.floor(itemH * 1.5); // ~1.5 items from top
-  var targetOffset = -( itemIdx * itemH ) + anchorPos;
+  // XMB style: selected item sits at fixed position near top of panel
+  // Offset moves the list so selected item appears at anchorPx from top
+  var anchorPx  = Math.round(itemH * 0.5); // half an item from the top
+  var targetOffset = anchorPx - (itemIdx * itemH);
 
-  // Clamp: no blank above first, no blank below last
-  var listH    = items.length * itemH;
+  // Clamp: don't show blank above first item
   var maxOffset = 0;
+  // Don't show blank below last item
+  var listH     = items.length * itemH;
   var minOffset = Math.min(0, panelH - listH);
   targetOffset  = Math.max(minOffset, Math.min(maxOffset, targetOffset));
 
