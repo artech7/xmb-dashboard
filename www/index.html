@@ -6083,7 +6083,7 @@ function loadSubsonicItems(sub) {
         (Array.isArray(g.artist) ? g.artist : (g.artist ? [g.artist] : [])).forEach(function(a) {
           items.push({ _type:'artist', _id:a.id, name:a.name,
             desc:(a.albumCount||0)+' album'+(a.albumCount!==1?'s':''),
-            coverArt:a.coverArt||null });
+            coverArt:a.coverArt||null, url:'#sub-artist:'+a.id });
         });
       });
     }).catch(function(){}));
@@ -6095,7 +6095,7 @@ function loadSubsonicItems(sub) {
       lists.forEach(function(pl) {
         items.push({ _type:'playlist', _id:pl.id, name:pl.name,
           desc:(pl.songCount||0)+' song'+(pl.songCount!==1?'s':''),
-          coverArt:pl.coverArt||null });
+          coverArt:pl.coverArt||null, url:'#sub-playlist:'+pl.id });
       });
     }).catch(function(){}));
   }
@@ -6106,7 +6106,7 @@ function loadSubsonicItems(sub) {
       genres.sort(function(a,b){ return (b.songCount||0)-(a.songCount||0); });
       genres.forEach(function(g) {
         items.push({ _type:'genre', _id:encodeURIComponent(g.value), name:g.value,
-          desc:(g.songCount||0)+' songs', coverArt:null });
+          desc:(g.songCount||0)+' songs', coverArt:null, url:'#sub-genre:'+encodeURIComponent(g.value) });
       });
     }).catch(function(){}));
   }
