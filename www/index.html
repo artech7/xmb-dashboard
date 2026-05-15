@@ -5990,6 +5990,7 @@ function populateMusicIntegrationView() {
   sel.innerHTML = '<option value="">— select category —</option>';
   if (settingsConfig && settingsConfig.categories) {
     settingsConfig.categories.forEach(function(cat) {
+      if (!cat.id) return; // skip categories without an id
       var opt = document.createElement('option');
       opt.value = cat.id;
       opt.textContent = cat.name;
@@ -6387,31 +6388,39 @@ var _subCacheForCat = null;
 function injectSubsonicItems() {
   if (!config || !config.subsonic) return;
   var sub = config.subsonic;
-  if (!sub.url || !sub.username) return;
+  // All three required — categoryId must be a real non-empty string
+  if (!sub.url || !sub.username || !sub.categoryId || sub.categoryId === 'undefined') return;
 
-  // Strict category match — both must be non-empty strings
   var cats = config.categories;
   if (!cats) return;
   var cat = cats[catIdx];
   if (!cat) return;
-  // Use cat.id if set, otherwise cat.name as fallback key
-  var catKey = cat.id || cat.name;
-  if (!catKey || !sub.categoryId) return;
-  if (catKey !== sub.categoryId) return;
+
+  // Match ONLY on cat.id — never fall back to name
+  // If cat.id is not set, this category cannot match
+  if (!cat.id || cat.id !== sub.categoryId) return;
 
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
 
-  // Use cache if available for this category
-  if (_subItemCache && _subCacheForCat === catKey) {
+  // Snapshot the catIdx at call time — if user switches category during
+  // the async fetch, discard the result
+  var snapCatIdx = catIdx;
+
+  // Use cache if available
+  if (_subItemCache && _subCacheForCat === cat.id) {
     _appendSubItems(listEl, _subItemCache);
     return;
   }
 
-  loadSubsonicItems(catKey).then(function(subItemList) {
+  loadSubsonicItems(cat.id).then(function(subItemList) {
+    // Discard if user has navigated away
+    if (catIdx !== snapCatIdx) return;
+    // Discard if listEl has been replaced
+    if (!document.querySelector('.item-list') || document.querySelector('.item-list') !== listEl) return;
     if (!subItemList.length) return;
     _subItemCache = subItemList;
-    _subCacheForCat = catKey;
+    _subCacheForCat = cat.id;
     _appendSubItems(listEl, subItemList);
   });
 }
