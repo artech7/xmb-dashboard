@@ -509,9 +509,10 @@ html, body {
     min-width: unset;
     max-width: unset;
     width: 100%;
-    padding: 0 0 32px;
+    padding: 0 0 80px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    height: auto;
   }
   #item-panel::-webkit-scrollbar { display: none; }
   .item-list {
@@ -569,6 +570,39 @@ html, body {
   .p-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .p-row-label { width: auto; }
   .p-toggle-group { flex-wrap: wrap; }
+
+  /* ── Mobile music back button ── */
+  #music-back-btn {
+    display: none;
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    background: rgba(20,20,40,0.88);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 24px;
+    padding: 12px 32px;
+    color: #fff;
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    font-family: 'Exo 2', sans-serif;
+  }
+  #music-back-btn.visible { display: block; }
+  #music-level-title {
+    display: none;
+    padding: 8px 18px 2px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    font-family: 'Exo 2', sans-serif;
+  }
+  #music-level-title.visible { display: block; }
+  #sub-search { font-size: 15px !important; padding: 10px 14px !important; }
 }
 
 @media (max-width: 480px) {
@@ -723,6 +757,8 @@ html, body {
   </div>
 </div>
 
+<div id="music-level-title"></div>
+<button id="music-back-btn" onclick="musicPopLevel()">← Back</button>
 <div id="cat-name-banner"></div>
 <div id="cat-row"></div>
 <div id="item-panel">
@@ -6084,7 +6120,10 @@ function musicPopLevel() {
     // Back to root XMB state
     musicStack = [];
     inMusicDrill = false;
-    // Restore original list
+    var backBtn = document.getElementById('music-back-btn');
+    var titleEl = document.getElementById('music-level-title');
+    if (backBtn) backBtn.classList.remove('visible');
+    if (titleEl) titleEl.classList.remove('visible');
     var cat = config.categories[catIdx];
     if (cat) { renderItems(); injectSubsonicItems(); }
     return;
@@ -6097,10 +6136,6 @@ function musicRenderLevel() {
   var level = musicStack[musicStack.length - 1];
   if (!level) return;
 
-  // Slide current panel out to left (visual cue)
-  var panel = document.getElementById('item-panel');
-
-  // Replace item list content with this level's items
   var listEl = document.querySelector('.item-list');
   if (!listEl) return;
   listEl.innerHTML = '';
@@ -6109,6 +6144,13 @@ function musicRenderLevel() {
   // Update allItems and itemIdx for keyboard nav
   allItems = level.items;
   itemIdx  = level.selectedIdx || 0;
+
+  // Mobile: show/hide back button and level title
+  var backBtn   = document.getElementById('music-back-btn');
+  var titleEl   = document.getElementById('music-level-title');
+  var isDrill   = inMusicDrill && musicStack.length > 1;
+  if (backBtn)  { backBtn.classList.toggle('visible', isDrill); }
+  if (titleEl)  { titleEl.textContent = level.title || ''; titleEl.classList.toggle('visible', !!(isDrill && level.title)); }
 
   level.items.forEach(function(item, i) {
     var el = document.createElement('div');
@@ -6261,7 +6303,7 @@ function injectSubsonicItems() {
     var sw = document.createElement('div');
     sw.setAttribute('data-sub', 'search');
     sw.style.cssText = 'padding:4px 16px 8px';
-    sw.innerHTML = '<input id="sub-search" type="text" placeholder="Search music… (press /)" autocomplete="off" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;outline:none">';
+    sw.innerHTML = '<input id="sub-search" type="text" placeholder="Search music…" autocomplete="off" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;outline:none">';
     listEl.appendChild(sw);
     var si = document.getElementById('sub-search');
     si.addEventListener('input', function() { subSearch(this.value); });
