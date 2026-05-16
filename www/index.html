@@ -6048,7 +6048,7 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
     showPlaylists:document.getElementById('sub-playlists').checked,
     showGenres:   document.getElementById('sub-genres').checked,
   };
-  subCache = {}; _streamUrlCache = {};
+  subCache = {}; _streamUrlCache = {}; _coverUrlCache = {};
   saveConfig().then(function() {
     document.getElementById('sub-status').textContent = '✓ Saved';
     var tb = document.getElementById('sub-test-btn');
@@ -6187,6 +6187,16 @@ function musicRenderLevel() {
   }
 
   scrollItemList();
+
+  // Preload cover art for visible items in background
+  var preloadCount = 0;
+  level.items.forEach(function(item) {
+    if (item.coverArt && preloadCount < 12) {
+      var img = new Image();
+      img.src = '/api/subsonic/coverart?id=' + item.coverArt + '&size=300';
+      preloadCount++;
+    }
+  });
 }
 
 function musicItemAction(item) {
@@ -6348,6 +6358,14 @@ function injectSubsonicItems() {
 
     allItems = (config.categories[catIdx].items || []).concat(items);
     scrollItemList();
+
+    // Preload first batch of cover art
+    items.slice(0, 15).forEach(function(item) {
+      if (item.coverArt) {
+        var img = new Image();
+        img.src = '/api/subsonic/coverart?id=' + item.coverArt + '&size=300';
+      }
+    });
   });
 }
 
@@ -6411,6 +6429,17 @@ var musicPlayer = { queue:[], queueIdx:0, currentId:null, audio:document.getElem
 
 // Cache of direct stream URLs keyed by song id
 var _streamUrlCache = {};
+// Cache of direct cover art URLs keyed by coverArt id
+var _coverUrlCache  = {};
+
+function getCoverUrl(coverArtId, callback) {
+  if (!coverArtId) { callback(null); return; }
+  if (_coverUrlCache[coverArtId]) { callback(_coverUrlCache[coverArtId]); return; }
+  // Use proxy URL directly — browser will cache via Cache-Control headers
+  var url = '/api/subsonic/coverart?id=' + coverArtId + '&size=300';
+  _coverUrlCache[coverArtId] = url; // cache immediately (proxy URL is stable)
+  callback(url);
+}
 
 function musicPlay(queue, idx) {
   if (!queue || idx < 0 || idx >= queue.length) return;

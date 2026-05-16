@@ -233,19 +233,22 @@ app.get('/api/subsonic/stream', (req, res) => {
   }).on('error', err => res.status(502).send(err.message));
 });
 
-// Cover art proxy
+// Cover art proxy — with long-lived browser cache
 app.get('/api/subsonic/coverart', (req, res) => {
   const cfg = readConfig();
   const { url, username, password } = cfg.subsonic || {};
   if (!url || !username || !password) return res.status(400).send('Not configured');
 
-  const base   = url.replace(/\/$/, '');
-  const qp     = new URLSearchParams({ u: username, p: password, v: '1.16.1', c: 'xmb-dashboard', id: req.query.id, size: 64 });
+  const base    = url.replace(/\/$/, '');
+  const size    = req.query.size || 300;
+  const qp      = new URLSearchParams({ u: username, p: password, v: '1.16.1', c: 'xmb-dashboard', id: req.query.id, size });
   const fullUrl = `${base}/rest/getCoverArt?${qp.toString()}`;
 
   const lib = fullUrl.startsWith('https') ? https : http;
   lib.get(fullUrl, (r2) => {
     res.setHeader('Content-Type', r2.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // 7 days
+    res.setHeader('ETag', `"cover-${req.query.id}-${size}"`);
     r2.pipe(res);
   }).on('error', err => res.status(502).send(err.message));
 });
