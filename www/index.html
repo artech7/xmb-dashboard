@@ -1070,7 +1070,13 @@ function animLoop() {
 window.addEventListener('resize', resize);
 document.addEventListener('themechange', function(){ hexGridCanvas = null; });
 resize();
-animLoop();
+// Defer animLoop start until all script blocks have executed
+// so initWebGL() has run and glSupported is set correctly
+window.addEventListener('load', function() {
+  glSupported = initWebGL();
+  if (glSupported) resize(); // re-sync GL canvas size after init
+  animLoop();
+});
 
 
 
@@ -3202,8 +3208,7 @@ function renderGLInk()     { glRenderFrame(glProgInk, glInkLocs); }
 function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
 // ── Init on load ──────────────────────────────────────────────────────────
-glSupported = initWebGL();
-if (glSupported) resize(); // ensure GL canvas matches window after shader compile
+// initWebGL() is now called from window.load handler above
 
 // ─── CLOCK ────────────────────────────────────────────────────────────────────
 function updateClock(format24h) {
