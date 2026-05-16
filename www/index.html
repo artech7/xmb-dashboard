@@ -143,11 +143,12 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
   min-width: 380px;
-  max-width: 500px;
+  max-width: 640px;
+  width: 48vw;
   padding-top: 32px;
   /* Fixed window — list scrolls inside via translateY */
   overflow: hidden;
-  max-height: 460px;
+  max-height: calc(100vh - 220px);
 }
 
 /* No fade overlays needed — clean clip via overflow:hidden */
