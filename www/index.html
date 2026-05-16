@@ -722,7 +722,7 @@ html, body {
 <body>
 
 <canvas id="bg-canvas"></canvas>
-<canvas id="gl-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none"></canvas>
+<canvas id="gl-canvas" style="position:fixed;top:0;left:0;z-index:1;pointer-events:none;display:none"></canvas>
 <div id="loading">
   <div id="loading-title">Homelab</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
@@ -961,15 +961,29 @@ function drawBlob(cx, cy, radius, rgb, alpha) {
 }
 
 function resize() {
-  W = canvas.width  = window.innerWidth;
-  H = canvas.height = window.innerHeight;
+  var dpr = window.devicePixelRatio || 1;
+  var vw  = window.innerWidth;
+  var vh  = window.innerHeight;
+  // Canvas 2D — match CSS display size exactly (no DPR scaling needed for our art)
+  W = canvas.width  = vw;
+  H = canvas.height = vh;
   initStars();
-  if (glCanvas) { glCanvas.width = W; glCanvas.height = H; }
-  if (gl) gl.viewport(0, 0, W, H);
+  // GL canvas — match CSS display size; WebGL shaders use normalised coords
+  // so DPR doesn't matter for shader quality, but viewport must match exactly
+  if (glCanvas) {
+    glCanvas.width  = vw;
+    glCanvas.height = vh;
+  }
+  if (gl) {
+    gl.viewport(0, 0, vw, vh);
+    // Force reupload of resolution uniform on next frame
+    glLastW = 0; glLastH = 0;
+  }
   // Reset screen-size-dependent animation states
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
   auroraCurtains = null; bokehCircles = null; inkBlobs = null;
+  hexGridCanvas = null; hexCells = null;
 }
 
 function drawNebula() {
@@ -2598,6 +2612,7 @@ function drawInkWater() {
 var glCanvas    = document.getElementById('gl-canvas');
 var gl          = null;
 var glSupported = false;
+var glLastW = 0, glLastH = 0; // track last GL viewport size
 var glProgAurora  = null;
 var glProgInk     = null;
 var glProgNebula  = null;
@@ -3169,7 +3184,8 @@ function glSetUniforms(locs, useAccentForC0) {
 function glRenderFrame(prog, locs, useAccentForC0) {
   // Always reset to main canvas to avoid fluid sim leaving dirty state
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+  // Ensure viewport matches canvas (may have changed on resize)
+  gl.viewport(0, 0, glCanvas.width || W, glCanvas.height || H);
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
   var pos = gl.getAttribLocation(prog, 'a_pos');
@@ -3187,6 +3203,7 @@ function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
 // ── Init on load ──────────────────────────────────────────────────────────
 glSupported = initWebGL();
+if (glSupported) resize(); // ensure GL canvas matches window after shader compile
 
 // ─── CLOCK ────────────────────────────────────────────────────────────────────
 function updateClock(format24h) {
