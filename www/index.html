@@ -6060,12 +6060,20 @@ function toArr(x) { return !x ? [] : Array.isArray(x) ? x : [x]; }
 var musicStack = [];
 var inMusicDrill = false; // true when showing drill-down level
 
-function musicPushLevel(title, items) {
-  // Save current item list scroll position and selection
+function musicPushLevel(title, items, fromLevel) {
+  // fromLevel: the stack depth we're drilling FROM
+  // Truncate any levels above fromLevel before pushing the new one
+  var rootDepth = 1; // stack[0] is always root snapshot
+  var targetDepth = (fromLevel !== undefined ? fromLevel : musicStack.length - 1) + 1;
+
   if (musicStack.length === 0) {
-    // First push: snapshot the current XMB state
+    // First push ever: snapshot current XMB state as root
     musicStack.push({ title: null, items: allItems.slice(), selectedIdx: itemIdx, isRoot: true });
   }
+
+  // Truncate to targetDepth (replaces siblings at same level)
+  while (musicStack.length > targetDepth) musicStack.pop();
+
   musicStack.push({ title: title, items: items, selectedIdx: 0 });
   inMusicDrill = true;
   musicRenderLevel();
@@ -6154,7 +6162,7 @@ function musicItemAction(item) {
           coverArt:a.coverArt||null, _type:'album', _id:a.id,
           url:'#sub-album:'+a.id };
       });
-      musicPushLevel(item.name, items);
+      musicPushLevel(item.name, items, 0); // always push at depth 1 (replace prev artist)
     });
   } else if (item._type === 'album') {
     subFetch('album', {id: item._id}).then(function(d) {
@@ -6164,7 +6172,7 @@ function musicItemAction(item) {
           desc:(s.artist||'')+(s.duration?' · '+Math.floor(s.duration/60)+':'+(s.duration%60<10?'0':'')+s.duration%60:''),
           coverArt:s.coverArt||null, _song:s, _queue:songs, url:'#sub-song:'+s.id };
       });
-      musicPushLevel(item.name, items);
+      musicPushLevel(item.name, items, 1); // depth 2 (songs under album)
     });
   } else if (item._type === 'playlist') {
     subFetch('playlist', {id: item._id}).then(function(d) {
@@ -6173,7 +6181,7 @@ function musicItemAction(item) {
         return { name:s.title, desc:s.artist||'', coverArt:s.coverArt||null,
           _song:s, _queue:songs, url:'#sub-song:'+s.id };
       });
-      musicPushLevel(item.name, items);
+      musicPushLevel(item.name, items, 0); // depth 1
     });
   } else if (item._type === 'genre') {
     subFetch('bygenre', {genre: decodeURIComponent(item._id)}).then(function(d) {
@@ -6182,7 +6190,7 @@ function musicItemAction(item) {
         return { name:s.title, desc:s.artist||'', coverArt:s.coverArt||null,
           _song:s, _queue:songs, url:'#sub-song:'+s.id };
       });
-      musicPushLevel(item.name, items);
+      musicPushLevel(item.name, items, 0); // depth 1
     });
   }
 }
