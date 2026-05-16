@@ -6048,7 +6048,7 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
     showPlaylists:document.getElementById('sub-playlists').checked,
     showGenres:   document.getElementById('sub-genres').checked,
   };
-  subCache = {};
+  subCache = {}; _streamUrlCache = {};
   saveConfig().then(function() {
     document.getElementById('sub-status').textContent = '✓ Saved';
     var tb = document.getElementById('sub-test-btn');
@@ -6336,6 +6336,13 @@ function injectSubsonicItems() {
         updateItemSelection();
         musicItemAction(item);
       });
+      // Prefetch artist/playlist data on mouse hover for faster drill-down
+      if (item._type === 'artist' || item._type === 'playlist') {
+        el.addEventListener('mouseenter', function() {
+          var endpoint = item._type === 'artist' ? 'artist' : 'playlist';
+          subFetch(endpoint, {id: item._id}); // warms the cache, result ignored
+        }, { once: true });
+      }
       listEl.appendChild(el);
     });
 
@@ -6402,14 +6409,16 @@ document.addEventListener('keydown', function(e) {
 // ── Audio player ──────────────────────────────────────────────────────────────
 var musicPlayer = { queue:[], queueIdx:0, currentId:null, audio:document.getElementById('xmb-audio') };
 
+// Cache of direct stream URLs keyed by song id
+var _streamUrlCache = {};
+
 function musicPlay(queue, idx) {
   if (!queue || idx < 0 || idx >= queue.length) return;
   var song = queue[idx];
   if (!song || !song.id) return;
   musicPlayer.queue = queue; musicPlayer.queueIdx = idx; musicPlayer.currentId = song.id;
-  var a = musicPlayer.audio;
-  a.src = '/api/subsonic/stream?id=' + song.id;
-  a.play().catch(function(){});
+
+  // Update Now Playing UI immediately — don't wait for URL fetch
   document.getElementById('now-playing-title').textContent  = song.title || '—';
   document.getElementById('now-playing-artist').textContent = song.artist || '';
   var art = document.getElementById('now-playing-art');
@@ -6417,6 +6426,42 @@ function musicPlay(queue, idx) {
   art.style.display = song.coverArt ? '' : 'none';
   document.getElementById('now-playing').classList.add('visible');
   document.getElementById('np-play').textContent = '⏸';
+
+  function startPlay(streamUrl) {
+    var a = musicPlayer.audio;
+    // Only update src if song hasn't changed while we were fetching
+    if (musicPlayer.currentId !== song.id) return;
+    a.src = streamUrl;
+    a.play().catch(function(){});
+    // Prefetch next song URL in background
+    var next = queue[idx + 1];
+    if (next && next.id && !_streamUrlCache[next.id]) {
+      fetch('/api/subsonic/streamurl?id=' + next.id)
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if (d.url) _streamUrlCache[next.id] = d.url; })
+        .catch(function(){});
+    }
+  }
+
+  // Use cached direct URL if available, otherwise fetch it
+  if (_streamUrlCache[song.id]) {
+    startPlay(_streamUrlCache[song.id]);
+  } else {
+    fetch('/api/subsonic/streamurl?id=' + song.id)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.url) {
+          _streamUrlCache[song.id] = d.url;
+          startPlay(d.url);
+        } else {
+          // Fallback to proxy if direct URL fails
+          startPlay('/api/subsonic/stream?id=' + song.id);
+        }
+      })
+      .catch(function(){
+        startPlay('/api/subsonic/stream?id=' + song.id);
+      });
+  }
 }
 
 musicPlayer.audio.addEventListener('ended', function() {

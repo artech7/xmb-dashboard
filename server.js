@@ -250,6 +250,28 @@ app.get('/api/subsonic/coverart', (req, res) => {
   }).on('error', err => res.status(502).send(err.message));
 });
 
+
+// Direct stream URL — returns a pre-authenticated Navidrome URL
+// Browser streams directly from Navidrome, bypassing Node proxy
+app.get('/api/subsonic/streamurl', (req, res) => {
+  const cfg = readConfig();
+  const { url, username, password } = cfg.subsonic || {};
+  if (!url || !username || !password) return res.status(400).json({ error: 'Not configured' });
+  const base = url.replace(/\/$/, '');
+  const qp   = new URLSearchParams({ u: username, p: password, v: '1.16.1', c: 'xmb-dashboard', id: req.query.id });
+  res.json({ url: `${base}/rest/stream?${qp.toString()}` });
+});
+
+// Direct cover art URL — same idea
+app.get('/api/subsonic/coverurl', (req, res) => {
+  const cfg = readConfig();
+  const { url, username, password } = cfg.subsonic || {};
+  if (!url || !username || !password) return res.status(400).json({ error: 'Not configured' });
+  const base = url.replace(/\/$/, '');
+  const qp   = new URLSearchParams({ u: username, p: password, v: '1.16.1', c: 'xmb-dashboard', id: req.query.id, size: 300 });
+  res.json({ url: `${base}/rest/getCoverArt?${qp.toString()}` });
+});
+
 app.get('/admin', (_req, res) => {
   res.sendFile(path.join(__dirname, 'www', 'index.html'));
 });
