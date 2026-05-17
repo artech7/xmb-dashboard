@@ -139,17 +139,18 @@ html, body {
 #item-panel {
   position: fixed;
   z-index: 20;
-  top: 50%;
+  /* Sit below the category icon row */
+  top: calc(42vh + 80px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 380px;
-  max-width: 640px;
+  min-width: min(380px, 92vw);   /* shrinks on very small screens */
+  max-width: min(640px, 92vw);
   width: 48vw;
-  padding-top: 32px;
+  padding-top: 24px;
   padding-bottom: 56px;
-  /* Fixed window — list scrolls inside via translateY */
   overflow: hidden;
-  max-height: calc(100vh - 180px);
+  /* Height fills from below cat-row to above hint bar */
+  max-height: calc(58vh - 80px);
 }
 
 /* No fade overlays needed — clean clip via overflow:hidden */
@@ -3387,25 +3388,27 @@ function scrollItemList() {
   var panelEl = document.getElementById('item-panel');
   if (!panelEl) return;
 
-  // Visible window = panel client height minus top padding
-  // clientHeight excludes borders, includes padding — subtract paddingTop only
-  var style   = window.getComputedStyle(panelEl);
-  var padTop  = parseFloat(style.paddingTop)    || 32;
-  var padBot  = parseFloat(style.paddingBottom) || 56;
-  var panelH  = panelEl.clientHeight - padTop - padBot;
-  if (panelH <= 0) return;
+  // Panel geometry:
+  // - clientHeight includes paddingTop + paddingBottom
+  // - list starts at offsetTop (= paddingTop from panel top)
+  // - overflow:hidden clips at clientHeight
+  // - usable scroll viewport = clientHeight - listEl.offsetTop
+  var listOffsetTop = listEl.offsetTop; // distance from panel top to list top
+  var viewportH     = panelEl.clientHeight - listOffsetTop;
+  if (viewportH <= 20) return;
 
   var itemTop = selEl.offsetTop;
   var itemH   = selEl.offsetHeight || 62;
 
-  // Anchor: selected item near top
+  // Anchor: selected item sits ~1 item from top of viewport
   var anchorPx     = itemH * 0.8;
   var targetOffset = anchorPx - itemTop;
 
-  // Clamp: no gap above first, last item fully visible
-  var listH    = listEl.scrollHeight;
+  // Clamp: never show blank above list start
   var maxOffset = 0;
-  var minOffset = Math.min(0, panelH - listH);
+  // Never scroll last item out of view — stop when last item bottom hits viewport bottom
+  var listH    = listEl.scrollHeight;
+  var minOffset = Math.min(0, viewportH - listH);
   targetOffset  = Math.max(minOffset, Math.min(maxOffset, targetOffset));
 
   listEl.style.transform = 'translateY(' + targetOffset + 'px)';
@@ -6427,16 +6430,10 @@ function injectSubsonicItems() {
       }
     });
 
-    // Inject music sort bar and default to Artists view
+    // Inject sort bar — filter already applied inside subInjectSortBar
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         subInjectSortBar(items);
-        // Auto-apply Artists filter on first load
-        var bar = document.querySelector('[data-sub-sort]');
-        if (bar) {
-          var btn = bar.querySelector('[data-sort="Artists"]');
-          if (btn) btn.click();
-        }
       });
     });
   });
@@ -7104,6 +7101,9 @@ function subInjectSortBar(rawItems) {
   } else {
     listEl.appendChild(bar);
   }
+
+  // Apply default Artists filter without .click() to avoid re-render loops
+  applySubSort('Artists');
 }
 
 // 'S' key cycles both ABS and Sub sort bars
