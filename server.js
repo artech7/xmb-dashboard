@@ -427,10 +427,50 @@ app.get('/api/abs/streamurl/:id', auth, (req, res) => {
   const { url, token } = cfg.abs || {};
   if (!url || !token) return res.status(400).json({ error: 'Not configured' });
   const ep  = req.query.episode || '';
-  const path = ep
-    ? `/api/items/${req.params.id}/file?episode=${ep}&token=${token}`
-    : `/api/items/${req.params.id}/file?token=${token}`;
-  res.json({ url: url.replace(/\/$/, '') + path });
+  const base = url.replace(/\/$/, '');
+
+  // For episodes, direct file URL works fine
+  if (ep) {
+    return res.json({ url: `${base}/api/items/${req.params.id}/file?episode=${ep}&token=${token}` });
+  }
+
+  // For audiobooks: fetch item to find audio tracks
+  // Some books are single-file (just use /file), others are multi-track
+  const absRequest2 = (path, cb) => {
+    const fullUrl = base + path;
+    const lib2 = fullUrl.startsWith('https') ? https : http;
+    const urlObj = new URL(fullUrl);
+    const r = lib2.request({
+      method: 'GET', hostname: urlObj.hostname,
+      port: parseInt(urlObj.port) || (fullUrl.startsWith('https') ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      headers: { Authorization: `Bearer ${token}` }
+    }, (r2) => {
+      let data = '';
+      r2.on('data', c => data += c);
+      r2.on('end', () => { try { cb(JSON.parse(data)); } catch { cb(null); } });
+    });
+    r.on('error', () => cb(null));
+    r.end();
+  };
+
+  absRequest2(`/api/items/${req.params.id}?expanded=1`, (item) => {
+    if (!item) return res.json({ url: `${base}/api/items/${req.params.id}/file?token=${token}` });
+    const tracks = (item.media && item.media.audioFiles) || [];
+    if (tracks.length <= 1) {
+      // Single file — direct URL
+      return res.json({ url: `${base}/api/items/${req.params.id}/file?token=${token}`, tracks: [] });
+    }
+    // Multi-track — return track list so client can seek correctly
+    const trackUrls = tracks.map((t, i) => ({
+      index: i,
+      filename: t.metadata && t.metadata.filename,
+      duration: t.duration,
+      url: `${base}/api/items/${req.params.id}/file/${encodeURIComponent(t.ino || i)}?token=${token}`
+    }));
+    // Fallback: use /file which ABS serves as concatenated stream
+    res.json({ url: `${base}/api/items/${req.params.id}/file?token=${token}`, tracks: trackUrls });
+  });
 });
 
 

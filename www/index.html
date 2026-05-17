@@ -6774,20 +6774,27 @@ function absItemAction(item) {
   if (item._absType === 'library') {
     absFetch('/library/' + item._absId + '/items?limit=100').then(function(d) {
       var results = d.results || [];
-      var items = results.map(function(r) {
+      var isBook = item._absMediaType !== 'podcast';
+      var rawItems = results.map(function(r) {
         var meta = (r.media && r.media.metadata) || {};
-        var isBook = item._absMediaType !== 'podcast';
         return {
           name: meta.title || r.id,
           desc: isBook ? (meta.authorName || '') : ((r.media && r.media.numEpisodes || 0) + ' episodes'),
+          author: meta.authorName || '',
+          genres: meta.genres || [],
           coverArt: r.id,
           _absType: isBook ? 'book' : 'podcast',
           _absId: r.id,
           _absMediaType: item._absMediaType,
+          _rawMeta: meta,
           url: '#abs-item:' + r.id
         };
       });
-      musicPushLevel(item.name, items, 0);
+      // Default sort: title
+      rawItems.sort(function(a,b){ return a.name.localeCompare(b.name); });
+      musicPushLevel(item.name, rawItems, 0);
+      // Inject sort controls after render
+      setTimeout(function() { absInjectSortBar(rawItems, item.name); }, 50);
     });
   } else if (item._absType === 'book') {
     absFetch('/item/' + item._absId).then(function(d) {
@@ -6852,39 +6859,122 @@ function formatDuration(secs) {
 }
 
 // ── ABS Playback ──────────────────────────────────────────────────────────────
+
+// ── ABS sort bar ──────────────────────────────────────────────────────────────
+function absInjectSortBar(rawItems, levelTitle) {
+  var listEl = document.querySelector('.item-list');
+  if (!listEl || listEl.querySelector('[data-abs-sort]')) return;
+
+  var bar = document.createElement('div');
+  bar.setAttribute('data-abs-sort', '1');
+  bar.style.cssText = 'display:flex;gap:8px;padding:6px 16px 8px;align-items:center;font-size:11px;color:rgba(255,255,255,0.45)';
+  bar.innerHTML = 'SORT:';
+
+  var sorts = [
+    { label: 'Title',  fn: function(a,b){ return a.name.localeCompare(b.name); } },
+    { label: 'Author', fn: function(a,b){ return (a.author||'').localeCompare(b.author||''); } },
+    { label: 'Genre',  fn: function(a,b){ return (a.genres[0]||'').localeCompare(b.genres[0]||''); } },
+  ];
+  var active = 'Title';
+
+  sorts.forEach(function(sort) {
+    var btn = document.createElement('button');
+    btn.textContent = sort.label;
+    btn.style.cssText = 'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:3px;padding:2px 8px;color:#fff;cursor:pointer;font-size:11px;letter-spacing:0.05em';
+    if (sort.label === active) btn.style.background = 'rgba(255,255,255,0.18)';
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      active = sort.label;
+      bar.querySelectorAll('button').forEach(function(b) {
+        b.style.background = b === btn ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)';
+      });
+      var sorted = rawItems.slice().sort(sort.fn);
+      // Re-render items in place
+      listEl.querySelectorAll('.xmb-item[data-abs-book]').forEach(function(el){ el.remove(); });
+      sorted.forEach(function(item) {
+        var el = absBookEl(item);
+        listEl.appendChild(el);
+      });
+      allItems = sorted;
+      itemIdx = 0;
+      updateItemSelection();
+    });
+    bar.appendChild(btn);
+  });
+
+  // Insert at top of list
+  listEl.insertBefore(bar, listEl.firstChild);
+}
+
+function absBookEl(item) {
+  var el = document.createElement('div');
+  el.className = 'xmb-item';
+  el.setAttribute('data-abs-book', '1');
+  var artUrl = '/api/abs/cover/' + item.coverArt;
+  var art = '<img src="'+artUrl+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">';
+  el.innerHTML =
+    '<div class="xmb-item-icon">'+art+'</div>'+
+    '<div class="xmb-item-text">'+
+      '<div class="xmb-item-name">'+escHtml(item.name)+'</div>'+
+      (item.desc?'<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>':'')+
+    '</div>'+
+    '<span class="xmb-item-arrow">›</span>';
+  el.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var all = document.querySelectorAll('.item-list .xmb-item');
+    all.forEach(function(d,di){ if(d===el) itemIdx=di; });
+    updateItemSelection();
+    absItemAction(item);
+  });
+  return el;
+}
+
 function absPlay(itemId, episodeId, startOffset, title) {
-  // Get direct stream URL
+  var token = sessionStorage.getItem('xmb-token') || '';
   var params = episodeId ? '?episode=' + episodeId : '';
+
+  // Update Now Playing UI immediately
+  document.getElementById('now-playing-title').textContent  = title || 'Audiobook';
+  document.getElementById('now-playing-artist').textContent = 'AudiobookShelf';
+  var art = document.getElementById('now-playing-art');
+  art.removeAttribute('data-retried');
+  art.onerror = function() { coverArtError(this); };
+  art.src = '/api/abs/cover/' + itemId;
+  art.style.display = '';
+  document.getElementById('now-playing').classList.add('visible');
+  document.getElementById('np-play').textContent = '⏸';
+  musicPlayer.currentId = itemId + (episodeId ? ':' + episodeId : '');
+  musicPlayer.queue = [];
+
+  function startAudio(url, offset) {
+    var a = musicPlayer.audio;
+    a.pause();
+    a.src = url;
+    if (offset && offset > 0) {
+      // Must wait for metadata before seeking
+      var onMeta = function() {
+        a.removeEventListener('loadedmetadata', onMeta);
+        a.currentTime = offset;
+        a.play().catch(function(){});
+      };
+      a.addEventListener('loadedmetadata', onMeta);
+      a.load();
+    } else {
+      a.play().catch(function(){});
+    }
+  }
+
   fetch('/api/abs/streamurl/' + itemId + params, {
-    headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('xmb-token') || '') }
+    headers: { 'Authorization': 'Bearer ' + token }
   }).then(function(r) { return r.json(); })
   .then(function(d) {
-    var url = d.url;
-    if (!url) return;
-    var a = musicPlayer.audio;
-    a.src = url;
-    if (startOffset) a.currentTime = startOffset;
-    a.play().catch(function(){});
-
-    // Update Now Playing
-    document.getElementById('now-playing-title').textContent  = title || 'Audiobook';
-    document.getElementById('now-playing-artist').textContent = 'AudiobookShelf';
-    var art = document.getElementById('now-playing-art');
-    art.src = '/api/abs/cover/' + itemId;
-    art.onerror = function() { coverArtError(this); };
-    art.style.display = '';
-    document.getElementById('now-playing').classList.add('visible');
-    document.getElementById('np-play').textContent = '⏸';
-    musicPlayer.currentId = itemId + (episodeId ? ':' + episodeId : '');
-    musicPlayer.queue = []; // ABS doesn't use the queue system
+    if (!d.url) throw new Error('No URL');
+    startAudio(d.url, startOffset);
   }).catch(function(e) {
-    console.error('ABS play error', e);
-    // Fallback to proxy stream
-    var a = musicPlayer.audio;
+    console.error('ABS streamurl failed, using proxy:', e);
+    // Fallback: proxy stream
     var ep = episodeId ? '?episode=' + episodeId : '';
-    a.src = '/api/abs/stream/' + itemId + ep;
-    if (startOffset) a.currentTime = startOffset;
-    a.play().catch(function(){});
+    startAudio('/api/abs/stream/' + itemId + ep, startOffset);
   });
 }
 
