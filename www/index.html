@@ -3421,6 +3421,7 @@ function openItem(item) {
   if (item.url === '#prefs') { openPrefs(); return; }
   if (item.url && item.url.startsWith('#sub-')) { openSubItem(item); return; }
   if (item.url && item.url.startsWith('#abs-')) { absItemAction(item); return; }
+  if (item.url && item.url.startsWith('#romm-')) { rommItemAction(item); return; }
 
   var root    = document.getElementById('xmb-root');
   var overlay = document.getElementById('open-flash');
@@ -3759,13 +3760,14 @@ renderItems = function() {
   }
   injectSubsonicItems();
   injectAbsItems();
+  injectRommItems();
 };
 
 // ── Patch updateCategoryUI to also update mobile strip ────────────────────────
 var _origUpdateCategoryUI = updateCategoryUI;
 updateCategoryUI = function() {
   // Reset music drill-down on category change
-  musicStack = []; inMusicDrill = false; _subItems = []; _absItems = []; _subSortActive = 'Artists';
+  musicStack = []; inMusicDrill = false; _subItems = []; _absItems = []; _rommItems = []; _subSortActive = 'Artists'; _rommSortActive = 'Console';
   _origUpdateCategoryUI(); // already calls updateMobileCatStrip internally
 };
 
@@ -3921,6 +3923,10 @@ init().then(function() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
             Music
           </div>
+          <div class="s-nav-item" id="s-nav-romm-integration">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01M8 12h.01M16 12h.01"/><path d="M6 9v6M18 9v6"/></svg>
+            ROMM
+          </div>
           <div class="s-nav-item" id="s-nav-abs-integration">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
             AudiobookShelf
@@ -4047,6 +4053,28 @@ init().then(function() {
               <button class="s-btn s-btn-primary" id="sub-save-btn">Save</button>
               <button class="s-btn" id="sub-test-btn" disabled style="opacity:0.35;cursor:not-allowed">Test Connection</button>
               <span id="sub-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
+            </div>
+          </div>
+
+          <!-- ── ROMM Integration View ── -->
+          <div id="s-view-romm-integration" class="s-view">
+            <div class="s-view-title">ROMM</div>
+            <div class="s-field-group">
+              <label class="s-label">ROMM Server URL</label>
+              <input class="s-input" id="romm-url" type="text" placeholder="http://romm:3000" style="width:100%">
+            </div>
+            <div class="s-field-group">
+              <label class="s-label">Inject into Category</label>
+              <select id="romm-cat" class="s-input" style="background:#1a1a2e;color:#fff;width:100%">
+                <option value="">— select category —</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+              <button class="s-btn s-btn-primary" id="romm-save-btn">Save</button>
+              <span id="romm-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
+            </div>
+            <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,0.04);border-radius:6px;font-size:12px;color:rgba(255,255,255,0.45);line-height:1.6">
+              Users log in with their own ROMM credentials directly in the category — no passwords stored here.
             </div>
           </div>
 
@@ -4297,9 +4325,11 @@ function showView(view) {
   document.getElementById('s-view-general').classList.toggle('active', view === 'general');
   document.getElementById('s-view-category').classList.toggle('active', view === 'category');
   document.getElementById('s-view-music-integration').classList.toggle('active', view === 'music-integration');
+  document.getElementById('s-view-romm-integration').classList.toggle('active', view === 'romm-integration');
   document.getElementById('s-view-abs-integration').classList.toggle('active', view === 'abs-integration');
   if (view === 'category' && activeCatIdx !== null) populateCatView();
   if (view === 'music-integration') populateMusicIntegrationView();
+  if (view === 'romm-integration') populateRommView();
   if (view === 'abs-integration') populateAbsView();
 }
 
@@ -6218,7 +6248,9 @@ function musicRenderLevel() {
     el.classList.toggle('selected', i === itemIdx);
 
     var artUrl = item.coverArt
-      ? (item._absType ? '/api/abs/cover/'+item.coverArt : '/api/subsonic/coverart?id='+item.coverArt)
+      ? (item._absType ? '/api/abs/cover/'+item.coverArt
+        : item._rommType ? '/api/romm/cover?path='+encodeURIComponent(item.coverArt)
+        : '/api/subsonic/coverart?id='+item.coverArt)
       : null;
     var art = artUrl
       ? '<img src="'+artUrl+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">'
@@ -7119,6 +7151,14 @@ document.addEventListener('keydown', function(e) {
     var btn = absBar.querySelector('[data-sort="'+next+'"]');
     if (btn) { btn.click(); return; }
   }
+  // Try ROMM sort bar
+  var rommBar = document.querySelector('[data-romm-sort]');
+  if (rommBar) {
+    var ridx = _rommSortKeys.indexOf(_rommSortActive);
+    var rnext = _rommSortKeys[(ridx + 1) % _rommSortKeys.length];
+    var rbtn = rommBar.querySelector('[data-sort="'+rnext+'"]');
+    if (rbtn) { rbtn.click(); return; }
+  }
   // Try Sub sort bar
   var subBar = document.querySelector('[data-sub-sort]');
   if (subBar) {
@@ -7219,6 +7259,394 @@ function absPlay(itemId, episodeId, startOffset, title) {
 
 // Hook renderItems to inject ABS items  
 // (wired into existing renderItems patch)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ROMM INTEGRATION — Multi-user game library
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+document.getElementById('s-nav-romm-integration').addEventListener('click', function() {
+  activeCatIdx = null;
+  showView('romm-integration');
+});
+
+function populateRommView() {
+  var cfg = (settingsConfig && settingsConfig.romm) || {};
+  document.getElementById('romm-url').value = cfg.url || '';
+  var sel = document.getElementById('romm-cat');
+  sel.innerHTML = '<option value="">— select category —</option>';
+  (settingsConfig && settingsConfig.categories || []).forEach(function(cat) {
+    if (!cat.id) return;
+    var o = document.createElement('option');
+    o.value = cat.id; o.textContent = cat.name;
+    if (cat.id === cfg.categoryId) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+document.getElementById('romm-save-btn').addEventListener('click', function() {
+  var st = document.getElementById('romm-status');
+  if (!settingsConfig) return;
+  settingsConfig.romm = {
+    url: document.getElementById('romm-url').value.trim(),
+    categoryId: document.getElementById('romm-cat').value
+  };
+  saveConfig().then(function() {
+    st.textContent = '✓ Saved';
+    setTimeout(function() { st.textContent = ''; }, 2500);
+    // Reload config so injectRommItems picks up new categoryId
+    return fetch('/api/config').then(function(r){ return r.json(); }).then(function(c){ config = c; });
+  }).catch(function(e) { st.textContent = '✗ ' + e.message; });
+});
+
+// ── Session state (per user, not stored server-side) ─────────────────────────
+var rommToken    = sessionStorage.getItem('romm-token')    || null;
+var rommUsername = sessionStorage.getItem('romm-username') || null;
+var rommCache    = {};
+
+function rommFetch(endpoint, params) {
+  var url = '/api/romm' + endpoint;
+  if (params) url += '?' + new URLSearchParams(params).toString();
+  var cacheKey = url + (rommToken || '');
+  if (rommCache[cacheKey]) return Promise.resolve(rommCache[cacheKey]);
+  return fetch(url, {
+    headers: rommToken ? { 'X-Romm-Token': rommToken } : {}
+  }).then(function(r) {
+    if (r.status === 401) { rommLogout(); throw new Error('Unauthorized'); }
+    return r.json();
+  }).then(function(d) {
+    rommCache[cacheKey] = d;
+    return d;
+  });
+}
+
+function rommLogout() {
+  rommToken = null; rommUsername = null; rommCache = {};
+  sessionStorage.removeItem('romm-token');
+  sessionStorage.removeItem('romm-username');
+}
+
+// ── Login panel ───────────────────────────────────────────────────────────────
+function rommShowLoginPanel(listEl, onSuccess) {
+  var panel = document.createElement('div');
+  panel.setAttribute('data-romm', 'login');
+  panel.style.cssText = 'padding:20px 24px';
+
+  panel.innerHTML =
+    '<div style="font-size:11px;letter-spacing:0.12em;color:rgba(255,255,255,0.4);text-transform:uppercase;margin-bottom:14px">ROMM — Sign In</div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+      '<input id="romm-login-user" type="text" placeholder="Username" autocomplete="username"'+
+        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
+      '<input id="romm-login-pass" type="password" placeholder="Password" autocomplete="current-password"'+
+        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
+      '<div style="display:flex;gap:10px;align-items:center">'+
+        '<button id="romm-login-btn" style="background:var(--accent);border:none;border-radius:4px;padding:9px 20px;color:#fff;font-size:13px;cursor:pointer;font-family:inherit">Sign In</button>'+
+        '<span id="romm-login-status" style="font-size:12px;color:rgba(255,255,255,0.5)"></span>'+
+      '</div>'+
+    '</div>';
+
+  listEl.appendChild(panel);
+
+  // Focus username field
+  setTimeout(function() {
+    var u = document.getElementById('romm-login-user');
+    if (u) u.focus();
+  }, 100);
+
+  function doLogin() {
+    var user = (document.getElementById('romm-login-user').value || '').trim();
+    var pass  = document.getElementById('romm-login-pass').value || '';
+    var st    = document.getElementById('romm-login-status');
+    if (!user || !pass) { st.textContent = 'Enter username and password'; return; }
+    st.textContent = 'Signing in…';
+    document.getElementById('romm-login-btn').disabled = true;
+
+    fetch('/api/romm/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok && d.token) {
+        rommToken    = d.token;
+        rommUsername = d.username || user;
+        sessionStorage.setItem('romm-token', rommToken);
+        sessionStorage.setItem('romm-username', rommUsername);
+        rommCache = {}; // clear any unauthenticated cache
+        onSuccess();
+      } else {
+        st.textContent = '✗ ' + (d.error || 'Login failed');
+        document.getElementById('romm-login-btn').disabled = false;
+      }
+    }).catch(function() {
+      document.getElementById('romm-login-status').textContent = '✗ Connection failed';
+      document.getElementById('romm-login-btn').disabled = false;
+    });
+  }
+
+  document.getElementById('romm-login-btn').addEventListener('click', doLogin);
+  // Enter key submits
+  panel.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doLogin();
+  });
+}
+
+// ── Inject ROMM items into category ──────────────────────────────────────────
+var _rommItems = [];
+var _rommSortActive = 'Console';
+var _rommSortKeys   = ['Console', 'Genre', 'Last Played', 'All'];
+
+function injectRommItems() {
+  if (!config || !config.romm) return;
+  var romm = config.romm;
+  if (!romm.url || !romm.categoryId || romm.categoryId === 'undefined') return;
+  var cat = config.categories && config.categories[catIdx];
+  if (!cat || !cat.id || cat.id !== romm.categoryId) return;
+  var listEl = document.querySelector('.item-list');
+  if (!listEl || listEl.querySelector('[data-romm]')) return;
+  var snapIdx = catIdx;
+
+  // Divider
+  var div = document.createElement('div');
+  div.setAttribute('data-romm', 'divider');
+  div.style.cssText = 'padding:6px 16px 4px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
+  div.textContent = 'ROMM' + (rommUsername ? ' — ' + rommUsername : '');
+  listEl.appendChild(div);
+
+  if (!rommToken) {
+    // Show login panel
+    rommShowLoginPanel(listEl, function() {
+      // After login, re-inject
+      listEl.querySelector('[data-romm="login"]').remove();
+      div.textContent = 'ROMM — ' + rommUsername;
+      loadRommContent(listEl, snapIdx);
+    });
+    return;
+  }
+
+  loadRommContent(listEl, snapIdx);
+}
+
+function loadRommContent(listEl, snapIdx) {
+  // Fetch platforms + recent ROMs in parallel
+  Promise.all([
+    rommFetch('/platforms'),
+    rommFetch('/roms', { size: 200, order_by: 'id', order_dir: 'asc' })
+  ]).then(function(results) {
+    if (catIdx !== snapIdx) return;
+    var currentList = document.querySelector('.item-list');
+    if (!currentList || currentList !== listEl) return;
+
+    var platforms = results[0] || [];
+    var romsData  = results[1] || {};
+    var roms      = romsData.items || romsData || [];
+    if (!Array.isArray(roms)) roms = [];
+
+    // Build platform lookup
+    var platformMap = {};
+    platforms.forEach(function(p) { platformMap[p.id] = p; });
+
+    // Build unified items with platform name + last played
+    _rommItems = roms.map(function(rom) {
+      var platform = platformMap[rom.platform_id] || {};
+      return {
+        name:         rom.name || rom.file_name || 'Unknown',
+        desc:         platform.name || 'Unknown Console',
+        coverArt:     rom.cover_path || null,
+        genre:        (rom.genres && rom.genres[0] && rom.genres[0].name) || '',
+        platform:     platform.name || '',
+        platformId:   rom.platform_id,
+        lastPlayed:   rom.updated_at || rom.created_at || '',
+        _rommId:      rom.id,
+        _rommType:    'rom',
+        url:          '#romm-rom:' + rom.id
+      };
+    });
+
+    // Also add platform/console items for Console view
+    var platformItems = platforms.map(function(p) {
+      var count = roms.filter(function(r){ return r.platform_id === p.id; }).length;
+      return {
+        name:       p.name || p.fs_slug,
+        desc:       count + ' game' + (count !== 1 ? 's' : ''),
+        coverArt:   p.logo_path || null,
+        platform:   p.name || '',
+        _rommId:    p.id,
+        _rommType:  'platform',
+        _platformRoms: _rommItems.filter(function(r){ return r.platformId === p.id; }),
+        url:        '#romm-platform:' + p.id
+      };
+    }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+
+    // Store both sets
+    _rommItems._platforms = platformItems;
+    _rommItems._roms      = _rommItems.slice();
+
+    // Inject sort bar + default Console view
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        rommInjectSortBar(listEl);
+      });
+    });
+  }).catch(function(e) {
+    console.error('[ROMM] load error:', e);
+    if (e.message === 'Unauthorized') {
+      rommLogout();
+      var listEl2 = document.querySelector('.item-list');
+      if (listEl2) rommShowLoginPanel(listEl2, function() {
+        listEl2.querySelector('[data-romm="login"]').remove();
+        loadRommContent(listEl2, catIdx);
+      });
+    }
+  });
+}
+
+// ── Sort bar ──────────────────────────────────────────────────────────────────
+function rommInjectSortBar(listEl) {
+  if (!listEl || listEl.querySelector('[data-romm-sort]')) return;
+
+  var bar = document.createElement('div');
+  bar.setAttribute('data-romm-sort', '1');
+  bar.style.cssText = 'display:flex;gap:6px;padding:4px 16px 8px;align-items:center;flex-wrap:wrap';
+
+  var hint = document.createElement('span');
+  hint.textContent = 'S';
+  hint.style.cssText = 'font-size:10px;font-weight:600;color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.20);border-radius:3px;padding:1px 5px;margin-right:6px';
+  bar.appendChild(hint);
+
+  var label = document.createElement('span');
+  label.textContent = 'VIEW:';
+  label.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.35);margin-right:6px';
+  bar.appendChild(label);
+
+  _rommSortActive = 'Console';
+
+  function applyRommSort(key) {
+    _rommSortActive = key;
+    bar.querySelectorAll('button').forEach(function(b) {
+      b.style.background = b.dataset.sort === key ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.06)';
+      b.style.border = b.dataset.sort === key ? '1px solid rgba(255,255,255,0.30)' : '1px solid rgba(255,255,255,0.10)';
+    });
+
+    var items;
+    if (key === 'Console') {
+      items = _rommItems._platforms || [];
+    } else if (key === 'Genre') {
+      // Build genre groups
+      var genreMap = {};
+      (_rommItems._roms || []).forEach(function(rom) {
+        var g = rom.genre || 'Unknown';
+        if (!genreMap[g]) genreMap[g] = [];
+        genreMap[g].push(rom);
+      });
+      items = Object.keys(genreMap).sort().map(function(g) {
+        return {
+          name: g, desc: genreMap[g].length + ' game' + (genreMap[g].length !== 1 ? 's' : ''),
+          coverArt: null, _rommType: 'genre-group', _genreRoms: genreMap[g],
+          url: '#romm-genre:' + encodeURIComponent(g)
+        };
+      });
+    } else if (key === 'Last Played') {
+      items = (_rommItems._roms || []).slice().sort(function(a,b) {
+        return (b.lastPlayed || '').localeCompare(a.lastPlayed || '');
+      }).slice(0, 50); // show 50 most recent
+    } else {
+      items = (_rommItems._roms || []).slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+    }
+
+    // Re-render romm items
+    listEl.querySelectorAll('[data-romm="item"]').forEach(function(el){ el.remove(); });
+    allItems = (config.categories[catIdx] && config.categories[catIdx].items || []).concat(items);
+    itemIdx = 0;
+
+    items.forEach(function(item) {
+      listEl.appendChild(rommMakeItemEl(item, listEl));
+    });
+    updateItemSelection();
+    scrollItemList();
+  }
+
+  _rommSortKeys.forEach(function(key) {
+    var btn = document.createElement('button');
+    btn.dataset.sort = key;
+    btn.textContent = key;
+    btn.style.cssText = 'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:3px;padding:3px 10px;color:#fff;cursor:pointer;font-size:11px;letter-spacing:0.05em';
+    if (key === 'Console') { btn.style.background = 'rgba(255,255,255,0.20)'; btn.style.border = '1px solid rgba(255,255,255,0.30)'; }
+    btn.addEventListener('click', function(e) { e.stopPropagation(); applyRommSort(key); });
+    bar.appendChild(btn);
+  });
+
+  var divider = listEl.querySelector('[data-romm="divider"]');
+  if (divider && divider.nextSibling) {
+    listEl.insertBefore(bar, divider.nextSibling);
+  } else {
+    listEl.appendChild(bar);
+  }
+
+  applyRommSort('Console');
+}
+
+function rommMakeItemEl(item, listEl) {
+  var el = document.createElement('div');
+  el.className = 'xmb-item';
+  el.setAttribute('data-romm', 'item');
+
+  var artHtml;
+  if (item.coverArt) {
+    var coverUrl = '/api/romm/cover?path=' + encodeURIComponent(item.coverArt);
+    artHtml = '<img src="'+coverUrl+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">';
+  } else {
+    var icon = item._rommType === 'platform' ? '🎮' : item._rommType === 'genre-group' ? '🗂' : '🕹';
+    artHtml = '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:15px">'+icon+'</div>';
+  }
+
+  var hasChildren = item._rommType === 'platform' || item._rommType === 'genre-group';
+  el.innerHTML =
+    '<div class="xmb-item-icon">'+artHtml+'</div>'+
+    '<div class="xmb-item-text">'+
+      '<div class="xmb-item-name">'+escHtml(item.name)+'</div>'+
+      (item.desc?'<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>':'')+
+    '</div>'+
+    (hasChildren ? '<span class="xmb-item-arrow">›</span>' : '');
+
+  el.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var all = document.querySelectorAll('.item-list .xmb-item');
+    all.forEach(function(d,di){ if(d===el) itemIdx=di; });
+    updateItemSelection();
+    rommItemAction(item);
+  });
+  return el;
+}
+
+// ── Drill-down actions ────────────────────────────────────────────────────────
+function rommItemAction(item) {
+  if (item._rommType === 'platform') {
+    var roms = item._platformRoms || [];
+    roms.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    musicPushLevel(item.name, roms, 0);
+  } else if (item._rommType === 'genre-group') {
+    var roms = item._genreRoms || [];
+    roms.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    musicPushLevel(item.name, roms, 0);
+  } else if (item._rommType === 'rom' || item.url && item.url.startsWith('#romm-rom:')) {
+    // Open ROM detail — for now open ROMM in new tab at that ROM
+    var cfg = config.romm || {};
+    if (cfg.url) {
+      window.open(cfg.url.replace(/\/$/, '') + '/rom/' + item._rommId, '_blank');
+    }
+  }
+}
+
+// Wire openItem for #romm- URLs
+// (handled in existing openItem via general routing)
+
+// Wire S key for romm sort bar
+// (handled by the general S key handler below — need to add romm support)
+
+// Reset on category change
+// (handled in updateCategoryUI patch)
 
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn

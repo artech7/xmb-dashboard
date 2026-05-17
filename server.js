@@ -474,6 +474,129 @@ app.get('/api/abs/streamurl/:id', auth, (req, res) => {
 });
 
 
+
+// ── ROMM proxy ────────────────────────────────────────────────────────────────
+// ROMM server URL stored in config; user tokens passed per-request from client
+
+function rommProxy(req, res, endpoint, method, body) {
+  const cfg  = readConfig();
+  const url  = cfg.romm && cfg.romm.url;
+  if (!url) return res.status(400).json({ error: 'ROMM not configured' });
+
+  const token   = req.headers['x-romm-token'] || '';
+  const base    = url.replace(/\/$/, '');
+  const fullUrl = `${base}${endpoint}`;
+  const lib     = fullUrl.startsWith('https') ? https : http;
+  const urlObj  = new URL(fullUrl);
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+
+  const reqOpts = {
+    method: method || 'GET',
+    hostname: urlObj.hostname,
+    port: parseInt(urlObj.port) || (fullUrl.startsWith('https') ? 443 : 80),
+    path: urlObj.pathname + urlObj.search,
+    headers
+  };
+
+  const req2 = lib.request(reqOpts, (r2) => {
+    let data = '';
+    r2.on('data', c => data += c);
+    r2.on('end', () => {
+      res.status(r2.statusCode);
+      try { res.json(JSON.parse(data)); }
+      catch { res.send(data); }
+    });
+  });
+  req2.on('error', err => { if (!res.headersSent) res.status(502).json({ error: err.message }); });
+  req2.setTimeout(10000, () => { req2.destroy(); if (!res.headersSent) res.status(504).json({ error: 'Timeout' }); });
+  if (body) req2.write(JSON.stringify(body));
+  req2.end();
+}
+
+// Login — returns JWT token to client (not stored server-side)
+app.post('/api/romm/login', (req, res) => {
+  const cfg = readConfig();
+  const url = cfg.romm && cfg.romm.url;
+  if (!url) return res.status(400).json({ error: 'ROMM not configured' });
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
+
+  const base    = url.replace(/\/$/, '');
+  const fullUrl = `${base}/api/auth/login`;
+  const lib     = fullUrl.startsWith('https') ? https : http;
+  // ROMM uses Basic auth for login
+  const creds   = Buffer.from(`${username}:${password}`).toString('base64');
+  const urlObj  = new URL(fullUrl);
+
+  const req2 = lib.request({
+    method: 'POST', hostname: urlObj.hostname,
+    port: parseInt(urlObj.port) || (fullUrl.startsWith('https') ? 443 : 80),
+    path: urlObj.pathname,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${creds}`
+    }
+  }, (r2) => {
+    let data = '';
+    r2.on('data', c => data += c);
+    r2.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        if (json.access_token) {
+          res.json({ ok: true, token: json.access_token, username });
+        } else {
+          res.status(401).json({ error: json.detail || 'Login failed' });
+        }
+      } catch { res.status(502).json({ error: 'Bad response from ROMM' }); }
+    });
+  });
+  req2.on('error', err => res.status(502).json({ error: err.message }));
+  req2.write(''); // empty body, auth is in header
+  req2.end();
+});
+
+// Proxy routes — forward user token from client
+app.get('/api/romm/platforms', (req, res) => {
+  rommProxy(req, res, '/api/platforms', 'GET');
+});
+
+app.get('/api/romm/roms', (req, res) => {
+  const qs = new URLSearchParams(req.query).toString();
+  rommProxy(req, res, `/api/roms?${qs}`, 'GET');
+});
+
+app.get('/api/romm/rom/:id', (req, res) => {
+  rommProxy(req, res, `/api/roms/${req.params.id}`, 'GET');
+});
+
+// Cover art proxy
+app.get('/api/romm/cover', (req, res) => {
+  const cfg = readConfig();
+  const url = cfg.romm && cfg.romm.url;
+  if (!url) return res.status(400).send('Not configured');
+  const token   = req.headers['x-romm-token'] || '';
+  const imgPath = req.query.path || '';
+  const fullUrl = url.replace(/\/$/, '') + imgPath;
+  const lib     = fullUrl.startsWith('https') ? https : http;
+  const urlObj  = new URL(fullUrl);
+  const r3 = lib.request({
+    hostname: urlObj.hostname,
+    port: parseInt(urlObj.port) || (fullUrl.startsWith('https') ? 443 : 80),
+    path: urlObj.pathname + urlObj.search,
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  }, (r2) => {
+    res.setHeader('Content-Type', r2.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    r2.pipe(res);
+  });
+  r3.on('error', err => { if (!res.headersSent) res.status(502).send(err.message); });
+  r3.end();
+});
+
+
 app.get('/admin', (_req, res) => {
   res.sendFile(path.join(__dirname, 'www', 'index.html'));
 });
