@@ -3409,6 +3409,7 @@ function openItem(item) {
   if (item.url === '#admin') { openSettings(); return; }
   if (item.url === '#prefs') { openPrefs(); return; }
   if (item.url && item.url.startsWith('#sub-')) { openSubItem(item); return; }
+  if (item.url && item.url.startsWith('#abs-')) { absItemAction(item); return; }
 
   var root    = document.getElementById('xmb-root');
   var overlay = document.getElementById('open-flash');
@@ -3746,13 +3747,14 @@ renderItems = function() {
     });
   }
   injectSubsonicItems();
+  injectAbsItems();
 };
 
 // ── Patch updateCategoryUI to also update mobile strip ────────────────────────
 var _origUpdateCategoryUI = updateCategoryUI;
 updateCategoryUI = function() {
   // Reset music drill-down on category change
-  musicStack = []; inMusicDrill = false; _subItems = [];
+  musicStack = []; inMusicDrill = false; _subItems = []; _absItems = [];
   _origUpdateCategoryUI(); // already calls updateMobileCatStrip internally
 };
 
@@ -3908,6 +3910,10 @@ init().then(function() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
             Music
           </div>
+          <div class="s-nav-item" id="s-nav-abs-integration">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            AudiobookShelf
+          </div>
         </div>
         <div id="s-main">
           <div id="s-view-general" class="s-view active">
@@ -4043,6 +4049,35 @@ init().then(function() {
               <button class="s-btn s-btn-primary" id="sub-save-btn">Save</button>
               <button class="s-btn" id="sub-test-btn" disabled style="opacity:0.35;cursor:not-allowed">Test Connection</button>
               <span id="sub-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
+            </div>
+          </div>
+
+          <!-- ── AudiobookShelf Integration View ── -->
+          <div id="s-view-abs-integration" class="s-view">
+            <div class="s-view-title">AudiobookShelf</div>
+            <div class="s-field-group">
+              <label class="s-label">Server URL</label>
+              <input class="s-input" id="abs-url" type="text" placeholder="http://audiobookshelf:13378" style="width:100%">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="s-field-group">
+                <label class="s-label">Username</label>
+                <input class="s-input" id="abs-user" type="text" placeholder="admin">
+              </div>
+              <div class="s-field-group">
+                <label class="s-label">Password</label>
+                <input class="s-input" id="abs-pass" type="password" placeholder="••••••••">
+              </div>
+            </div>
+            <div class="s-field-group">
+              <label class="s-label">Inject into Category</label>
+              <select id="abs-cat" class="s-input" style="background:#1a1a2e;color:#fff;width:100%">
+                <option value="">— select category —</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+              <button class="s-btn s-btn-primary" id="abs-save-btn">Save &amp; Connect</button>
+              <span id="abs-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
             </div>
           </div>
 
@@ -4263,8 +4298,10 @@ function showView(view) {
   document.getElementById('s-view-general').classList.toggle('active', view === 'general');
   document.getElementById('s-view-category').classList.toggle('active', view === 'category');
   document.getElementById('s-view-music-integration').classList.toggle('active', view === 'music-integration');
+  document.getElementById('s-view-abs-integration').classList.toggle('active', view === 'abs-integration');
   if (view === 'category' && activeCatIdx !== null) populateCatView();
   if (view === 'music-integration') populateMusicIntegrationView();
+  if (view === 'abs-integration') populateAbsView();
 }
 
 document.getElementById('s-nav-general').addEventListener('click', function() {
@@ -6185,8 +6222,11 @@ function musicRenderLevel() {
     el.className = 'xmb-item';
     el.classList.toggle('selected', i === itemIdx);
 
-    var art = item.coverArt
-      ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">'
+    var artUrl = item.coverArt
+      ? (item._absType ? '/api/abs/cover/'+item.coverArt : '/api/subsonic/coverart?id='+item.coverArt)
+      : null;
+    var art = artUrl
+      ? '<img src="'+artUrl+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">'
       : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
 
     var hasChild = !!(item._type || (item._song === undefined));
@@ -6569,6 +6609,265 @@ function coverArtError(img) {
     img.src = src;
   }, 800);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUDIOBOOKSHELF INTEGRATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Admin nav ─────────────────────────────────────────────────────────────────
+document.getElementById('s-nav-abs-integration').addEventListener('click', function() {
+  activeCatIdx = null;
+  showView('abs-integration');
+});
+
+function populateAbsView() {
+  var absCfg = (settingsConfig && settingsConfig.abs) || {};
+  document.getElementById('abs-url').value  = absCfg.url      || '';
+  document.getElementById('abs-user').value = absCfg.username || '';
+  document.getElementById('abs-pass').value = '';
+  var sel = document.getElementById('abs-cat');
+  sel.innerHTML = '<option value="">— select category —</option>';
+  (settingsConfig && settingsConfig.categories || []).forEach(function(cat) {
+    if (!cat.id) return;
+    var o = document.createElement('option');
+    o.value = cat.id; o.textContent = cat.name;
+    if (cat.id === absCfg.categoryId) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+document.getElementById('abs-save-btn').addEventListener('click', function() {
+  var st   = document.getElementById('abs-status');
+  var url  = document.getElementById('abs-url').value.trim();
+  var user = document.getElementById('abs-user').value.trim();
+  var pass = document.getElementById('abs-pass').value;
+  var catId = document.getElementById('abs-cat').value;
+  if (!url || !user || !pass) { st.textContent = '✗ URL, username and password required'; return; }
+  st.textContent = 'Connecting…';
+  fetch('/api/abs/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settingsToken },
+    body: JSON.stringify({ url: url, username: user, password: pass })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) {
+      if (!settingsConfig.abs) settingsConfig.abs = {};
+      settingsConfig.abs.url        = url;
+      settingsConfig.abs.username   = user;
+      settingsConfig.abs.categoryId = catId;
+      // token is saved server-side by the login route
+      absCache = {};
+      saveConfig().then(function() {
+        st.textContent = '✓ Connected';
+        setTimeout(function() { st.textContent = ''; }, 3000);
+      });
+    } else {
+      st.textContent = '✗ ' + (d.error || 'Login failed');
+    }
+  }).catch(function() { st.textContent = '✗ Connection failed'; });
+});
+
+// ── ABS API fetch with cache ──────────────────────────────────────────────────
+var absCache = {};
+function absFetch(endpoint) {
+  if (absCache[endpoint]) return Promise.resolve(absCache[endpoint]);
+  return fetch('/api/abs' + endpoint)
+    .then(function(r) { return r.json(); })
+    .then(function(d) { absCache[endpoint] = d; return d; });
+}
+
+// ── Inject ABS items into category ───────────────────────────────────────────
+var _absItems = [];
+
+function injectAbsItems() {
+  if (!config || !config.abs) return;
+  var abs = config.abs;
+  if (!abs.url || !abs.categoryId || abs.categoryId === 'undefined') return;
+  var cat = config.categories && config.categories[catIdx];
+  if (!cat || !cat.id || cat.id !== abs.categoryId) return;
+  var listEl = document.querySelector('.item-list');
+  if (!listEl || listEl.querySelector('[data-abs]')) return;
+  var snapIdx = catIdx;
+
+  absFetch('/libraries').then(function(d) {
+    if (catIdx !== snapIdx) return;
+    var currentList = document.querySelector('.item-list');
+    if (!currentList || currentList !== listEl) return;
+    var libs = (d.libraries || []);
+    if (!libs.length) return;
+
+    _absItems = libs.map(function(lib) {
+      return {
+        name: lib.name,
+        desc: lib.mediaType === 'podcast' ? 'Podcasts' : 'Audiobooks',
+        coverArt: null,
+        _absType: 'library',
+        _absId: lib.id,
+        _absMediaType: lib.mediaType,
+        url: '#abs-library:' + lib.id
+      };
+    });
+
+    // Divider
+    var divider = document.createElement('div');
+    divider.setAttribute('data-abs', 'divider');
+    divider.style.cssText = 'padding:6px 16px 4px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
+    divider.textContent = 'AudiobookShelf';
+    listEl.appendChild(divider);
+
+    _absItems.forEach(function(item) {
+      var el = document.createElement('div');
+      el.className = 'xmb-item';
+      el.setAttribute('data-abs', 'item');
+      var icon = item._absMediaType === 'podcast'
+        ? '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:16px">🎙</div>'
+        : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:16px">📚</div>';
+      el.innerHTML =
+        '<div class="xmb-item-icon">'+icon+'</div>'+
+        '<div class="xmb-item-text">'+
+          '<div class="xmb-item-name">'+escHtml(item.name)+'</div>'+
+          '<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>'+
+        '</div>'+
+        '<span class="xmb-item-arrow">›</span>';
+      el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var all = document.querySelectorAll('.item-list .xmb-item');
+        all.forEach(function(d,di){ if(d===el) itemIdx=di; });
+        updateItemSelection();
+        absItemAction(item);
+      });
+      listEl.appendChild(el);
+    });
+
+    allItems = (config.categories[catIdx].items || []).concat(_absItems);
+    scrollItemList();
+  }).catch(function(e) { console.error('ABS inject error', e); });
+}
+
+// ── ABS drill-down actions ────────────────────────────────────────────────────
+function absItemAction(item) {
+  if (item._absType === 'library') {
+    absFetch('/library/' + item._absId + '/items?limit=100').then(function(d) {
+      var results = d.results || [];
+      var items = results.map(function(r) {
+        var meta = (r.media && r.media.metadata) || {};
+        var isBook = item._absMediaType !== 'podcast';
+        return {
+          name: meta.title || r.id,
+          desc: isBook ? (meta.authorName || '') : ((r.media && r.media.numEpisodes || 0) + ' episodes'),
+          coverArt: r.id,
+          _absType: isBook ? 'book' : 'podcast',
+          _absId: r.id,
+          _absMediaType: item._absMediaType,
+          url: '#abs-item:' + r.id
+        };
+      });
+      musicPushLevel(item.name, items, 0);
+    });
+  } else if (item._absType === 'book') {
+    absFetch('/item/' + item._absId).then(function(d) {
+      var chapters = (d.media && d.media.chapters) || [];
+      var tracks   = (d.media && d.media.audioFiles) || [];
+      var items;
+      if (chapters.length > 0) {
+        // Chapter-based navigation
+        items = chapters.map(function(ch, i) {
+          return {
+            name: ch.title || ('Chapter ' + (i+1)),
+            desc: formatDuration(ch.end - ch.start),
+            coverArt: d.id,
+            _absType: 'chapter',
+            _absId: d.id,
+            _chapterStart: ch.start,
+            _chapterIdx: i,
+            _queue: chapters,
+            _bookId: d.id,
+            url: '#abs-chapter:' + d.id + ':' + i
+          };
+        });
+      } else {
+        // Single file / track
+        items = [{ name: d.media && d.media.metadata && d.media.metadata.title || 'Play',
+          desc: formatDuration(d.media && d.media.duration || 0),
+          coverArt: d.id, _absType: 'track', _absId: d.id, url: '#abs-track:'+d.id }];
+      }
+      musicPushLevel(item.name, items, 1);
+    });
+  } else if (item._absType === 'podcast') {
+    absFetch('/item/' + item._absId).then(function(d) {
+      var episodes = (d.media && d.media.episodes) || [];
+      episodes.sort(function(a,b) { return (b.publishedAt||0)-(a.publishedAt||0); });
+      var items = episodes.map(function(ep) {
+        return {
+          name: ep.title || 'Episode',
+          desc: formatDuration(ep.duration || 0) + (ep.publishedAt ? ' · ' + new Date(ep.publishedAt).toLocaleDateString() : ''),
+          coverArt: d.id,
+          _absType: 'episode',
+          _absId: d.id,
+          _episodeId: ep.id,
+          url: '#abs-episode:' + d.id + ':' + ep.id
+        };
+      });
+      musicPushLevel(item.name, items, 1);
+    });
+  } else if (item._absType === 'chapter' || item._absType === 'track') {
+    absPlay(item._absId, null, item._chapterStart || 0, item.name);
+  } else if (item._absType === 'episode') {
+    absPlay(item._absId, item._episodeId, 0, item.name);
+  }
+}
+
+function formatDuration(secs) {
+  if (!secs) return '';
+  var h = Math.floor(secs / 3600);
+  var m = Math.floor((secs % 3600) / 60);
+  var s = Math.floor(secs % 60);
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+}
+
+// ── ABS Playback ──────────────────────────────────────────────────────────────
+function absPlay(itemId, episodeId, startOffset, title) {
+  // Get direct stream URL
+  var params = episodeId ? '?episode=' + episodeId : '';
+  fetch('/api/abs/streamurl/' + itemId + params, {
+    headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('xmb-token') || '') }
+  }).then(function(r) { return r.json(); })
+  .then(function(d) {
+    var url = d.url;
+    if (!url) return;
+    var a = musicPlayer.audio;
+    a.src = url;
+    if (startOffset) a.currentTime = startOffset;
+    a.play().catch(function(){});
+
+    // Update Now Playing
+    document.getElementById('now-playing-title').textContent  = title || 'Audiobook';
+    document.getElementById('now-playing-artist').textContent = 'AudiobookShelf';
+    var art = document.getElementById('now-playing-art');
+    art.src = '/api/abs/cover/' + itemId;
+    art.onerror = function() { coverArtError(this); };
+    art.style.display = '';
+    document.getElementById('now-playing').classList.add('visible');
+    document.getElementById('np-play').textContent = '⏸';
+    musicPlayer.currentId = itemId + (episodeId ? ':' + episodeId : '');
+    musicPlayer.queue = []; // ABS doesn't use the queue system
+  }).catch(function(e) {
+    console.error('ABS play error', e);
+    // Fallback to proxy stream
+    var a = musicPlayer.audio;
+    var ep = episodeId ? '?episode=' + episodeId : '';
+    a.src = '/api/abs/stream/' + itemId + ep;
+    if (startOffset) a.currentTime = startOffset;
+    a.play().catch(function(){});
+  });
+}
+
+// Hook openItem for #abs- URLs
+// (wired below into existing openItem function)
+
+// Hook renderItems to inject ABS items  
+// (wired into existing renderItems patch)
+
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
 var THEME_KEYS = Object.keys(NEBULA_THEMES);

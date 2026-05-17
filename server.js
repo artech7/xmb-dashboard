@@ -280,6 +280,143 @@ app.get('/api/subsonic/coverurl', (req, res) => {
   res.json({ url: `${base}/rest/getCoverArt?${qp.toString()}` });
 });
 
+
+// ── AudiobookShelf proxy ───────────────────────────────────────────────────────
+
+function absRequest(absCfg, method, endpoint, body, res) {
+  const { url, token } = absCfg;
+  if (!url || !token) return res.status(400).json({ error: 'ABS not configured' });
+  const base    = url.replace(/\/$/, '');
+  const fullUrl = `${base}${endpoint}`;
+  const lib     = fullUrl.startsWith('https') ? https : http;
+  const opts    = {
+    method: method || 'GET',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+  };
+  const urlObj  = new URL(fullUrl);
+  const reqOpts = { ...opts, hostname: urlObj.hostname, port: urlObj.port || (fullUrl.startsWith('https') ? 443 : 80), path: urlObj.pathname + urlObj.search };
+  const req2    = lib.request(reqOpts, (r2) => {
+    let data = '';
+    r2.on('data', chunk => data += chunk);
+    r2.on('end', () => {
+      try { res.json(JSON.parse(data)); }
+      catch { res.status(502).json({ error: 'Bad response from ABS' }); }
+    });
+  });
+  req2.on('error', err => { if (!res.headersSent) res.status(502).json({ error: err.message }); });
+  req2.setTimeout(10000, () => { req2.destroy(); if (!res.headersSent) res.status(504).json({ error: 'Timeout' }); });
+  if (body) req2.write(JSON.stringify(body));
+  req2.end();
+}
+
+// Login — returns token
+app.post('/api/abs/login', auth, (req, res) => {
+  const { url, username, password } = req.body || {};
+  if (!url || !username || !password) return res.status(400).json({ error: 'Missing credentials' });
+  const base    = url.replace(/\/$/, '');
+  const fullUrl = `${base}/login`;
+  const lib     = fullUrl.startsWith('https') ? https : http;
+  const body    = JSON.stringify({ username, password });
+  const urlObj  = new URL(fullUrl);
+  const reqOpts = {
+    method: 'POST', hostname: urlObj.hostname,
+    port: urlObj.port || (fullUrl.startsWith('https') ? 443 : 80),
+    path: urlObj.pathname,
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+  };
+  const req2 = lib.request(reqOpts, (r2) => {
+    let data = '';
+    r2.on('data', chunk => data += chunk);
+    r2.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        if (json.user && json.user.token) {
+          // Save token to config
+          const cfg = readConfig();
+          if (!cfg.abs) cfg.abs = {};
+          cfg.abs.token    = json.user.token;
+          cfg.abs.url      = url;
+          cfg.abs.username = username;
+          writeConfig(cfg);
+          res.json({ ok: true, token: json.user.token });
+        } else {
+          res.status(401).json({ error: json.error || 'Login failed' });
+        }
+      } catch { res.status(502).json({ error: 'Bad response' }); }
+    });
+  });
+  req2.on('error', err => res.status(502).json({ error: err.message }));
+  req2.write(body);
+  req2.end();
+});
+
+app.get('/api/abs/libraries', (req, res) => {
+  const cfg = readConfig();
+  absRequest(cfg.abs || {}, 'GET', '/api/libraries', null, res);
+});
+
+app.get('/api/abs/library/:id/items', (req, res) => {
+  const cfg    = readConfig();
+  const limit  = req.query.limit || 100;
+  const page   = req.query.page  || 0;
+  absRequest(cfg.abs || {}, 'GET', `/api/libraries/${req.params.id}/items?limit=${limit}&page=${page}&sort=media.metadata.title`, null, res);
+});
+
+app.get('/api/abs/item/:id', (req, res) => {
+  const cfg = readConfig();
+  absRequest(cfg.abs || {}, 'GET', `/api/items/${req.params.id}?expanded=1`, null, res);
+});
+
+app.get('/api/abs/episode/:itemId/:episodeId', (req, res) => {
+  const cfg = readConfig();
+  absRequest(cfg.abs || {}, 'GET', `/api/items/${req.params.itemId}?expanded=1`, null, res);
+});
+
+// Stream proxy for ABS audio
+app.get('/api/abs/stream/:id', (req, res) => {
+  const cfg  = readConfig();
+  const { url, token } = cfg.abs || {};
+  if (!url || !token) return res.status(400).send('ABS not configured');
+  // episode param for podcast episodes
+  const ep      = req.query.episode || '';
+  const path    = ep ? `/api/items/${req.params.id}/file?episode=${ep}&token=${token}` : `/api/items/${req.params.id}/file?token=${token}`;
+  const fullUrl = url.replace(/\/$/, '') + path;
+  const lib     = fullUrl.startsWith('https') ? https : http;
+  lib.get(fullUrl, (r2) => {
+    res.setHeader('Content-Type', r2.headers['content-type'] || 'audio/mpeg');
+    if (r2.headers['content-length']) res.setHeader('Content-Length', r2.headers['content-length']);
+    if (r2.headers['content-range'])  res.setHeader('Content-Range', r2.headers['content-range']);
+    r2.pipe(res);
+  }).on('error', err => { if (!res.headersSent) res.status(502).send(err.message); });
+});
+
+// Cover art proxy for ABS
+app.get('/api/abs/cover/:id', (req, res) => {
+  const cfg  = readConfig();
+  const { url, token } = cfg.abs || {};
+  if (!url || !token) return res.status(400).send('Not configured');
+  const fullUrl = `${url.replace(/\/$/, '')}/api/items/${req.params.id}/cover?token=${token}&width=300`;
+  const lib     = fullUrl.startsWith('https') ? https : http;
+  lib.get(fullUrl, (r2) => {
+    res.setHeader('Content-Type', r2.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    r2.pipe(res);
+  }).on('error', err => { if (!res.headersSent) res.status(502).send(err.message); });
+});
+
+// Direct stream URL (bypass proxy)
+app.get('/api/abs/streamurl/:id', auth, (req, res) => {
+  const cfg  = readConfig();
+  const { url, token } = cfg.abs || {};
+  if (!url || !token) return res.status(400).json({ error: 'Not configured' });
+  const ep  = req.query.episode || '';
+  const path = ep
+    ? `/api/items/${req.params.id}/file?episode=${ep}&token=${token}`
+    : `/api/items/${req.params.id}/file?token=${token}`;
+  res.json({ url: url.replace(/\/$/, '') + path });
+});
+
+
 app.get('/admin', (_req, res) => {
   res.sendFile(path.join(__dirname, 'www', 'index.html'));
 });
