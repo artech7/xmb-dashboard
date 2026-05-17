@@ -6845,6 +6845,14 @@ function absItemAction(item) {
       });
       musicPushLevel(item.name, items, 1);
     });
+  } else if (item._absType === 'authorGroup') {
+    // Show books by this author
+    var authorBooks = item._authorBooks.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+    musicPushLevel(item.name, authorBooks, musicStack.length - 1);
+  } else if (item._absType === 'genreGroup') {
+    // Show books in this genre
+    var genreBooks = item._genreBooks.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+    musicPushLevel(item.name, genreBooks, musicStack.length - 1);
   } else if (item._absType === 'chapter' || item._absType === 'track') {
     absPlay(item._absId, null, item._chapterStart || 0, item.name);
   } else if (item._absType === 'episode') {
@@ -6894,19 +6902,71 @@ function absInjectSortBar(rawItems) {
       b.style.background = b.dataset.sort === sortKey ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.06)';
       b.style.border = b.dataset.sort === sortKey ? '1px solid rgba(255,255,255,0.30)' : '1px solid rgba(255,255,255,0.10)';
     });
-    var sorted = rawItems.slice().sort(sortFns[sortKey]);
-    // Update the musicStack level items
-    if (musicStack.length > 0) {
-      musicStack[musicStack.length-1].items = sorted;
-    }
-    allItems = sorted;
-    itemIdx = 0;
-    // Re-render just the xmb-items, keep the sort bar
     listEl.querySelectorAll('.xmb-item').forEach(function(el){ el.remove(); });
-    sorted.forEach(function(item) {
-      var el = absMakeItemEl(item);
-      listEl.appendChild(el);
-    });
+
+    if (sortKey === 'Genre') {
+      // Build a genre browser — list unique genres, click → filtered books
+      var genreMap = {};
+      rawItems.forEach(function(item) {
+        var gs = (item.genres && item.genres.length) ? item.genres : ['Unknown'];
+        gs.forEach(function(g) {
+          if (!genreMap[g]) genreMap[g] = [];
+          genreMap[g].push(item);
+        });
+      });
+      var genreItems = Object.keys(genreMap).sort().map(function(g) {
+        return {
+          name: g,
+          desc: genreMap[g].length + ' book' + (genreMap[g].length !== 1 ? 's' : ''),
+          coverArt: genreMap[g][0] && genreMap[g][0].coverArt,
+          _absType: 'genreGroup',
+          _genreName: g,
+          _genreBooks: genreMap[g],
+          url: '#abs-genre:' + encodeURIComponent(g)
+        };
+      });
+      allItems = genreItems;
+      if (musicStack.length > 0) musicStack[musicStack.length-1].items = genreItems;
+      itemIdx = 0;
+      genreItems.forEach(function(item) {
+        listEl.appendChild(absMakeItemEl(item));
+      });
+    } else if (sortKey === 'Author') {
+      // Group by author — show author name as primary, books as subtitle
+      var authorMap = {};
+      rawItems.forEach(function(item) {
+        var a = item.author || 'Unknown';
+        if (!authorMap[a]) authorMap[a] = [];
+        authorMap[a].push(item);
+      });
+      var authorItems = Object.keys(authorMap).sort().map(function(a) {
+        return {
+          name: a,
+          desc: authorMap[a].length + ' book' + (authorMap[a].length !== 1 ? 's' : ''),
+          coverArt: authorMap[a][0] && authorMap[a][0].coverArt,
+          _absType: 'authorGroup',
+          _authorName: a,
+          _authorBooks: authorMap[a],
+          url: '#abs-author:' + encodeURIComponent(a)
+        };
+      });
+      allItems = authorItems;
+      if (musicStack.length > 0) musicStack[musicStack.length-1].items = authorItems;
+      itemIdx = 0;
+      authorItems.forEach(function(item) {
+        listEl.appendChild(absMakeItemEl(item));
+      });
+    } else {
+      // Title sort — standard book list
+      var sorted = rawItems.slice().sort(sortFns[sortKey]);
+      allItems = sorted;
+      if (musicStack.length > 0) musicStack[musicStack.length-1].items = sorted;
+      itemIdx = 0;
+      sorted.forEach(function(item) {
+        listEl.appendChild(absMakeItemEl(item));
+      });
+    }
+
     updateItemSelection();
     scrollItemList();
   }
