@@ -6339,7 +6339,7 @@ function loadSubsonicItems(sub) {
   if (true || sub.showGenres) {
     promises.push(subFetch('genres').then(function(d) {
       var gs = toArr(d.genres && d.genres.genre);
-      gs.sort(function(a,b){ return (b.songCount||0)-(a.songCount||0); });
+      gs.sort(function(a,b){ return (a.value||'').localeCompare(b.value||''); });
       gs.forEach(function(g) {
         items.push({ name:g.value, desc:(g.songCount||0)+' songs',
           coverArt:null, _type:'genre', _id:encodeURIComponent(g.value),
