@@ -320,7 +320,7 @@ app.post('/api/abs/login', auth, (req, res) => {
   const urlObj  = new URL(fullUrl);
   const reqOpts = {
     method: 'POST', hostname: urlObj.hostname,
-    port: urlObj.port || (fullUrl.startsWith('https') ? 443 : 80),
+    port: parseInt(urlObj.port) || (fullUrl.startsWith('https') ? 443 : 80),
     path: urlObj.pathname,
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
   };
@@ -348,6 +348,14 @@ app.post('/api/abs/login', auth, (req, res) => {
   req2.on('error', err => res.status(502).json({ error: err.message }));
   req2.write(body);
   req2.end();
+});
+
+// Ping - test connection with current saved config
+app.get('/api/abs/ping', auth, (req, res) => {
+  const cfg = readConfig();
+  const abs = cfg.abs || {};
+  if (!abs.url || !abs.token) return res.status(400).json({ error: 'ABS not configured — save credentials first' });
+  absRequest(abs, 'GET', '/api/libraries', null, res);
 });
 
 app.get('/api/abs/libraries', (req, res) => {

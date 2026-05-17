@@ -4077,6 +4077,7 @@ init().then(function() {
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
               <button class="s-btn s-btn-primary" id="abs-save-btn">Save &amp; Connect</button>
+              <button class="s-btn" id="abs-test-btn" disabled style="opacity:0.35;cursor:not-allowed">Test Connection</button>
               <span id="abs-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
             </div>
           </div>
@@ -6625,6 +6626,11 @@ function populateAbsView() {
   document.getElementById('abs-url').value  = absCfg.url      || '';
   document.getElementById('abs-user').value = absCfg.username || '';
   document.getElementById('abs-pass').value = '';
+  // Enable test button if already connected
+  var tb = document.getElementById('abs-test-btn');
+  if (absCfg.url && absCfg.username) {
+    tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = '';
+  }
   var sel = document.getElementById('abs-cat');
   sel.innerHTML = '<option value="">— select category —</option>';
   (settingsConfig && settingsConfig.categories || []).forEach(function(cat) {
@@ -6658,12 +6664,31 @@ document.getElementById('abs-save-btn').addEventListener('click', function() {
       absCache = {};
       saveConfig().then(function() {
         st.textContent = '✓ Connected';
+        var tb = document.getElementById('abs-test-btn');
+        tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = '';
         setTimeout(function() { st.textContent = ''; }, 3000);
+        // Reload client config so injectAbsItems picks up new categoryId
+        return fetch('/api/config').then(function(r){ return r.json(); }).then(function(c){ config = c; });
       });
     } else {
       st.textContent = '✗ ' + (d.error || 'Login failed');
     }
   }).catch(function() { st.textContent = '✗ Connection failed'; });
+});
+
+document.getElementById('abs-test-btn').addEventListener('click', function() {
+  var st = document.getElementById('abs-status');
+  st.textContent = 'Testing…';
+  fetch('/api/abs/ping', { headers: { Authorization: 'Bearer ' + settingsToken } })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.libraries !== undefined) {
+        st.textContent = '✓ Connected — ' + d.libraries + ' librar' + (d.libraries === 1 ? 'y' : 'ies');
+      } else {
+        st.textContent = '✗ ' + (d.error || 'Failed');
+      }
+    })
+    .catch(function() { st.textContent = '✗ Connection failed'; });
 });
 
 // ── ABS API fetch with cache ──────────────────────────────────────────────────
@@ -6689,6 +6714,7 @@ function injectAbsItems() {
   var snapIdx = catIdx;
 
   absFetch('/libraries').then(function(d) {
+    console.log('[ABS] libraries response:', JSON.stringify(d).slice(0,200));
     if (catIdx !== snapIdx) return;
     var currentList = document.querySelector('.item-list');
     if (!currentList || currentList !== listEl) return;
