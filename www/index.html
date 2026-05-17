@@ -6947,34 +6947,46 @@ function absPlay(itemId, episodeId, startOffset, title) {
   musicPlayer.queue = [];
 
   function startAudio(url, offset) {
+    console.log('[ABS] startAudio url='+url.slice(0,80)+' offset='+offset);
     var a = musicPlayer.audio;
     a.pause();
+    a.onerror = function() { console.error('[ABS] audio error:', a.error && a.error.message, a.error && a.error.code); };
     a.src = url;
     if (offset && offset > 0) {
-      // Must wait for metadata before seeking
       var onMeta = function() {
         a.removeEventListener('loadedmetadata', onMeta);
+        console.log('[ABS] seeking to', offset, 'duration=', a.duration);
         a.currentTime = offset;
-        a.play().catch(function(){});
+        a.play().catch(function(e){ console.error('[ABS] play error:', e); });
+      };
+      var onErr = function() {
+        a.removeEventListener('error', onErr);
+        console.error('[ABS] load error, code:', a.error && a.error.code);
       };
       a.addEventListener('loadedmetadata', onMeta);
+      a.addEventListener('error', onErr);
       a.load();
     } else {
-      a.play().catch(function(){});
+      a.play().catch(function(e){ console.error('[ABS] play error:', e); });
     }
   }
 
+  console.log('[ABS] absPlay itemId='+itemId+' episodeId='+episodeId+' offset='+startOffset);
   fetch('/api/abs/streamurl/' + itemId + params, {
     headers: { 'Authorization': 'Bearer ' + token }
-  }).then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (!d.url) throw new Error('No URL');
+  }).then(function(r) {
+    console.log('[ABS] streamurl status:', r.status);
+    return r.json();
+  }).then(function(d) {
+    console.log('[ABS] streamurl response:', JSON.stringify(d).slice(0, 200));
+    if (!d.url) throw new Error('No URL in response');
     startAudio(d.url, startOffset);
   }).catch(function(e) {
-    console.error('ABS streamurl failed, using proxy:', e);
-    // Fallback: proxy stream
+    console.error('[ABS] streamurl failed:', e, '— trying proxy');
     var ep = episodeId ? '?episode=' + episodeId : '';
-    startAudio('/api/abs/stream/' + itemId + ep, startOffset);
+    var proxyUrl = '/api/abs/stream/' + itemId + ep;
+    console.log('[ABS] proxy url:', proxyUrl);
+    startAudio(proxyUrl, startOffset);
   });
 }
 
