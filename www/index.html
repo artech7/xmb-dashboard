@@ -5984,32 +5984,114 @@ document.addEventListener('keydown', function(e) {
 <script>
 // ─── NEBULA THEMES ────────────────────────────────────────────────────────────
 var NEBULA_THEMES = {
-  default: { name:'Default', orb:'radial-gradient(circle at 35% 35%,#6010cc,#0a1e9b,#960a5a)', blobs:[[75,10,160],[10,30,155],[150,10,90],[0,90,130],[50,0,125],[28,8,100]], bg:['#07021a','#03010e','#010009'] },
-  crimson: { name:'Crimson', orb:'radial-gradient(circle at 35% 35%,#c00a0a,#781e00,#a0003c)',  blobs:[[160,10,10],[120,40,0],[160,0,60],[100,20,0],[140,0,30],[80,10,10]],   bg:['#1a0202','#0e0100','#090001'] },
-  aurora:  { name:'Aurora',  orb:'radial-gradient(circle at 35% 35%,#00a050,#006478,#14783c)',  blobs:[[0,140,80],[0,100,120],[20,120,60],[0,160,100],[10,80,100],[0,60,80]],  bg:['#010e05','#010a06','#010608'] },
-  stellar: { name:'Stellar', orb:'radial-gradient(circle at 35% 35%,#0060d8,#008cdc,#143cb4)',  blobs:[[0,80,200],[0,140,220],[20,60,180],[0,100,200],[10,50,160],[0,70,150]], bg:['#010818','#01050e','#010309'] },
-  ember:   { name:'Ember',   orb:'radial-gradient(circle at 35% 35%,#c46000,#a07800,#c83c00)',  blobs:[[180,80,0],[160,120,0],[200,60,0],[140,100,20],[180,40,0],[120,60,0]],  bg:['#140700','#0e0500','#090300'] },
-  void:    { name:'Void',    orb:'radial-gradient(circle at 35% 35%,#2a2a40,#1e1e32,#322848)',  blobs:[[40,40,60],[30,30,50],[50,40,70],[20,30,50],[40,30,60],[25,25,40]],     bg:['#050508','#030305','#010103'] },
-  galaxy:  { name:'Galaxy',  orb:'radial-gradient(circle at 35% 35%,#c8a000,#a04080,#2040c0)',  blobs:[[200,160,0],[160,40,120],[40,60,200],[180,120,20],[80,20,160],[120,80,40]],  bg:['#07050e','#040309','#020106'] },
-  ocean:   { name:'Ocean',   orb:'radial-gradient(circle at 35% 35%,#006080,#002850,#00a878)',  blobs:[[0,96,128],[0,40,80],[0,168,120],[0,60,100],[0,80,60],[0,120,100]],          bg:['#000c10','#00070c','#000408'] },
-  solar:   { name:'Solar',   orb:'radial-gradient(circle at 35% 35%,#ff8c00,#ffcc00,#ff4400)',  blobs:[[255,140,0],[255,100,0],[220,180,0],[255,60,0],[200,140,0],[240,100,20]],    bg:['#0e0600','#0a0400','#060200'] },
-  forest:  { name:'Forest',  orb:'radial-gradient(circle at 35% 35%,#006030,#004020,#40a060)',  blobs:[[0,96,48],[20,120,40],[0,80,60],[40,100,20],[0,60,80],[10,80,50]],           bg:['#010a03','#010702','#000501'] },
-  // Sunset: warm orange-red fights cool violet-blue — like a sky at golden hour
-  sunset:  { name:'Sunset',  orb:'radial-gradient(circle at 35% 35%,#ff6000,#cc0080,#4400cc)',  blobs:[[255,96,0],[200,0,128],[80,0,200],[255,140,0],[160,0,180],[40,20,160]],      bg:['#0a0200','#070100','#040008'] },
-  // Plasma: electric cyan clashes with hot magenta — high-energy neon
-  plasma:  { name:'Plasma',  orb:'radial-gradient(circle at 35% 35%,#00e0ff,#ff00cc,#8800ff)',  blobs:[[0,224,255],[255,0,200],[136,0,255],[0,180,220],[200,0,160],[80,20,200]],     bg:['#00080e','#000008','#040005'] },
-  // Toxic: acid green against deep purple — dangerous and vivid
-  toxic:   { name:'Toxic',   orb:'radial-gradient(circle at 35% 35%,#80ff00,#00cc60,#6600cc)',  blobs:[[128,255,0],[0,200,80],[100,0,200],[80,220,20],[0,160,100],[80,40,180]],       bg:['#030800','#020500','#020008'] },
-  // Inferno: deep red core with ice-blue edges — fire and frost
-  inferno: { name:'Inferno', orb:'radial-gradient(circle at 35% 35%,#ff2000,#ff8800,#0080ff)',  blobs:[[255,32,0],[255,136,0],[0,128,255],[220,60,0],[200,100,20],[0,80,200]],        bg:['#0e0100','#0a0100','#000408'] },
-  // Prism: red, green and blue primaries — pure RGB split-light
-  prism:   { name:'Prism',   orb:'radial-gradient(circle at 35% 35%,#ff0040,#00dd80,#0060ff)',  blobs:[[255,0,64],[0,220,128],[0,96,255],[200,20,40],[0,180,80],[40,60,220]],         bg:['#080001','#040501','#00030a'] },
-  // Borealis: teal-green against violet — like the northern lights
-  borealis:{ name:'Borealis',orb:'radial-gradient(circle at 35% 35%,#00e0a0,#8000ff,#00c0ff)',  blobs:[[0,224,160],[128,0,255],[0,192,255],[0,180,120],[100,20,220],[0,140,200]],     bg:['#000a06','#040008','#00030a'] },
-  // Ember: gold and cyan — complementary opposite on the colour wheel
-  dusk:    { name:'Dusk',    orb:'radial-gradient(circle at 35% 35%,#ffaa00,#ff4400,#0088cc)',  blobs:[[255,170,0],[255,68,0],[0,136,200],[220,140,20],[200,40,0],[0,100,180]],        bg:['#0a0500','#080300','#00040a'] },
-  // Venom: lime against deep purple — comic-book contrast
-  venom:   { name:'Venom',   orb:'radial-gradient(circle at 35% 35%,#aaff00,#44cc00,#6600cc)',  blobs:[[170,255,0],[68,200,0],[100,0,200],[140,220,0],[50,160,20],[80,0,180]],         bg:['#040800','#030500','#040008'] },
+  default: {
+    name:'Default',
+    orb:'radial-gradient(circle, #a0c4ff 0%, #4a90e2 60%, #1a3a6e 100%)',
+    blobs:[[0,120,255],[0,80,200],[100,180,255],[50,150,255],[0,60,180],[80,160,240]],
+    bg:['#050a1a','#030814','#020610']
+  },
+  void: {
+    name:'Void',
+    orb:'radial-gradient(circle, #8844ff 0%, #4400cc 60%, #1a0044 100%)',
+    blobs:[[120,0,255],[80,0,200],[160,80,255],[100,20,220],[60,0,180],[140,60,240]],
+    bg:['#08000f','#05000a','#030008']
+  },
+  ocean: {
+    name:'Ocean',
+    orb:'radial-gradient(circle, #00e5ff 0%, #0088cc 60%, #003366 100%)',
+    blobs:[[0,180,220],[0,140,200],[0,220,255],[0,100,180],[20,160,210],[0,200,240]],
+    bg:['#020d1a','#010a14','#01070f']
+  },
+  neon: {
+    name:'Neon',
+    orb:'radial-gradient(circle, #ff00ff 0%, #cc00cc 60%, #440044 100%)',
+    blobs:[[255,0,255],[200,0,200],[255,80,255],[220,0,220],[180,0,180],[255,40,200]],
+    bg:['#100010','#0a000a','#060006']
+  },
+  arctic: {
+    name:'Arctic',
+    orb:'radial-gradient(circle, #e0f4ff 0%, #90cdf4 60%, #2c5282 100%)',
+    blobs:[[200,235,255],[160,210,240],[220,245,255],[180,220,245],[140,195,230],[210,238,255]],
+    bg:['#0a1520','#071018','#050c14']
+  },
+  obsidian: {
+    name:'Obsidian',
+    orb:'radial-gradient(circle, #ff6600 0%, #cc4400 60%, #441100 100%)',
+    blobs:[[255,100,0],[220,70,0],[255,140,40],[200,60,0],[180,50,0],[240,110,20]],
+    bg:['#120600','#0d0400','#080300']
+  },
+  sakura: {
+    name:'Sakura',
+    orb:'radial-gradient(circle, #ffb7c5 0%, #e8789a 60%, #8b3a5a 100%)',
+    blobs:[[255,180,200],[230,140,170],[255,200,215],[210,120,155],[240,160,185],[255,190,210]],
+    bg:['#120608','#0e0506','#0a0304']
+  },
+  matrix: {
+    name:'Matrix',
+    orb:'radial-gradient(circle, #00ff41 0%, #00cc33 60%, #003311 100%)',
+    blobs:[[0,255,65],[0,200,50],[40,255,100],[0,180,45],[0,160,40],[20,240,80]],
+    bg:['#000f05','#000b04','#000803']
+  },
+  copper: {
+    name:'Copper',
+    orb:'radial-gradient(circle, #ffaa44 0%, #cc7700 60%, #442200 100%)',
+    blobs:[[255,170,68],[220,130,30],[255,190,100],[200,120,20],[180,100,10],[240,160,60]],
+    bg:['#120900','#0d0700','#080500']
+  },
+  midnight: {
+    name:'Midnight',
+    orb:'radial-gradient(circle, #4466ff 0%, #2233cc 60%, #0a1155 100%)',
+    blobs:[[68,102,255],[40,70,220],[100,130,255],[50,80,200],[30,60,180],[80,110,240]],
+    bg:['#02040f','#01030a','#010207']
+  },
+  toxic: {
+    name:'Toxic',
+    orb:'radial-gradient(circle, #aaff00 0%, #77cc00 60%, #224400 100%)',
+    blobs:[[170,255,0],[140,220,0],[200,255,40],[120,200,0],[100,180,0],[180,240,20]],
+    bg:['#080f00','#060a00','#040700']
+  },
+  crimson: {
+    name:'Crimson',
+    orb:'radial-gradient(circle, #ff2244 0%, #cc0022 60%, #440011 100%)',
+    blobs:[[255,34,68],[220,0,40],[255,80,100],[200,0,30],[180,0,25],[240,40,80]],
+    bg:['#120005','#0d0004','#080003']
+  },
+  slate: {
+    name:'Slate',
+    orb:'radial-gradient(circle, #94a3b8 0%, #64748b 60%, #1e293b 100%)',
+    blobs:[[148,163,184],[100,116,139],[180,194,210],[80,100,120],[60,80,100],[160,175,195]],
+    bg:['#0a0d12','#07090e','#05060a']
+  },
+  amber: {
+    name:'Amber',
+    orb:'radial-gradient(circle, #ffd700 0%, #ffaa00 60%, #664400 100%)',
+    blobs:[[255,215,0],[230,180,0],[255,230,60],[210,160,0],[190,140,0],[245,210,30]],
+    bg:['#120c00','#0d0900','#080600']
+  },
+  ultraviolet: {
+    name:'Ultraviolet',
+    orb:'radial-gradient(circle, #9900ff 0%, #6600cc 60%, #220044 100%)',
+    blobs:[[153,0,255],[120,0,220],[190,60,255],[100,0,200],[80,0,180],[170,40,240]],
+    bg:['#09000f','#06000a','#040008']
+  },
+  rose: {
+    name:'Rose',
+    orb:'radial-gradient(circle, #ff6b6b 0%, #ee3333 60%, #661111 100%)',
+    blobs:[[255,107,107],[230,70,70],[255,150,150],[210,50,50],[190,40,40],[245,120,120]],
+    bg:['#120404','#0d0303','#080202']
+  },
+  glacier: {
+    name:'Glacier',
+    orb:'radial-gradient(circle, #a8edea 0%, #5bc8c0 60%, #1a5c58 100%)',
+    blobs:[[168,237,234],[120,200,196],[200,245,242],[100,180,176],[80,160,156],[180,228,225]],
+    bg:['#021210','#010e0c','#010a08']
+  },
+  solar: {
+    name:'Solar',
+    orb:'radial-gradient(circle, #ffcc00 0%, #ff8800 60%, #cc3300 100%)',
+    blobs:[[255,200,0],[255,140,0],[255,220,60],[240,100,0],[220,80,0],[255,180,30]],
+    bg:['#120800','#0d0600','#080400']
+  }
 };
 
 // ─── PREFS STATE ──────────────────────────────────────────────────────────────
