@@ -3386,24 +3386,24 @@ function scrollItemList() {
 
   var panelEl = document.getElementById('item-panel');
   if (!panelEl) return;
-  var panelH = panelEl.offsetHeight - 32;
+
+  // Visible window = panel client height minus top padding
+  // clientHeight excludes borders, includes padding — subtract paddingTop only
+  var style   = window.getComputedStyle(panelEl);
+  var padTop  = parseFloat(style.paddingTop)    || 32;
+  var padBot  = parseFloat(style.paddingBottom) || 56;
+  var panelH  = panelEl.clientHeight - padTop - padBot;
   if (panelH <= 0) return;
 
-  // Get the selected item's natural top position within the list
-  // (offsetTop relative to listEl, unaffected by current transform)
   var itemTop = selEl.offsetTop;
   var itemH   = selEl.offsetHeight || 62;
 
-  // Anchor: selected item appears at 1 item-height from top of panel
-  var anchorPx = itemH * 0.8;
-
-  // Offset needed to place itemTop at anchorPx
+  // Anchor: selected item near top
+  var anchorPx     = itemH * 0.8;
   var targetOffset = anchorPx - itemTop;
 
-  // Clamp: no blank above first child, no blank below last
-  // Extra padding at bottom so last item is fully visible
-  var BOTTOM_PAD = 60; // clear the hint bar at bottom
-  var listH     = listEl.scrollHeight + BOTTOM_PAD;
+  // Clamp: no gap above first, last item fully visible
+  var listH    = listEl.scrollHeight;
   var maxOffset = 0;
   var minOffset = Math.min(0, panelH - listH);
   targetOffset  = Math.max(minOffset, Math.min(maxOffset, targetOffset));
@@ -4039,20 +4039,7 @@ init().then(function() {
                 <option value="">— select category —</option>
               </select>
             </div>
-            <div class="s-field-group">
-              <label class="s-label">Show in category</label>
-              <div style="display:flex;gap:20px;margin-top:6px">
-                <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.7)">
-                  <input type="checkbox" id="sub-artists" style="accent-color:var(--accent);width:15px;height:15px"> Artists
-                </label>
-                <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.7)">
-                  <input type="checkbox" id="sub-playlists" style="accent-color:var(--accent);width:15px;height:15px"> Playlists
-                </label>
-                <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.7)">
-                  <input type="checkbox" id="sub-genres" style="accent-color:var(--accent);width:15px;height:15px"> Genres
-                </label>
-              </div>
-            </div>
+<!-- show-type checkboxes removed — sort bar in category handles this -->
             <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
               <button class="s-btn s-btn-primary" id="sub-save-btn">Save</button>
               <button class="s-btn" id="sub-test-btn" disabled style="opacity:0.35;cursor:not-allowed">Test Connection</button>
@@ -6105,9 +6092,7 @@ function populateMusicIntegrationView() {
   document.getElementById('sub-url').value        = sub.url      || '';
   document.getElementById('sub-user').value       = sub.username || '';
   document.getElementById('sub-pass').value       = sub.password || '';
-  document.getElementById('sub-artists').checked   = !!sub.showArtists;
-  document.getElementById('sub-playlists').checked = !!sub.showPlaylists;
-  document.getElementById('sub-genres').checked    = !!sub.showGenres;
+// type checkboxes removed
 }
 
 document.getElementById('sub-save-btn').addEventListener('click', function() {
@@ -6117,9 +6102,7 @@ document.getElementById('sub-save-btn').addEventListener('click', function() {
     username: document.getElementById('sub-user').value.trim(),
     password: document.getElementById('sub-pass').value,
     categoryId: document.getElementById('sub-cat').value,
-    showArtists:  document.getElementById('sub-artists').checked,
-    showPlaylists:document.getElementById('sub-playlists').checked,
-    showGenres:   document.getElementById('sub-genres').checked,
+    showArtists: true, showPlaylists: true, showGenres: true,
   };
   subCache = {}; _streamUrlCache = {}; _coverUrlCache = {};
   saveConfig().then(function() {
@@ -6329,7 +6312,8 @@ var _subItems = [];
 
 function loadSubsonicItems(sub) {
   var promises = [], items = [];
-  if (sub.showArtists) {
+  // Always load all types — sort bar in category lets user choose view
+  if (true || sub.showArtists) {
     promises.push(subFetch('artists').then(function(d) {
       toArr(d.artists && d.artists.index).forEach(function(g) {
         toArr(g.artist).forEach(function(a) {
@@ -6340,7 +6324,7 @@ function loadSubsonicItems(sub) {
       });
     }).catch(function(){}));
   }
-  if (sub.showPlaylists) {
+  if (true || sub.showPlaylists) {
     promises.push(subFetch('playlists').then(function(d) {
       toArr(d.playlists && d.playlists.playlist).forEach(function(pl) {
         items.push({ name:pl.name, desc:(pl.songCount||0)+' song'+(pl.songCount!==1?'s':''),
@@ -6349,7 +6333,7 @@ function loadSubsonicItems(sub) {
       });
     }).catch(function(){}));
   }
-  if (sub.showGenres) {
+  if (true || sub.showGenres) {
     promises.push(subFetch('genres').then(function(d) {
       var gs = toArr(d.genres && d.genres.genre);
       gs.sort(function(a,b){ return (b.songCount||0)-(a.songCount||0); });
@@ -6443,10 +6427,16 @@ function injectSubsonicItems() {
       }
     });
 
-    // Inject music sort bar
+    // Inject music sort bar and default to Artists view
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         subInjectSortBar(items);
+        // Auto-apply Artists filter on first load
+        var bar = document.querySelector('[data-sub-sort]');
+        if (bar) {
+          var btn = bar.querySelector('[data-sort="Artists"]');
+          if (btn) btn.click();
+        }
       });
     });
   });
@@ -7016,7 +7006,7 @@ function absInjectSortBar(rawItems) {
 
 // ── Navidrome sort bar ────────────────────────────────────────────────────────
 var _subSortActive = 'Artists';
-var _subSortKeys = ['Artists', 'Albums', 'Genres', 'Playlists'];
+var _subSortKeys = ['Artists', 'Playlists', 'Genres', 'All'];
 
 function subInjectSortBar(rawItems) {
   var listEl = document.querySelector('.item-list');
@@ -7056,18 +7046,13 @@ function subInjectSortBar(rawItems) {
     var filtered;
     if (key === 'Artists') {
       filtered = rawItems.filter(function(i){ return i._type === 'artist'; });
-    } else if (key === 'Albums') {
-      filtered = rawItems.filter(function(i){ return i._type === 'album' || (i._type === 'playlist' && i._id && i.name); });
-      // If no album type, show all
-      if (!filtered.length) filtered = rawItems.slice();
-    } else if (key === 'Genres') {
-      filtered = rawItems.filter(function(i){ return i._type === 'genre'; });
     } else if (key === 'Playlists') {
       filtered = rawItems.filter(function(i){ return i._type === 'playlist'; });
+    } else if (key === 'Genres') {
+      filtered = rawItems.filter(function(i){ return i._type === 'genre'; });
     } else {
-      filtered = rawItems.slice();
+      filtered = rawItems.slice(); // All
     }
-    // If filtering gives nothing, show all of that type
     if (!filtered.length) filtered = rawItems.slice();
 
     // Re-render subsonic items only
@@ -7102,15 +7087,7 @@ function subInjectSortBar(rawItems) {
     scrollItemList();
   }
 
-  // Only show sort buttons for enabled types
-  var sub = config && config.subsonic || {};
-  var enabledKeys = [];
-  if (sub.showArtists)   enabledKeys.push('Artists');
-  if (sub.showPlaylists) enabledKeys.push('Playlists');
-  if (sub.showGenres)    enabledKeys.push('Genres');
-  var keysToShow = enabledKeys.length > 1 ? enabledKeys : _subSortKeys;
-
-  keysToShow.forEach(function(key) {
+  _subSortKeys.forEach(function(key) {
     var btn = document.createElement('button');
     btn.dataset.sort = key;
     btn.textContent = key;
