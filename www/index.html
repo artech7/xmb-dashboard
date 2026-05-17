@@ -3400,7 +3400,9 @@ function scrollItemList() {
   var targetOffset = anchorPx - itemTop;
 
   // Clamp: no blank above first child, no blank below last
-  var listH    = listEl.scrollHeight;
+  // Extra padding at bottom so last item is fully visible
+  var BOTTOM_PAD = 16;
+  var listH     = listEl.scrollHeight + BOTTOM_PAD;
   var maxOffset = 0;
   var minOffset = Math.min(0, panelH - listH);
   targetOffset  = Math.max(minOffset, Math.min(maxOffset, targetOffset));
@@ -6890,15 +6892,16 @@ function absInjectSortBar(rawItems) {
   bar.setAttribute('data-abs-sort', '1');
   bar.style.cssText = 'display:flex;gap:6px;padding:6px 16px 8px;align-items:center;flex-wrap:wrap';
 
-  var label = document.createElement('span');
-  label.textContent = 'SORT';
-  label.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.35);margin-right:4px';
-  bar.appendChild(label);
-
   var hint = document.createElement('span');
-  hint.textContent = '(press S)';
-  hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.18);margin-left:auto;letter-spacing:0.04em';
-  // appended after buttons below
+  hint.textContent = 'S';
+  hint.style.cssText = 'font-size:10px;font-weight:600;color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.20);border-radius:3px;padding:1px 5px;margin-right:6px;letter-spacing:0.05em';
+  hint.title = 'Press S to cycle sort';
+  bar.appendChild(hint);
+
+  var label = document.createElement('span');
+  label.textContent = 'SORT:';
+  label.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.35);margin-right:6px';
+  bar.appendChild(label);
 
   var sortFns = {
     'Title':  function(a,b){ return a.name.localeCompare(b.name); },
@@ -6999,7 +7002,6 @@ function absInjectSortBar(rawItems) {
     }
   });
 
-  bar.appendChild(hint); // S key hint at right end
   listEl.insertBefore(bar, listEl.firstChild);
 }
 
