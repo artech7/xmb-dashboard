@@ -6186,7 +6186,7 @@ function musicRenderLevel() {
     el.classList.toggle('selected', i === itemIdx);
 
     var art = item.coverArt
-      ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
+      ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">'
       : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
 
     var hasChild = !!(item._type || (item._song === undefined));
@@ -6356,7 +6356,7 @@ function injectSubsonicItems() {
       el.className = 'xmb-item';
       el.setAttribute('data-sub', 'item');
       var art = item.coverArt
-        ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover">'
+        ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">'
         : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
       el.innerHTML =
         '<div class="xmb-item-icon">'+art+'</div>'+
@@ -6478,6 +6478,8 @@ function musicPlay(queue, idx) {
   document.getElementById('now-playing-title').textContent  = song.title || '—';
   document.getElementById('now-playing-artist').textContent = song.artist || '';
   var art = document.getElementById('now-playing-art');
+  art.removeAttribute('data-retried');
+  art.onerror = function() { coverArtError(this); };
   art.src = song.coverArt ? '/api/subsonic/coverart?id='+song.coverArt : '';
   art.style.display = song.coverArt ? '' : 'none';
   document.getElementById('now-playing').classList.add('visible');
@@ -6544,6 +6546,29 @@ document.getElementById('np-close').addEventListener('click', function() {
 function openSubItem(item) { musicItemAction(item); }
 
 
+
+// ── Cover art error handling ──────────────────────────────────────────────────
+function coverArtError(img) {
+  // Retry once after a short delay, then show placeholder
+  if (img.dataset.retried) {
+    // Already retried — show music note placeholder
+    img.style.display = 'none';
+    var ph = document.createElement('div');
+    ph.style.cssText = img.style.cssText + ';display:flex;align-items:center;justify-content:center;font-size:16px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)';
+    ph.style.width  = img.style.width  || img.width  + 'px';
+    ph.style.height = img.style.height || img.height + 'px';
+    ph.textContent  = '♪';
+    if (img.parentNode) img.parentNode.insertBefore(ph, img);
+    return;
+  }
+  img.dataset.retried = '1';
+  // Retry after 800ms
+  setTimeout(function() {
+    var src = img.src;
+    img.src = '';
+    img.src = src;
+  }, 800);
+}
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Row 0 = theme swatches (6 cols), rows 1-6 = toggle rows, row 7 = reset btn
 var THEME_KEYS = Object.keys(NEBULA_THEMES);

@@ -245,12 +245,17 @@ app.get('/api/subsonic/coverart', (req, res) => {
   const fullUrl = `${base}/rest/getCoverArt?${qp.toString()}`;
 
   const lib = fullUrl.startsWith('https') ? https : http;
-  lib.get(fullUrl, (r2) => {
+  const req2 = lib.get(fullUrl, (r2) => {
+    if (r2.statusCode !== 200) {
+      res.status(r2.statusCode || 502).send('Cover art fetch failed');
+      return;
+    }
     res.setHeader('Content-Type', r2.headers['content-type'] || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // 7 days
     res.setHeader('ETag', `"cover-${req.query.id}-${size}"`);
     r2.pipe(res);
-  }).on('error', err => res.status(502).send(err.message));
+  }).on('error', err => { if (!res.headersSent) res.status(502).send(err.message); });
+  req2.setTimeout(8000, () => { req2.destroy(); if (!res.headersSent) res.status(504).send('Timeout'); });
 });
 
 
