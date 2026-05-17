@@ -157,6 +157,14 @@ app.put('/api/config', auth, (req, res) => {
     return res.status(400).json({ error: 'Invalid config structure' });
   }
   try {
+    // Preserve server-side secrets that clients don't hold
+    const existing = readConfig();
+    if (existing.abs && existing.abs.token && cfg.abs) {
+      cfg.abs.token = existing.abs.token; // never let client overwrite the token
+    }
+    if (existing.subsonic && existing.subsonic.password && cfg.subsonic && !cfg.subsonic.password) {
+      cfg.subsonic.password = existing.subsonic.password;
+    }
     writeConfig(cfg);
     res.json({ ok: true });
   } catch (err) {
@@ -311,7 +319,7 @@ function absRequest(absCfg, method, endpoint, body, res) {
 
 // Login — returns token
 app.post('/api/abs/login', auth, (req, res) => {
-  const { url, username, password } = req.body || {};
+  const { url, username, password, categoryId } = req.body || {};
   if (!url || !username || !password) return res.status(400).json({ error: 'Missing credentials' });
   const base    = url.replace(/\/$/, '');
   const fullUrl = `${base}/login`;
@@ -334,9 +342,10 @@ app.post('/api/abs/login', auth, (req, res) => {
           // Save token to config
           const cfg = readConfig();
           if (!cfg.abs) cfg.abs = {};
-          cfg.abs.token    = json.user.token;
-          cfg.abs.url      = url;
-          cfg.abs.username = username;
+          cfg.abs.token      = json.user.token;
+          cfg.abs.url        = url;
+          cfg.abs.username   = username;
+          if (categoryId) cfg.abs.categoryId = categoryId;
           writeConfig(cfg);
           res.json({ ok: true, token: json.user.token });
         } else {

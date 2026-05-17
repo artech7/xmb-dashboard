@@ -6653,7 +6653,7 @@ document.getElementById('abs-save-btn').addEventListener('click', function() {
   fetch('/api/abs/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settingsToken },
-    body: JSON.stringify({ url: url, username: user, password: pass })
+    body: JSON.stringify({ url: url, username: user, password: pass, categoryId: catId })
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
       if (!settingsConfig.abs) settingsConfig.abs = {};
