@@ -146,9 +146,10 @@ html, body {
   max-width: 640px;
   width: 48vw;
   padding-top: 32px;
+  padding-bottom: 56px;
   /* Fixed window — list scrolls inside via translateY */
   overflow: hidden;
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 180px);
 }
 
 /* No fade overlays needed — clean clip via overflow:hidden */
@@ -3401,7 +3402,7 @@ function scrollItemList() {
 
   // Clamp: no blank above first child, no blank below last
   // Extra padding at bottom so last item is fully visible
-  var BOTTOM_PAD = 16;
+  var BOTTOM_PAD = 60; // clear the hint bar at bottom
   var listH     = listEl.scrollHeight + BOTTOM_PAD;
   var maxOffset = 0;
   var minOffset = Math.min(0, panelH - listH);
@@ -3761,7 +3762,7 @@ renderItems = function() {
 var _origUpdateCategoryUI = updateCategoryUI;
 updateCategoryUI = function() {
   // Reset music drill-down on category change
-  musicStack = []; inMusicDrill = false; _subItems = []; _absItems = [];
+  musicStack = []; inMusicDrill = false; _subItems = []; _absItems = []; _subSortActive = 'Artists';
   _origUpdateCategoryUI(); // already calls updateMobileCatStrip internally
 };
 
@@ -6441,6 +6442,13 @@ function injectSubsonicItems() {
         img.src = '/api/subsonic/coverart?id=' + item.coverArt + '&size=300';
       }
     });
+
+    // Inject music sort bar
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        subInjectSortBar(items);
+      });
+    });
   });
 }
 
@@ -7005,17 +7013,143 @@ function absInjectSortBar(rawItems) {
   listEl.insertBefore(bar, listEl.firstChild);
 }
 
-// 'S' key cycles sort when in a library level
+
+// ── Navidrome sort bar ────────────────────────────────────────────────────────
+var _subSortActive = 'Artists';
+var _subSortKeys = ['Artists', 'Albums', 'Genres', 'Playlists'];
+
+function subInjectSortBar(rawItems) {
+  var listEl = document.querySelector('.item-list');
+  if (!listEl || listEl.querySelector('[data-sub-sort]')) return;
+
+  // Find the Navidrome divider to insert bar after it
+  var divider = listEl.querySelector('[data-sub="divider"]');
+  var searchEl = listEl.querySelector('[data-sub="search"]');
+  if (!divider) return;
+
+  _subSortActive = 'Artists';
+
+  var bar = document.createElement('div');
+  bar.setAttribute('data-sub-sort', '1');
+  bar.style.cssText = 'display:flex;gap:6px;padding:4px 16px 8px;align-items:center;flex-wrap:wrap';
+
+  var hint = document.createElement('span');
+  hint.textContent = 'S';
+  hint.style.cssText = 'font-size:10px;font-weight:600;color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.20);border-radius:3px;padding:1px 5px;margin-right:6px;letter-spacing:0.05em';
+  hint.title = 'Press S to cycle sort';
+  bar.appendChild(hint);
+
+  var label = document.createElement('span');
+  label.textContent = 'VIEW:';
+  label.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.35);margin-right:6px';
+  bar.appendChild(label);
+
+  var catItems = (config.categories && config.categories[catIdx] && config.categories[catIdx].items) || [];
+
+  function applySubSort(key) {
+    _subSortActive = key;
+    bar.querySelectorAll('button').forEach(function(b) {
+      b.style.background = b.dataset.sort === key ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.06)';
+      b.style.border = b.dataset.sort === key ? '1px solid rgba(255,255,255,0.30)' : '1px solid rgba(255,255,255,0.10)';
+    });
+    // Filter rawItems by type
+    var filtered;
+    if (key === 'Artists') {
+      filtered = rawItems.filter(function(i){ return i._type === 'artist'; });
+    } else if (key === 'Albums') {
+      filtered = rawItems.filter(function(i){ return i._type === 'album' || (i._type === 'playlist' && i._id && i.name); });
+      // If no album type, show all
+      if (!filtered.length) filtered = rawItems.slice();
+    } else if (key === 'Genres') {
+      filtered = rawItems.filter(function(i){ return i._type === 'genre'; });
+    } else if (key === 'Playlists') {
+      filtered = rawItems.filter(function(i){ return i._type === 'playlist'; });
+    } else {
+      filtered = rawItems.slice();
+    }
+    // If filtering gives nothing, show all of that type
+    if (!filtered.length) filtered = rawItems.slice();
+
+    // Re-render subsonic items only
+    listEl.querySelectorAll('[data-sub="item"]').forEach(function(el){ el.remove(); });
+    filtered.forEach(function(item) {
+      var el = document.createElement('div');
+      el.className = 'xmb-item';
+      el.setAttribute('data-sub', 'item');
+      var art = item.coverArt
+        ? '<img src="/api/subsonic/coverart?id='+item.coverArt+'" style="width:28px;height:28px;border-radius:3px;object-fit:cover" onerror="coverArtError(this)">'
+        : '<div style="width:28px;height:28px;border-radius:3px;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>';
+      el.innerHTML =
+        '<div class="xmb-item-icon">'+art+'</div>'+
+        '<div class="xmb-item-text">'+
+          '<div class="xmb-item-name">'+escHtml(item.name)+'</div>'+
+          (item.desc?'<div class="xmb-item-desc">'+escHtml(item.desc)+'</div>':'')+
+        '</div>'+
+        '<span class="xmb-item-arrow">›</span>';
+      el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var all = document.querySelectorAll('.item-list .xmb-item');
+        all.forEach(function(d,di){ if(d===el) itemIdx=di; });
+        updateItemSelection();
+        openSubItem(item);
+      });
+      listEl.appendChild(el);
+    });
+
+    allItems = catItems.concat(filtered);
+    itemIdx = 0;
+    updateItemSelection();
+    scrollItemList();
+  }
+
+  // Only show sort buttons for enabled types
+  var sub = config && config.subsonic || {};
+  var enabledKeys = [];
+  if (sub.showArtists)   enabledKeys.push('Artists');
+  if (sub.showPlaylists) enabledKeys.push('Playlists');
+  if (sub.showGenres)    enabledKeys.push('Genres');
+  var keysToShow = enabledKeys.length > 1 ? enabledKeys : _subSortKeys;
+
+  keysToShow.forEach(function(key) {
+    var btn = document.createElement('button');
+    btn.dataset.sort = key;
+    btn.textContent = key;
+    btn.style.cssText = 'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:3px;padding:3px 10px;color:#fff;cursor:pointer;font-size:11px;letter-spacing:0.05em;transition:background 0.15s';
+    if (key === 'Artists') { btn.style.background = 'rgba(255,255,255,0.20)'; btn.style.border = '1px solid rgba(255,255,255,0.30)'; }
+    btn.addEventListener('click', function(e) { e.stopPropagation(); applySubSort(key); });
+    bar.appendChild(btn);
+  });
+
+  // Insert after search bar (or after divider if no search)
+  var insertAfter = searchEl || divider;
+  if (insertAfter.nextSibling) {
+    listEl.insertBefore(bar, insertAfter.nextSibling);
+  } else {
+    listEl.appendChild(bar);
+  }
+}
+
+// 'S' key cycles both ABS and Sub sort bars
+// 'S' key cycles ABS or Sub sort bar
 document.addEventListener('keydown', function(e) {
   if (e.key !== 's' && e.key !== 'S') return;
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-  var bar = document.querySelector('[data-abs-sort]');
-  if (!bar) return;
-  var idx = _absSortKeys.indexOf(_absSortActive);
-  var next = _absSortKeys[(idx + 1) % _absSortKeys.length];
-  // Find and click the next sort button
-  var btn = bar.querySelector('[data-sort="'+next+'"]');
-  if (btn) btn.click();
+  // Try ABS sort bar first
+  var absBar = document.querySelector('[data-abs-sort]');
+  if (absBar) {
+    var idx = _absSortKeys.indexOf(_absSortActive);
+    var next = _absSortKeys[(idx + 1) % _absSortKeys.length];
+    var btn = absBar.querySelector('[data-sort="'+next+'"]');
+    if (btn) { btn.click(); return; }
+  }
+  // Try Sub sort bar
+  var subBar = document.querySelector('[data-sub-sort]');
+  if (subBar) {
+    var sidx = _subSortKeys.indexOf(_subSortActive);
+    var snext = _subSortKeys[(sidx + 1) % _subSortKeys.length];
+    var sbtn = subBar.querySelector('[data-sort="'+snext+'"]');
+    if (sbtn) sbtn.click();
+  }
 });
 
 function absMakeItemEl(item) {
