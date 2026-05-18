@@ -1632,13 +1632,13 @@ function initGalaxyStars() {
   // Extra clouds near center + arms for intermingling
   galaxyClouds = [];
 
-  // Central nebula mass
+  // Central nebula mass — large clouds near core
   for (var k = 0; k < 4; k++) {
     var cAngle = k * Math.PI * 0.5 + Math.random() * 0.8;
     galaxyClouds.push({
       dist: 0.05 + Math.random() * 0.25,
       baseAngle: cAngle,
-      r: 0.38 + Math.random() * 0.28,   // 38-66% of maxR
+      r: 0.55 + Math.random() * 0.35,   // 55-90% of maxR
       alpha: 0.09 + Math.random() * 0.07,
       layer: 'outer',
       paletteIdx: k,
@@ -1646,14 +1646,14 @@ function initGalaxyStars() {
     galaxyClouds.push({
       dist: 0.02 + Math.random() * 0.18,
       baseAngle: cAngle + 0.3,
-      r: 0.22 + Math.random() * 0.16,
+      r: 0.30 + Math.random() * 0.20,
       alpha: 0.12 + Math.random() * 0.08,
       layer: 'inner',
       paletteIdx: (k + 2) % 6,
     });
   }
 
-  // Arm nebulae — along spiral arms, overlapping each other
+  // Arm nebulae — along spiral arms
   for (var k = 0; k < 9; k++) {
     var arm2 = k % arms;
     var cDist = 0.15 + Math.random() * 0.65;
@@ -1662,22 +1662,37 @@ function initGalaxyStars() {
       arm: arm2,
       dist: cDist,
       baseAngle: arm2 * (Math.PI*2/arms) + cCurl + (Math.random()-0.5)*0.8,
-      r: 0.28 + Math.random() * 0.26,   // 28-54% of maxR
+      r: 0.42 + Math.random() * 0.38,   // 42-80% of maxR — much larger
       alpha: 0.07 + Math.random() * 0.06,
       layer: 'arm',
       paletteIdx: k % 6,
     });
   }
 
-  // Extra overlap clouds — fill gaps and intermingle
-  for (var k = 0; k < 5; k++) {
+  // Edge-reaching clouds — high dist so lobes push to screen boundary
+  for (var k = 0; k < 6; k++) {
     galaxyClouds.push({
-      dist: 0.25 + Math.random() * 0.45,
+      dist: 0.55 + Math.random() * 0.30,  // far from center
       baseAngle: Math.random() * Math.PI * 2,
-      r: 0.32 + Math.random() * 0.24,
-      alpha: 0.05 + Math.random() * 0.05,
+      r: 0.55 + Math.random() * 0.30,     // large enough to reach edges
+      alpha: 0.06 + Math.random() * 0.05,
       layer: 'fill',
-      paletteIdx: (k * 3) % 6,
+      paletteIdx: (k * 2) % 6,
+    });
+  }
+
+  // Background static stars — scattered across full screen, random blink rates
+  galaxyStars._bgStars = [];
+  var numBgStars = 280;
+  for (var i = 0; i < numBgStars; i++) {
+    galaxyStars._bgStars.push({
+      x:       Math.random(),           // 0..1 screen fraction
+      y:       Math.random(),
+      size:    Math.random() * 1.2 + 0.2,
+      alpha:   Math.random() * 0.5 + 0.1,
+      blinkRate: Math.random() * 0.0015 + 0.0003,  // very varied rates
+      phase:   Math.random() * Math.PI * 2,         // offset so they don't sync
+      blueish: Math.random() > 0.75,
     });
   }
 }
@@ -1791,6 +1806,20 @@ function drawGalaxy() {
   core.addColorStop(0.5, 'rgba('+Math.round(ar*0.5)+','+Math.round(ag*0.5)+','+Math.round(ab*0.5)+',0.10)');
   core.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = core; ctx.fillRect(0,0,W,H);
+
+  // ── Background static stars (full screen, random blink) ──
+  var bgStars = galaxyStars._bgStars || [];
+  bgStars.forEach(function(s) {
+    var tw = 0.5 + 0.5 * Math.sin(t * s.blinkRate + s.phase);
+    var a  = s.alpha * (0.4 + 0.6 * tw);
+    var sx = s.x * W, sy = s.y * H;
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.size * tw * 0.8 + 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = s.blueish
+      ? 'rgba(180,210,255,' + a + ')'
+      : 'rgba(255,255,255,' + a + ')';
+    ctx.fill();
+  });
 
   // ── Arm glow trails ───────────────────────────────────────
   var arms = 3;
