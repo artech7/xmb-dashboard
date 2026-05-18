@@ -4368,6 +4368,197 @@ var settingsConfig = null;
 var activeCatIdx   = null;
 
 
+
+function clampCol(row, col) {
+  return Math.max(0, Math.min(col, ROW_COLS[row] - 1));
+}
+
+function clearKbFocus() {
+  document.querySelectorAll('.kb-focus').forEach(function(el){ el.classList.remove('kb-focus'); });
+}
+
+function applyKbFocus() {
+  clearKbFocus();
+  var el;
+  if (prefFocusRow === 0) {
+    var swatches = document.querySelectorAll('.theme-swatch');
+    el = swatches[prefFocusCol];
+  } else if (prefFocusRow === 8) {
+    el = document.getElementById('prefs-reset-btn');
+  } else {
+    el = document.querySelector('[data-pref-row="'+prefFocusRow+'"][data-pref-col="'+prefFocusCol+'"]');
+  }
+  if (el) {
+    el.classList.add('kb-focus');
+    el.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }
+}
+
+function activateFocused() {
+  if (prefFocusRow === 0) {
+    var key = THEME_KEYS[prefFocusCol];
+    if (key) { userPrefs.theme = key; applyPrefs(userPrefs); savePrefs(); renderPrefsUI(); }
+  } else if (prefFocusRow === 8) {
+    userPrefs = Object.assign({}, DEFAULT_PREFS);
+    prefFocusRow = 0; prefFocusCol = 0;
+    applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
+  } else {
+    var el = document.querySelector('[data-pref-row="'+prefFocusRow+'"][data-pref-col="'+prefFocusCol+'"]');
+    if (el) {
+      var pref = el.dataset.pref;
+      var val  = el.dataset.val;
+      userPrefs[pref] = val;
+      applyPrefs(userPrefs); savePrefs();
+      if (pref==='clockFmt') {
+        var use24 = prefClockOverride!==null ? prefClockOverride : (config&&config.clockFormat==='24h');
+        updateClock(use24);
+      }
+      renderPrefsUI();
+    }
+  }
+}
+
+// ─── OPEN / CLOSE ─────────────────────────────────────────────────────────────
+function openPrefs() {
+  document.getElementById('prefs-overlay').classList.add('open');
+  // Set focus col to current active option in focus row
+  prefFocusRow = 0;
+  prefFocusCol = Math.max(0, THEME_KEYS.indexOf(userPrefs.theme));
+  renderPrefsUI();
+  setTimeout(applyKbFocus, 50);
+}
+function closePrefs() {
+  clearKbFocus();
+  document.getElementById('prefs-overlay').classList.remove('open');
+}
+
+document.getElementById('prefs-close').addEventListener('click', closePrefs);
+document.getElementById('prefs-overlay').addEventListener('click', function(e){
+  if (e.target===document.getElementById('prefs-overlay')) closePrefs();
+});
+
+// Get number of visible columns in the theme swatch grid
+function getThemeGridCols() {
+  var container = document.getElementById('theme-swatches');
+  if (!container) return 7; // fallback
+  var swatches = container.querySelectorAll('.theme-swatch');
+  if (swatches.length < 2) return 7;
+  // Count swatches in the first visual row by comparing offsetTop
+  var firstTop = swatches[0].offsetTop;
+  var cols = 0;
+  for (var i = 0; i < swatches.length; i++) {
+    if (swatches[i].offsetTop === firstTop) cols++;
+    else break;
+  }
+  return cols || 7;
+}
+
+// ─── KEYBOARD HANDLER (only active when prefs open) ───────────────────────────
+document.addEventListener('keydown', function(e) {
+  if (!document.getElementById('prefs-overlay').classList.contains('open')) return;
+
+  switch (e.key) {
+    case 'Escape':
+      e.stopPropagation(); closePrefs(); break;
+
+    case 'ArrowDown':
+      e.preventDefault();
+      if (prefFocusRow === 0) {
+        // Move down within theme grid
+        var gridCols = getThemeGridCols();
+        var next = prefFocusCol + gridCols;
+        if (next < ROW_COLS[0]) {
+          prefFocusCol = next;
+        } else {
+          // Bottom of theme grid — go to row 1
+          prefFocusRow = 1;
+          prefFocusCol = clampCol(1, prefFocusCol % gridCols);
+        }
+      } else {
+        prefFocusRow = Math.min(ROW_COLS.length - 1, prefFocusRow + 1);
+        prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
+      }
+      applyKbFocus(); break;
+
+    case 'ArrowUp':
+      e.preventDefault();
+      if (prefFocusRow === 0) {
+        // Move up within theme grid
+        var gridCols = getThemeGridCols();
+        var prev = prefFocusCol - gridCols;
+        if (prev >= 0) {
+          prefFocusCol = prev;
+        }
+        // Already at top row of themes — stay put
+      } else if (prefFocusRow === 1) {
+        // Go back into theme grid — last visual row
+        var gridCols = getThemeGridCols();
+        var lastRow  = Math.floor((ROW_COLS[0] - 1) / gridCols) * gridCols;
+        prefFocusRow = 0;
+        prefFocusCol = Math.min(lastRow + prefFocusCol, ROW_COLS[0] - 1);
+      } else {
+        prefFocusRow = Math.max(0, prefFocusRow - 1);
+        prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
+      }
+      applyKbFocus(); break;
+
+    case 'ArrowRight':
+      e.preventDefault();
+      prefFocusCol = Math.min(ROW_COLS[prefFocusRow] - 1, prefFocusCol + 1);
+      applyKbFocus(); break;
+
+    case 'ArrowLeft':
+      e.preventDefault();
+      prefFocusCol = Math.max(0, prefFocusCol - 1);
+      applyKbFocus(); break;
+
+    case 'Enter':
+    case ' ':
+      e.preventDefault();
+      activateFocused(); break;
+  }
+});
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function renderPrefsUI() {
+  // Theme swatches
+  var sc = document.getElementById('theme-swatches');
+  sc.innerHTML = '';
+  THEME_KEYS.forEach(function(key, idx) {
+    var th = NEBULA_THEMES[key];
+    var el = document.createElement('div');
+    el.className = 'theme-swatch' + (userPrefs.theme===key ? ' active' : '');
+    el.style.setProperty('--swatch-grad', th.orb);
+    el.innerHTML = '<div class="theme-orb" style="background:'+th.orb+'"></div><div class="theme-name">'+th.name+'</div>';
+    el.addEventListener('click', function(){
+      userPrefs.theme = key;
+      prefFocusRow = 0; prefFocusCol = idx;
+      applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
+    });
+    sc.appendChild(el);
+  });
+
+  // Toggle buttons
+  document.querySelectorAll('.p-toggle').forEach(function(btn) {
+    var pref = btn.dataset.pref;
+    btn.classList.toggle('active', btn.dataset.val === userPrefs[pref]);
+    btn.onclick = function() {
+      userPrefs[pref] = btn.dataset.val;
+      prefFocusRow = parseInt(btn.dataset.prefRow);
+      prefFocusCol = parseInt(btn.dataset.prefCol);
+      applyPrefs(userPrefs); savePrefs();
+      if (pref==='clockFmt') {
+        var use24 = prefClockOverride!==null ? prefClockOverride : (config&&config.clockFormat==='24h');
+        updateClock(use24);
+      }
+      renderPrefsUI(); applyKbFocus();
+    };
+  });
+
+  // Re-apply kb focus ring after re-render
+  applyKbFocus();
+}
+
 function openSettings() {
   document.getElementById('settings-overlay').classList.add('open');
   if (settingsToken) {
