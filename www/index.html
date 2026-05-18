@@ -743,6 +743,88 @@ html, body {
 .music-col-arrow { color: rgba(255,255,255,0.25); font-size: 12px; }
 .music-col-item.playing .music-col-name { color: var(--accent); }
 
+
+/* ── Integration login panels ─────────────────────────────────────────────── */
+.xmb-login-panel {
+  padding: 24px 28px 28px;
+  margin: 8px 0;
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.xmb-login-title {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 18px;
+  opacity: 0.8;
+}
+.xmb-login-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  padding: 11px 16px;
+  color: #fff;
+  font-size: 14px;
+  font-family: 'Exo 2', sans-serif;
+  letter-spacing: 0.03em;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  backdrop-filter: blur(8px);
+}
+.xmb-login-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.xmb-login-input::placeholder { color: rgba(255,255,255,0.25); }
+.xmb-login-btn {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 80%, transparent),
+    color-mix(in srgb, var(--accent) 50%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 8px;
+  padding: 11px 28px;
+  color: #fff;
+  font-size: 13px;
+  font-family: 'Exo 2', sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.xmb-login-btn:hover {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 90%, transparent),
+    color-mix(in srgb, var(--accent) 65%, transparent));
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.xmb-login-btn:active { transform: scale(0.98); }
+.xmb-login-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.xmb-login-status {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.03em;
+}
+.xmb-login-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.xmb-login-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 4px;
+}
+
 </style>
 </head>
 <body>
@@ -6873,17 +6955,15 @@ function injectAbsItems() {
 function absShowLoginPanel(listEl, divider, snapIdx) {
   var panel = document.createElement('div');
   panel.setAttribute('data-abs', 'login');
-  panel.style.cssText = 'padding:16px 20px';
+  panel.className = 'xmb-login-panel';
   panel.innerHTML =
-    '<div style="font-size:11px;letter-spacing:0.1em;color:rgba(255,255,255,0.4);margin-bottom:12px">Sign In to AudiobookShelf</div>'+
-    '<div style="display:flex;flex-direction:column;gap:8px">'+
-      '<input id="abs-login-user" type="text" placeholder="Username" autocomplete="username"'+
-        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
-      '<input id="abs-login-pass" type="password" placeholder="Password" autocomplete="current-password"'+
-        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
-      '<div style="display:flex;gap:10px;align-items:center">'+
-        '<button id="abs-login-btn" style="background:var(--accent);border:none;border-radius:4px;padding:9px 20px;color:#fff;font-size:13px;cursor:pointer;font-family:inherit">Sign In</button>'+
-        '<span id="abs-login-status" style="font-size:12px;color:rgba(255,255,255,0.5)"></span>'+
+    '<div class="xmb-login-title">AudiobookShelf — Sign In</div>'+
+    '<div class="xmb-login-fields">'+
+      '<input id="abs-login-user" class="xmb-login-input" type="text" placeholder="Username" autocomplete="username">'+
+      '<input id="abs-login-pass" class="xmb-login-input" type="password" placeholder="Password" autocomplete="current-password">'+
+      '<div class="xmb-login-row">'+
+        '<button id="abs-login-btn" class="xmb-login-btn">Sign In</button>'+
+        '<span id="abs-login-status" class="xmb-login-status"></span>'+
       '</div>'+
     '</div>';
   listEl.appendChild(panel);
@@ -7512,18 +7592,16 @@ function rommLogout() {
 function rommShowLoginPanel(listEl, onSuccess) {
   var panel = document.createElement('div');
   panel.setAttribute('data-romm', 'login');
-  panel.style.cssText = 'padding:20px 24px';
+  panel.className = 'xmb-login-panel';
 
   panel.innerHTML =
-    '<div style="font-size:11px;letter-spacing:0.12em;color:rgba(255,255,255,0.4);text-transform:uppercase;margin-bottom:14px">ROMM — Sign In</div>'+
-    '<div style="display:flex;flex-direction:column;gap:10px">'+
-      '<input id="romm-login-user" type="text" placeholder="Username" autocomplete="username"'+
-        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
-      '<input id="romm-login-pass" type="password" placeholder="Password" autocomplete="current-password"'+
-        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
-      '<div style="display:flex;gap:10px;align-items:center">'+
-        '<button id="romm-login-btn" style="background:var(--accent);border:none;border-radius:4px;padding:9px 20px;color:#fff;font-size:13px;cursor:pointer;font-family:inherit">Sign In</button>'+
-        '<span id="romm-login-status" style="font-size:12px;color:rgba(255,255,255,0.5)"></span>'+
+    '<div class="xmb-login-title">ROMM — Sign In</div>'+
+    '<div class="xmb-login-fields">'+
+      '<input id="romm-login-user" class="xmb-login-input" type="text" placeholder="Username" autocomplete="username">'+
+      '<input id="romm-login-pass" class="xmb-login-input" type="password" placeholder="Password" autocomplete="current-password">'+
+      '<div class="xmb-login-row">'+
+        '<button id="romm-login-btn" class="xmb-login-btn">Sign In</button>'+
+        '<span id="romm-login-status" class="xmb-login-status"></span>'+
       '</div>'+
     '</div>';
 
