@@ -535,43 +535,95 @@ app.post('/api/romm/login', (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
 
   const base    = url.replace(/\/$/, '');
-  const fullUrl = `${base}/api/auth/login`;
-  const lib     = fullUrl.startsWith('https') ? https : http;
-  // ROMM uses OAuth2 password flow — form-encoded body
-  const body    = new URLSearchParams({ username, password, grant_type: 'password' }).toString();
-  const urlObj  = new URL(fullUrl);
+  const lib     = base.startsWith('https') ? https : http;
+  const loginUrl = new URL(`${base}/api/auth/login`);
+  const port     = parseInt(loginUrl.port) || (base.startsWith('https') ? 443 : 80);
 
-  const req2 = lib.request({
-    method: 'POST', hostname: urlObj.hostname,
-    port: parseInt(urlObj.port) || (fullUrl.startsWith('https') ? 443 : 80),
-    path: urlObj.pathname,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(body)
-    }
-  }, (r2) => {
-    let data = '';
-    r2.on('data', c => data += c);
-    r2.on('end', () => {
-      console.log('[ROMM] login status:', r2.statusCode, 'response:', data.slice(0, 300));
+  // Step 1: GET /api/auth/token to obtain CSRF token + cookie
+  const csrfUrl = new URL(`${base}/api/auth/token`);
+  const csrfReq = lib.request({
+    method: 'GET', hostname: csrfUrl.hostname,
+    port: parseInt(csrfUrl.port) || port,
+    path: csrfUrl.pathname,
+    headers: { 'Accept': 'application/json' }
+  }, (csrfRes) => {
+    let csrfData = '';
+    csrfRes.on('data', c => csrfData += c);
+    csrfRes.on('end', () => {
+      // Extract CSRF token from response and cookies
+      let csrfToken = '';
       try {
-        const json = JSON.parse(data);
-        if (json.access_token) {
-          res.json({ ok: true, token: json.access_token, username });
-        } else {
-          res.status(401).json({ error: json.detail || json.message || 'Login failed (check username/password)' });
-        }
-      } catch (e) {
-        // Non-JSON response — could be HTML error page
-        const preview = data.slice(0, 100).replace(/<[^>]+>/g, '').trim();
-        res.status(502).json({ error: 'ROMM returned unexpected response: ' + (preview || 'empty') });
+        const j = JSON.parse(csrfData);
+        csrfToken = j.token || j.csrf_token || '';
+      } catch {}
+      // Also check Set-Cookie for csrf token
+      const cookies = csrfRes.headers['set-cookie'] || [];
+      const cookieStr = cookies.join('; ');
+      const csrfCookieMatch = cookieStr.match(/csrftoken=([^;]+)/i) || cookieStr.match(/csrf_token=([^;]+)/i);
+      if (!csrfToken && csrfCookieMatch) csrfToken = csrfCookieMatch[1];
+
+      // Step 2: POST credentials
+      const body = new URLSearchParams({ username, password, grant_type: 'password' }).toString();
+      const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
+        'Accept': 'application/json',
+      };
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+        headers['Cookie'] = cookieStr || `csrf_token=${csrfToken}`;
       }
+      const postReq = lib.request({
+        method: 'POST', hostname: loginUrl.hostname,
+        port, path: loginUrl.pathname, headers
+      }, (r2) => {
+        let data = '';
+        r2.on('data', c => data += c);
+        r2.on('end', () => {
+          console.log('[ROMM] login status:', r2.statusCode, data.slice(0, 200));
+          try {
+            const json = JSON.parse(data);
+            if (json.access_token) {
+              res.json({ ok: true, token: json.access_token, username });
+            } else {
+              res.status(401).json({ error: json.detail || json.message || 'Login failed' });
+            }
+          } catch {
+            const preview = data.slice(0, 120).replace(/<[^>]+>/g, '').trim();
+            res.status(502).json({ error: 'Unexpected response: ' + (preview || 'empty') });
+          }
+        });
+      });
+      postReq.on('error', err => res.status(502).json({ error: err.message }));
+      postReq.setTimeout(10000, () => { postReq.destroy(); res.status(504).json({ error: 'Timeout' }); });
+      postReq.write(body);
+      postReq.end();
     });
   });
-  req2.on('error', err => res.status(502).json({ error: err.message }));
-  req2.setTimeout(10000, () => { req2.destroy(); res.status(504).json({ error: 'Timeout' }); });
-  req2.write(body);
-  req2.end();
+  csrfReq.on('error', () => {
+    // CSRF endpoint doesn't exist — try direct login without CSRF token
+    const body = new URLSearchParams({ username, password, grant_type: 'password' }).toString();
+    const postReq = lib.request({
+      method: 'POST', hostname: loginUrl.hostname,
+      port, path: loginUrl.pathname,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+    }, (r2) => {
+      let data = '';
+      r2.on('data', c => data += c);
+      r2.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.access_token) res.json({ ok: true, token: json.access_token, username });
+          else res.status(401).json({ error: json.detail || 'Login failed' });
+        } catch { res.status(502).json({ error: 'Bad response from ROMM' }); }
+      });
+    });
+    postReq.on('error', err => res.status(502).json({ error: err.message }));
+    postReq.write(body);
+    postReq.end();
+  });
+  csrfReq.setTimeout(5000, () => csrfReq.destroy());
+  csrfReq.end();
 });
 
 // Proxy routes — forward user token from client
