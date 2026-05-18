@@ -6647,6 +6647,10 @@ function savePrefs() {
 
 var prefClockOverride = null;
 
+// Restore saved preferences immediately — must be after applyPrefs is defined below
+// Called via window.load to ensure NEBULA_THEMES is available
+window.addEventListener('load', function() { loadPrefs(); });
+
 function applyPrefs(prefs) {
   var theme = NEBULA_THEMES[prefs.theme] || NEBULA_THEMES.default;
   activeBlobs = BLOBS.map(function(b,i){ return {x:b.x,y:b.y,r:b.r,rgb:theme.blobs[i]||b.rgb,a:b.a,spd:b.spd}; });
