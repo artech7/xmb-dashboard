@@ -429,58 +429,73 @@ app.get('/api/abs/cover/:id', (req, res) => {
   }).on('error', err => { if (!res.headersSent) res.status(502).send(err.message); });
 });
 
-// Direct stream URL (bypass proxy)
+// Stream URL via ABS play session — returns properly typed stream URL
 app.get('/api/abs/streamurl/:id', (req, res) => {
   const cfg   = readConfig();
   const { url } = cfg.abs || {};
   const token = req.headers['x-abs-token'] || (cfg.abs && cfg.abs.token);
   if (!url) return res.status(400).json({ error: 'Not configured' });
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
-  const ep  = req.query.episode || '';
-  const base = url.replace(/\/$/, '');
 
-  // For episodes, direct file URL works fine
+  const ep   = req.query.episode || '';
+  const base = url.replace(/\/$/, '');
+  const lib  = base.startsWith('https') ? https : http;
+
+  // Podcast episodes — direct file works fine
   if (ep) {
     return res.json({ url: `${base}/api/items/${req.params.id}/file?episode=${ep}&token=${token}` });
   }
 
-  // For audiobooks: fetch item to find audio tracks
-  // Some books are single-file (just use /file), others are multi-track
-  const absRequest2 = (path, cb) => {
-    const fullUrl = base + path;
-    const lib2 = fullUrl.startsWith('https') ? https : http;
-    const urlObj = new URL(fullUrl);
-    const r = lib2.request({
-      method: 'GET', hostname: urlObj.hostname,
-      port: parseInt(urlObj.port) || (fullUrl.startsWith('https') ? 443 : 80),
-      path: urlObj.pathname + urlObj.search,
-      headers: { Authorization: `Bearer ${token}` }
-    }, (r2) => {
-      let data = '';
-      r2.on('data', c => data += c);
-      r2.on('end', () => { try { cb(JSON.parse(data)); } catch { cb(null); } });
-    });
-    r.on('error', () => cb(null));
-    r.end();
-  };
-
-  absRequest2(`/api/items/${req.params.id}?expanded=1`, (item) => {
-    if (!item) return res.json({ url: `${base}/api/items/${req.params.id}/file?token=${token}` });
-    const tracks = (item.media && item.media.audioFiles) || [];
-    if (tracks.length <= 1) {
-      // Single file — direct URL
-      return res.json({ url: `${base}/api/items/${req.params.id}/file?token=${token}`, tracks: [] });
-    }
-    // Multi-track — return track list so client can seek correctly
-    const trackUrls = tracks.map((t, i) => ({
-      index: i,
-      filename: t.metadata && t.metadata.filename,
-      duration: t.duration,
-      url: `${base}/api/items/${req.params.id}/file/${encodeURIComponent(t.ino || i)}?token=${token}`
-    }));
-    // Fallback: use /file which ABS serves as concatenated stream
-    res.json({ url: `${base}/api/items/${req.params.id}/file?token=${token}`, tracks: trackUrls });
+  // Audiobooks: POST to /play to get a proper streaming session
+  // ABS sets correct Content-Type and supports range requests in play sessions
+  const playBody = JSON.stringify({
+    deviceInfo: { clientName: 'xmb-dashboard', clientVersion: '1.0' },
+    supportedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/opus'],
+    mediaPlayer: 'html5',
+    forceTranscode: false,
+    startTime: 0
   });
+
+  const playUrl  = new URL(`${base}/api/items/${req.params.id}/play`);
+  const port     = parseInt(playUrl.port) || (base.startsWith('https') ? 443 : 80);
+
+  const fallback = () => res.json({ url: `${base}/api/items/${req.params.id}/file?token=${token}` });
+
+  const playReq = lib.request({
+    method: 'POST', hostname: playUrl.hostname, port,
+    path: playUrl.pathname,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(playBody)
+    }
+  }, (r2) => {
+    let data = '';
+    r2.on('data', c => data += c);
+    r2.on('end', () => {
+      console.log('[ABS] play session status:', r2.statusCode, data.slice(0, 200));
+      try {
+        const session = JSON.parse(data);
+        const tracks  = session.audioTracks || [];
+        if (tracks.length > 0 && tracks[0].contentUrl) {
+          return res.json({
+            url: `${base}${tracks[0].contentUrl}`,
+            tracks: tracks.map(t => ({
+              startOffset: t.startOffset || 0,
+              duration:    t.duration,
+              url:         `${base}${t.contentUrl}`
+            })),
+            sessionId: session.id
+          });
+        }
+        fallback();
+      } catch { fallback(); }
+    });
+  });
+  playReq.on('error', fallback);
+  playReq.setTimeout(8000, () => { playReq.destroy(); fallback(); });
+  playReq.write(playBody);
+  playReq.end();
 });
 
 
