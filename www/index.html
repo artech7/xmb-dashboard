@@ -506,12 +506,12 @@ html, body {
   /* ── Item panel: full-width scrollable list ── */
   #item-panel {
     position: fixed;
-    /* cat-row: top:52px + ~56px height = 108px, add small gap */
     top: 112px;
     left: 0; right: 0; bottom: 0;
     transform: none;
     min-width: unset;
     max-width: unset;
+    max-height: none;        /* clear desktop max-height */
     width: 100%;
     padding: 0 0 56px;
     overflow-y: auto;
