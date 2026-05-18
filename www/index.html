@@ -1638,16 +1638,16 @@ function initGalaxyStars() {
     galaxyClouds.push({
       dist: 0.05 + Math.random() * 0.25,
       baseAngle: cAngle,
-      r: 0.28 + Math.random() * 0.22,   // large — 28-50% of maxR
-      alpha: 0.07 + Math.random() * 0.07,
+      r: 0.38 + Math.random() * 0.28,   // 38-66% of maxR
+      alpha: 0.09 + Math.random() * 0.07,
       layer: 'outer',
       paletteIdx: k,
     });
     galaxyClouds.push({
       dist: 0.02 + Math.random() * 0.18,
       baseAngle: cAngle + 0.3,
-      r: 0.14 + Math.random() * 0.12,
-      alpha: 0.10 + Math.random() * 0.08,
+      r: 0.22 + Math.random() * 0.16,
+      alpha: 0.12 + Math.random() * 0.08,
       layer: 'inner',
       paletteIdx: (k + 2) % 6,
     });
@@ -1662,20 +1662,20 @@ function initGalaxyStars() {
       arm: arm2,
       dist: cDist,
       baseAngle: arm2 * (Math.PI*2/arms) + cCurl + (Math.random()-0.5)*0.8,
-      r: 0.18 + Math.random() * 0.20,   // larger than before
-      alpha: 0.055 + Math.random() * 0.065,
+      r: 0.28 + Math.random() * 0.26,   // 28-54% of maxR
+      alpha: 0.07 + Math.random() * 0.06,
       layer: 'arm',
       paletteIdx: k % 6,
     });
   }
 
-  // Extra overlap clouds — placed between arms to fill gaps and intermingle
+  // Extra overlap clouds — fill gaps and intermingle
   for (var k = 0; k < 5; k++) {
     galaxyClouds.push({
       dist: 0.25 + Math.random() * 0.45,
       baseAngle: Math.random() * Math.PI * 2,
-      r: 0.22 + Math.random() * 0.18,
-      alpha: 0.04 + Math.random() * 0.04,
+      r: 0.32 + Math.random() * 0.24,
+      alpha: 0.05 + Math.random() * 0.05,
       layer: 'fill',
       paletteIdx: (k * 3) % 6,
     });
@@ -1702,54 +1702,96 @@ function drawGalaxy() {
   bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
 
-  // ── Gas clouds — layered, large, gaseous with color intermingling ──
+  // ── Gas clouds — noisy, gaseous, large nebulae ──────────────
   var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
-  // Sort: outer layers first so inner ones paint on top
   var sortedClouds = galaxyClouds.slice().sort(function(a,b){
     var order = {outer:0, fill:1, arm:2, inner:3};
     return (order[a.layer]||1) - (order[b.layer]||1);
   });
+
+  // Noise function — pseudo-random but stable per cloud position
+  function fbm(x, y, seed) {
+    var v = 0, amp = 1, freq = 1, max = 0;
+    for (var o = 0; o < 4; o++) {
+      var xi = Math.floor(x * freq + seed);
+      var yi = Math.floor(y * freq + seed * 1.7);
+      var n = Math.sin(xi * 127.1 + yi * 311.7) * 43758.5453;
+      v += (n - Math.floor(n)) * amp;
+      max += amp; amp *= 0.5; freq *= 2.1;
+    }
+    return v / max;
+  }
+
   sortedClouds.forEach(function(c) {
     var orbSpeed = c.layer === 'inner' ? 0.5 : (c.layer === 'fill' ? 0.25 : 0.4);
     var ang = c.baseAngle + spinT * orbSpeed;
     var cx2 = cx + Math.cos(ang) * c.dist * maxR;
     var cy2 = cy + Math.sin(ang) * c.dist * maxR * ellipse;
-    var cr = c.r * maxR;
+    var cr  = c.r * maxR;
 
-    // Pick this cloud's color and a neighbor color to blend toward
     var pIdx  = c.paletteIdx !== undefined ? c.paletteIdx : 0;
     var pIdx2 = (pIdx + 1) % palette.length;
+    var pIdx3 = (pIdx + 3) % palette.length;
     var pCol  = palette[pIdx]  || [ar,ag,ab];
     var pCol2 = palette[pIdx2] || [ar,ag,ab];
+    var pCol3 = palette[pIdx3] || [ar,ag,ab];
 
-    // Multi-stop gradient: bright inner → mid blend → transparent
-    // Outer stop blends toward adjacent palette color for intermingling
-    var cg = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, cr);
-    var a0 = c.alpha;
-    var a1 = c.alpha * 0.55;
-    var a2 = c.alpha * 0.20;
-    cg.addColorStop(0,    'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+a0+')');
-    cg.addColorStop(0.35, 'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+a1+')');
-    // Mid stop: blend toward neighbor color
-    var mr = Math.round((pCol[0]+pCol2[0])/2);
-    var mg = Math.round((pCol[1]+pCol2[1])/2);
-    var mb = Math.round((pCol[2]+pCol2[2])/2);
-    cg.addColorStop(0.65, 'rgba('+mr+','+mg+','+mb+','+a2+')');
+    // Apply blur for soft gaseous falloff
+    ctx.save();
+    ctx.filter = 'blur(' + Math.round(cr * 0.22) + 'px)';
+
+    // Main blob — large
+    var cg = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, cr * 1.15);
+    cg.addColorStop(0,    'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+(c.alpha * 1.2)+')');
+    cg.addColorStop(0.30, 'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+(c.alpha * 0.7)+')');
+    cg.addColorStop(0.60, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha * 0.25)+')');
     cg.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = cg;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(cx2 - cr*1.2, cy2 - cr*1.2, cr*2.4, cr*2.4);
 
-    // Second pass — slightly offset, smaller, adjacent color bleeds in
-    // This creates the intermingling / bleed-through effect
-    var bleedX = cx2 + Math.cos(ang + 0.9) * cr * 0.35;
-    var bleedY = cy2 + Math.sin(ang + 0.9) * cr * 0.35 * ellipse;
-    var bleedR = cr * 0.6;
+    ctx.restore();
+
+    // Noise passes — 6 offset sub-blobs per cloud, no blur
+    // Placed using noise-driven offsets to break the sphere silhouette
+    var numTentacles = 6;
+    for (var n = 0; n < numTentacles; n++) {
+      var nAngle = (n / numTentacles) * Math.PI * 2 + ang * 0.3 + c.paletteIdx;
+      // Noise-driven offset distance
+      var noiseVal = fbm(Math.cos(nAngle) * 2, Math.sin(nAngle) * 2, c.paletteIdx * 17 + n);
+      var offDist  = cr * (0.35 + noiseVal * 0.55);
+      var offX     = cx2 + Math.cos(nAngle) * offDist;
+      var offY     = cy2 + Math.sin(nAngle) * offDist * ellipse;
+      var subR     = cr * (0.25 + noiseVal * 0.35);
+
+      // Alternate between main and neighbor colors
+      var subCol = n % 3 === 0 ? pCol3 : (n % 2 === 0 ? pCol2 : pCol);
+      var subA   = c.alpha * (0.3 + noiseVal * 0.3);
+
+      ctx.save();
+      ctx.filter = 'blur(' + Math.round(subR * 0.35) + 'px)';
+      var sg = ctx.createRadialGradient(offX, offY, 0, offX, offY, subR);
+      sg.addColorStop(0,    'rgba('+subCol[0]+','+subCol[1]+','+subCol[2]+','+subA+')');
+      sg.addColorStop(0.5,  'rgba('+subCol[0]+','+subCol[1]+','+subCol[2]+','+(subA*0.4)+')');
+      sg.addColorStop(1,    'rgba(0,0,0,0)');
+      ctx.fillStyle = sg;
+      ctx.fillRect(offX - subR, offY - subR, subR*2, subR*2);
+      ctx.restore();
+    }
+
+    // Bleed pass — adjacent color seeping in from one side
+    var bleedAngle = ang + 1.2 + c.paletteIdx * 0.5;
+    var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.45;
+    var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.45 * ellipse;
+    var bleedR = cr * 0.7;
+    ctx.save();
+    ctx.filter = 'blur(' + Math.round(bleedR * 0.28) + 'px)';
     var bg2 = ctx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedR);
-    bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(a0*0.5)+')');
-    bg2.addColorStop(0.5, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(a0*0.18)+')');
+    bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha * 0.55)+')');
+    bg2.addColorStop(0.55,'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha * 0.18)+')');
     bg2.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = bg2;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(bleedX - bleedR, bleedY - bleedR, bleedR*2, bleedR*2);
+    ctx.restore();
   });
 
   // ── Bright core ───────────────────────────────────────────
