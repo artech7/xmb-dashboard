@@ -3512,6 +3512,9 @@ function openItem(item) {
         if (overlay) overlay.classList.remove('launching');
         wrap.classList.add('visible');
         setTimeout(function() { frame.classList.add('loaded'); }, 80);
+        // Add permanent silent handler so internal navigations
+        // within the iframe don't trigger any more logic
+        frame.addEventListener('load', function() { /* absorb internal navs */ });
       }, 180);
     };
 
@@ -6380,10 +6383,11 @@ function musicRenderLevel() {
     listEl.appendChild(el);
   });
 
-  // Update panel title area
-  var catLabel = document.querySelector('.cat-label');
-  if (level.title && catLabel) {
-    catLabel.textContent = level.title;
+  // Update the music level title element (NOT the category strip label)
+  var levelTitleEl = document.getElementById('music-level-title');
+  if (levelTitleEl) {
+    levelTitleEl.textContent = level.title || '';
+    levelTitleEl.classList.toggle('visible', !!(inMusicDrill && level.title));
   }
 
   scrollItemList();
