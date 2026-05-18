@@ -1152,30 +1152,11 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL      = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
-  var galaxyCombo = glSupported && animMode === 'galaxy';
-  // Galaxy combo: render nebula to glCanvas offscreen, composite into 2D canvas
-  if (galaxyCombo) {
-    glCanvas.style.display = '';  // must be visible for GL to render
-    canvas.style.display   = '';  // 2D canvas on top
-    glCanvas.style.opacity = '0'; // hide GL canvas visually (used as source only)
-    glCanvas.style.zIndex  = '-1';
-  } else {
-    glCanvas.style.opacity = '';
-    glCanvas.style.zIndex  = '1';
-  }
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
-    case 'galaxy':
-      if (galaxyCombo) {
-        // Render nebula to glCanvas, then composite + draw stars
-        glRenderFrame(glProgNebula, glNebLocs, true);
-        drawGalaxy(); // drawGalaxy will composite glCanvas as bg
-      } else {
-        drawGalaxy();
-      }
-      break;
+    case 'galaxy':    drawGalaxy();                              break;
     case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
     case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
@@ -1714,17 +1695,12 @@ function drawGalaxy() {
   var spinT = t * 0.00022 * spd;
   var [ar,ag,ab] = accentRgb;
 
-  // ── Background: nebula GL composite or gradient fallback ─
-  if (glSupported && glProgNebula && glCanvas && glCanvas.style.display !== 'none') {
-    // Composite the nebula render from glCanvas as the galaxy background
-    ctx.drawImage(glCanvas, 0, 0, W, H);
-  } else {
-    var bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, maxR*1.2);
-    bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+',0.18)');
-    bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+',0.08)');
-    bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
-  }
+  // ── Background deep-space gradient ───────────────────────
+  var bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, maxR*1.2);
+  bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+',0.18)');
+  bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+',0.08)');
+  bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
 
   // ── Gas clouds — noisy, gaseous, large nebulae ──────────────
   var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
@@ -1733,18 +1709,6 @@ function drawGalaxy() {
     return (order[a.layer]||1) - (order[b.layer]||1);
   });
 
-  // Noise function — pseudo-random but stable per cloud position
-  function fbm(x, y, seed) {
-    var v = 0, amp = 1, freq = 1, max = 0;
-    for (var o = 0; o < 4; o++) {
-      var xi = Math.floor(x * freq + seed);
-      var yi = Math.floor(y * freq + seed * 1.7);
-      var n = Math.sin(xi * 127.1 + yi * 311.7) * 43758.5453;
-      v += (n - Math.floor(n)) * amp;
-      max += amp; amp *= 0.5; freq *= 2.1;
-    }
-    return v / max;
-  }
 
   sortedClouds.forEach(function(c) {
     var orbSpeed = c.layer === 'inner' ? 0.5 : (c.layer === 'fill' ? 0.25 : 0.4);
@@ -1760,63 +1724,65 @@ function drawGalaxy() {
     var pCol2 = palette[pIdx2] || [ar,ag,ab];
     var pCol3 = palette[pIdx3] || [ar,ag,ab];
 
-    // Apply blur for soft gaseous falloff
-    ctx.save();
-    ctx.filter = 'blur(' + Math.round(cr * 0.22) + 'px)';
-
-    // Main blob — large
-    var cg = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, cr * 1.5);
-    cg.addColorStop(0,    'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+(c.alpha * 1.2)+')');
-    cg.addColorStop(0.30, 'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+(c.alpha * 0.7)+')');
-    cg.addColorStop(0.60, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha * 0.25)+')');
-    cg.addColorStop(1,    'rgba(0,0,0,0)');
-    ctx.fillStyle = cg;
-    ctx.fillRect(cx2 - cr*1.2, cy2 - cr*1.2, cr*2.4, cr*2.4);
-
-    ctx.restore();
-
-    // Noise passes — 6 offset sub-blobs per cloud, no blur
-    // Placed using noise-driven offsets to break the sphere silhouette
-    var numTentacles = 10;
-    for (var n = 0; n < numTentacles; n++) {
-      var nAngle = (n / numTentacles) * Math.PI * 2 + ang * 0.3 + c.paletteIdx;
-      // Noise-driven offset distance — much larger reach
-      var noiseVal = fbm(Math.cos(nAngle) * 2, Math.sin(nAngle) * 2, c.paletteIdx * 17 + n);
-      var offDist  = cr * (0.60 + noiseVal * 1.10);
-      var offX     = cx2 + Math.cos(nAngle) * offDist;
-      var offY     = cy2 + Math.sin(nAngle) * offDist * ellipse;
-      var subR     = cr * (0.50 + noiseVal * 0.70);
-
-      // Alternate between main and neighbor colors
-      var subCol = n % 3 === 0 ? pCol3 : (n % 2 === 0 ? pCol2 : pCol);
-      var subA   = c.alpha * (0.3 + noiseVal * 0.3);
+    // ── Gaseous lobes: stretched ellipses via canvas transform ──
+    var numLobes = 5;
+    for (var li = 0; li < numLobes; li++) {
+      var lobeAngle = ang * 0.4 + (li / numLobes) * Math.PI * 2 + c.paletteIdx * 0.7;
+      var scaleX = 0.7 + Math.sin(li * 1.9 + c.paletteIdx) * 0.45;
+      var scaleY = 0.5 + Math.cos(li * 2.3 + c.paletteIdx) * 0.3;
+      var lobeR  = cr * (0.8 + li * 0.2);
+      var offX   = cx2 + Math.cos(lobeAngle) * cr * 0.28 * li;
+      var offY   = cy2 + Math.sin(lobeAngle) * cr * 0.28 * li * ellipse;
+      var lobeCol = li % 3 === 0 ? pCol3 : (li % 2 === 0 ? pCol2 : pCol);
+      var lobeA   = c.alpha * (0.85 - li * 0.10);
 
       ctx.save();
-      ctx.filter = 'blur(' + Math.round(subR * 0.45) + 'px)';
-      var sg = ctx.createRadialGradient(offX, offY, 0, offX, offY, subR);
-      sg.addColorStop(0,    'rgba('+subCol[0]+','+subCol[1]+','+subCol[2]+','+subA+')');
-      sg.addColorStop(0.5,  'rgba('+subCol[0]+','+subCol[1]+','+subCol[2]+','+(subA*0.4)+')');
-      sg.addColorStop(1,    'rgba(0,0,0,0)');
-      ctx.fillStyle = sg;
-      ctx.fillRect(offX - subR, offY - subR, subR*2, subR*2);
+      ctx.translate(offX, offY);
+      ctx.rotate(lobeAngle);
+      ctx.scale(scaleX, scaleY * ellipse);
+      var lg = ctx.createRadialGradient(0, 0, 0, 0, 0, lobeR);
+      lg.addColorStop(0,    'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+lobeA+')');
+      lg.addColorStop(0.4,  'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+(lobeA*0.5)+')');
+      lg.addColorStop(0.75, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(lobeA*0.18)+')');
+      lg.addColorStop(1,    'rgba(0,0,0,0)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(-lobeR, -lobeR, lobeR*2, lobeR*2);
       ctx.restore();
     }
 
-    // Bleed pass — adjacent color seeping in from one side
-    var bleedAngle = ang + 1.2 + c.paletteIdx * 0.5;
-    var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.45;
-    var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.45 * ellipse;
-    var bleedR = cr * 0.7;
-    ctx.save();
-    ctx.filter = 'blur(' + Math.round(bleedR * 0.28) + 'px)';
+    // ── Wispy tendrils: thin elongated lobes radiating outward ──
+    for (var ti = 0; ti < 6; ti++) {
+      var tendAngle = ang * 0.2 + (ti / 6) * Math.PI * 2 + c.paletteIdx * 1.3 + t * 0.00004;
+      var tendX = cx2 + Math.cos(tendAngle) * cr * 0.55;
+      var tendY = cy2 + Math.sin(tendAngle) * cr * 0.55 * ellipse;
+      var tendR = cr * (0.55 + Math.sin(ti * 2.1) * 0.22);
+      var tendCol = ti % 2 === 0 ? pCol2 : pCol3;
+
+      ctx.save();
+      ctx.translate(tendX, tendY);
+      ctx.rotate(tendAngle);
+      ctx.scale(0.3, 1.0); // elongated radially
+      var tg = ctx.createRadialGradient(0, 0, 0, 0, 0, tendR);
+      tg.addColorStop(0,   'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.38)+')');
+      tg.addColorStop(0.5, 'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.12)+')');
+      tg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = tg;
+      ctx.fillRect(-tendR, -tendR, tendR*2, tendR*2);
+      ctx.restore();
+    }
+
+    // ── Color intermingling: neighbor bleeds in from the side ──
+    var bleedAngle = ang + 1.1 + c.paletteIdx * 0.5;
+    var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.5;
+    var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.5 * ellipse;
+    var bleedR = cr * 0.85;
     var bg2 = ctx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedR);
-    bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha * 0.55)+')');
-    bg2.addColorStop(0.55,'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha * 0.18)+')');
+    bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.5)+')');
+    bg2.addColorStop(0.6, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.14)+')');
     bg2.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = bg2;
-    ctx.fillRect(bleedX - bleedR, bleedY - bleedR, bleedR*2, bleedR*2);
-    ctx.restore();
-  });
+    ctx.fillRect(bleedX-bleedR, bleedY-bleedR, bleedR*2, bleedR*2);
+  });;
 
   // ── Bright core ───────────────────────────────────────────
   var core = ctx.createRadialGradient(cx,cy,0,cx,cy,maxR*0.18);
