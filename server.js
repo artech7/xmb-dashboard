@@ -291,9 +291,11 @@ app.get('/api/subsonic/coverurl', (req, res) => {
 
 // ── AudiobookShelf proxy ───────────────────────────────────────────────────────
 
-function absRequest(absCfg, method, endpoint, body, res) {
-  const { url, token } = absCfg;
-  if (!url || !token) return res.status(400).json({ error: 'ABS not configured' });
+function absRequest(absCfg, method, endpoint, body, res, reqToken) {
+  const { url } = absCfg;
+  const token = reqToken || absCfg.token;
+  if (!url) return res.status(400).json({ error: 'ABS not configured' });
+  if (!token) return res.status(401).json({ error: 'ABS not authenticated — please sign in' });
   const base    = url.replace(/\/$/, '');
   const fullUrl = `${base}${endpoint}`;
   const lib     = fullUrl.startsWith('https') ? https : http;
@@ -339,15 +341,15 @@ app.post('/api/abs/login', auth, (req, res) => {
       try {
         const json = JSON.parse(data);
         if (json.user && json.user.token) {
-          // Save token to config
+          // Return token to client — stored in sessionStorage, not server-side
           const cfg = readConfig();
           if (!cfg.abs) cfg.abs = {};
-          cfg.abs.token      = json.user.token;
-          cfg.abs.url        = url;
-          cfg.abs.username   = username;
+          if (url) cfg.abs.url = url;
           if (categoryId) cfg.abs.categoryId = categoryId;
+          if (username) cfg.abs.username = username;
+          delete cfg.abs.token; // remove any previously saved token
           writeConfig(cfg);
-          res.json({ ok: true, token: json.user.token });
+          res.json({ ok: true, token: json.user.token, username });
         } else {
           res.status(401).json({ error: json.error || 'Login failed' });
         }
@@ -369,7 +371,7 @@ app.get('/api/abs/ping', auth, (req, res) => {
 
 app.get('/api/abs/libraries', (req, res) => {
   const cfg = readConfig();
-  absRequest(cfg.abs || {}, 'GET', '/api/libraries', null, res);
+  absRequest(cfg.abs || {}, 'GET', '/api/libraries', null, res, req.headers['x-abs-token']);
 });
 
 app.get('/api/abs/library/:id/items', (req, res) => {
@@ -378,12 +380,12 @@ app.get('/api/abs/library/:id/items', (req, res) => {
   const page   = req.query.page  || 0;
   const sort   = req.query.sort  || 'media.metadata.title';
   const desc   = req.query.desc  || '0';
-  absRequest(cfg.abs || {}, 'GET', `/api/libraries/${req.params.id}/items?limit=${limit}&page=${page}&sort=${sort}&desc=${desc}`, null, res);
+  absRequest(cfg.abs || {}, 'GET', `/api/libraries/${req.params.id}/items?limit=${limit}&page=${page}&sort=${sort}&desc=${desc}`, null, res, req.headers['x-abs-token']);
 });
 
 app.get('/api/abs/item/:id', (req, res) => {
   const cfg = readConfig();
-  absRequest(cfg.abs || {}, 'GET', `/api/items/${req.params.id}?expanded=1`, null, res);
+  absRequest(cfg.abs || {}, 'GET', `/api/items/${req.params.id}?expanded=1`, null, res, req.headers['x-abs-token']);
 });
 
 app.get('/api/abs/episode/:itemId/:episodeId', (req, res) => {
@@ -393,9 +395,11 @@ app.get('/api/abs/episode/:itemId/:episodeId', (req, res) => {
 
 // Stream proxy for ABS audio
 app.get('/api/abs/stream/:id', (req, res) => {
-  const cfg  = readConfig();
-  const { url, token } = cfg.abs || {};
-  if (!url || !token) return res.status(400).send('ABS not configured');
+  const cfg   = readConfig();
+  const { url } = cfg.abs || {};
+  const token = req.headers['x-abs-token'] || (cfg.abs && cfg.abs.token);
+  if (!url) return res.status(400).send('ABS not configured');
+  if (!token) return res.status(401).send('ABS not authenticated');
   // episode param for podcast episodes
   const ep      = req.query.episode || '';
   const path    = ep ? `/api/items/${req.params.id}/file?episode=${ep}&token=${token}` : `/api/items/${req.params.id}/file?token=${token}`;
@@ -411,9 +415,11 @@ app.get('/api/abs/stream/:id', (req, res) => {
 
 // Cover art proxy for ABS
 app.get('/api/abs/cover/:id', (req, res) => {
-  const cfg  = readConfig();
-  const { url, token } = cfg.abs || {};
-  if (!url || !token) return res.status(400).send('Not configured');
+  const cfg   = readConfig();
+  const { url } = cfg.abs || {};
+  const token = req.query.t || req.headers['x-abs-token'] || (cfg.abs && cfg.abs.token);
+  if (!url) return res.status(400).send('Not configured');
+  if (!token) return res.status(401).send('Not authenticated');
   const fullUrl = `${url.replace(/\/$/, '')}/api/items/${req.params.id}/cover?token=${token}&width=300`;
   const lib     = fullUrl.startsWith('https') ? https : http;
   lib.get(fullUrl, (r2) => {
@@ -424,10 +430,12 @@ app.get('/api/abs/cover/:id', (req, res) => {
 });
 
 // Direct stream URL (bypass proxy)
-app.get('/api/abs/streamurl/:id', auth, (req, res) => {
-  const cfg  = readConfig();
-  const { url, token } = cfg.abs || {};
-  if (!url || !token) return res.status(400).json({ error: 'Not configured' });
+app.get('/api/abs/streamurl/:id', (req, res) => {
+  const cfg   = readConfig();
+  const { url } = cfg.abs || {};
+  const token = req.headers['x-abs-token'] || (cfg.abs && cfg.abs.token);
+  if (!url) return res.status(400).json({ error: 'Not configured' });
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
   const ep  = req.query.episode || '';
   const base = url.replace(/\/$/, '');
 

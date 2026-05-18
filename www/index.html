@@ -3801,6 +3801,7 @@ var _origUpdateCategoryUI = updateCategoryUI;
 updateCategoryUI = function() {
   // Reset music drill-down on category change
   musicStack = []; inMusicDrill = false; _subItems = []; _absItems = []; _rommItems = []; _subSortActive = 'Artists'; _rommSortActive = 'Console';
+  // Note: absToken persists across category changes (session)
   _origUpdateCategoryUI(); // already calls updateMobileCatStrip internally
 };
 
@@ -4135,7 +4136,7 @@ init().then(function() {
               </select>
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
-              <button class="s-btn s-btn-primary" id="abs-save-btn">Save &amp; Connect</button>
+              <button class="s-btn s-btn-primary" id="abs-save-btn">Save</button>
               <button class="s-btn" id="abs-test-btn" disabled style="opacity:0.35;cursor:not-allowed">Test Connection</button>
               <span id="abs-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
             </div>
@@ -6362,8 +6363,9 @@ function musicRenderLevel() {
     el.className = 'xmb-item';
     el.classList.toggle('selected', i === itemIdx);
 
+    var absTokenParam = absToken ? '?t=' + encodeURIComponent(absToken) : '';
     var artUrl = item.coverArt
-      ? (item._absType ? '/api/abs/cover/'+item.coverArt
+      ? (item._absType ? '/api/abs/cover/'+item.coverArt+absTokenParam
         : item._rommType ? '/api/romm/cover?path='+encodeURIComponent(item.coverArt)
         : '/api/subsonic/coverart?id='+item.coverArt)
       : null;
@@ -6845,11 +6847,24 @@ document.getElementById('abs-test-btn').addEventListener('click', function() {
 });
 
 // ── ABS API fetch with cache ──────────────────────────────────────────────────
-var absCache = {};
+var absCache    = {};
+var absToken    = sessionStorage.getItem('abs-token')    || null;
+var absUsername = sessionStorage.getItem('abs-username') || null;
+
+function absLogout() {
+  absToken = null; absUsername = null; absCache = {};
+  sessionStorage.removeItem('abs-token');
+  sessionStorage.removeItem('abs-username');
+}
+
 function absFetch(endpoint) {
   if (absCache[endpoint]) return Promise.resolve(absCache[endpoint]);
-  return fetch('/api/abs' + endpoint)
-    .then(function(r) { return r.json(); })
+  var headers = absToken ? { 'X-ABS-Token': absToken } : {};
+  return fetch('/api/abs' + endpoint, { headers: headers })
+    .then(function(r) {
+      if (r.status === 401) { absLogout(); throw new Error('Unauthorized'); }
+      return r.json();
+    })
     .then(function(d) { absCache[endpoint] = d; return d; });
 }
 
@@ -6859,7 +6874,7 @@ function absFetchAllPages(baseEndpoint) {
   var pageSize = 100;
   function fetchPage(page) {
     var url = baseEndpoint + '?limit=' + pageSize + '&page=' + page + '&sort=media.metadata.title&desc=0';
-    return absFetch(url).then(function(d) {
+    return absFetch(url).then(function(d) {  // absFetch sends token header
       var results = d.results || [];
       allResults = allResults.concat(results);
       var total = d.total || 0;
@@ -6886,8 +6901,78 @@ function injectAbsItems() {
   if (!listEl || listEl.querySelector('[data-abs]')) return;
   var snapIdx = catIdx;
 
+  // Divider
+  var div = document.createElement('div');
+  div.setAttribute('data-abs', 'divider');
+  div.style.cssText = 'padding:6px 16px 4px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
+  div.textContent = 'AudiobookShelf' + (absUsername ? ' — ' + absUsername : '');
+  listEl.appendChild(div);
+
+  if (!absToken) {
+    absShowLoginPanel(listEl, div, snapIdx);
+    return;
+  }
+
+  loadAbsContent(listEl, div, snapIdx);
+}
+
+function absShowLoginPanel(listEl, divider, snapIdx) {
+  var panel = document.createElement('div');
+  panel.setAttribute('data-abs', 'login');
+  panel.style.cssText = 'padding:16px 20px';
+  panel.innerHTML =
+    '<div style="font-size:11px;letter-spacing:0.1em;color:rgba(255,255,255,0.4);margin-bottom:12px">Sign In to AudiobookShelf</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px">'+
+      '<input id="abs-login-user" type="text" placeholder="Username" autocomplete="username"'+
+        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
+      '<input id="abs-login-pass" type="password" placeholder="Password" autocomplete="current-password"'+
+        ' style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:9px 13px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">'+
+      '<div style="display:flex;gap:10px;align-items:center">'+
+        '<button id="abs-login-btn" style="background:var(--accent);border:none;border-radius:4px;padding:9px 20px;color:#fff;font-size:13px;cursor:pointer;font-family:inherit">Sign In</button>'+
+        '<span id="abs-login-status" style="font-size:12px;color:rgba(255,255,255,0.5)"></span>'+
+      '</div>'+
+    '</div>';
+  listEl.appendChild(panel);
+  setTimeout(function() { var u = document.getElementById('abs-login-user'); if (u) u.focus(); }, 100);
+
+  function doLogin() {
+    var user = (document.getElementById('abs-login-user').value || '').trim();
+    var pass  = document.getElementById('abs-login-pass').value || '';
+    var st    = document.getElementById('abs-login-status');
+    if (!user || !pass) { st.textContent = 'Enter username and password'; return; }
+    st.textContent = 'Signing in…';
+    document.getElementById('abs-login-btn').disabled = true;
+    fetch('/api/abs/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: config.abs.url, username: user, password: pass, categoryId: config.abs.categoryId })
+    }).then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.ok && d.token) {
+        absToken    = d.token;
+        absUsername = d.username || user;
+        sessionStorage.setItem('abs-token', absToken);
+        sessionStorage.setItem('abs-username', absUsername);
+        absCache = {};
+        divider.textContent = 'AudiobookShelf — ' + absUsername;
+        panel.remove();
+        loadAbsContent(listEl, divider, snapIdx);
+      } else {
+        st.textContent = '✗ ' + (d.error || 'Login failed');
+        document.getElementById('abs-login-btn').disabled = false;
+      }
+    }).catch(function() {
+      document.getElementById('abs-login-status').textContent = '✗ Connection failed';
+      document.getElementById('abs-login-btn').disabled = false;
+    });
+  }
+
+  document.getElementById('abs-login-btn').addEventListener('click', doLogin);
+  panel.addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
+}
+
+function loadAbsContent(listEl, divider, snapIdx) {
   absFetch('/libraries').then(function(d) {
-    console.log('[ABS] libraries response:', JSON.stringify(d).slice(0,200));
     if (catIdx !== snapIdx) return;
     var currentList = document.querySelector('.item-list');
     if (!currentList || currentList !== listEl) return;
@@ -6906,13 +6991,7 @@ function injectAbsItems() {
       };
     });
 
-    // Divider
-    var divider = document.createElement('div');
-    divider.setAttribute('data-abs', 'divider');
-    divider.style.cssText = 'padding:6px 16px 4px;font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px';
-    divider.textContent = 'AudiobookShelf';
-    listEl.appendChild(divider);
-
+    // Divider already appended by injectAbsItems — just render items
     _absItems.forEach(function(item) {
       var el = document.createElement('div');
       el.className = 'xmb-item';
@@ -7345,7 +7424,6 @@ function absMakeItemEl(item) {
 }
 
 function absPlay(itemId, episodeId, startOffset, title) {
-  var token = sessionStorage.getItem('xmb-token') || '';
   var params = episodeId ? '?episode=' + episodeId : '';
 
   // Update Now Playing UI immediately
@@ -7354,7 +7432,7 @@ function absPlay(itemId, episodeId, startOffset, title) {
   var art = document.getElementById('now-playing-art');
   art.removeAttribute('data-retried');
   art.onerror = function() { coverArtError(this); };
-  art.src = '/api/abs/cover/' + itemId;
+  art.src = '/api/abs/cover/' + itemId + (absToken ? '?t=' + encodeURIComponent(absToken) : '');
   art.style.display = '';
   document.getElementById('now-playing').classList.add('visible');
   document.getElementById('np-play').textContent = '⏸';
@@ -7387,9 +7465,7 @@ function absPlay(itemId, episodeId, startOffset, title) {
   }
 
   console.log('[ABS] absPlay itemId='+itemId+' episodeId='+episodeId+' offset='+startOffset);
-  fetch('/api/abs/streamurl/' + itemId + params, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  }).then(function(r) {
+  fetch('/api/abs/streamurl/' + itemId + params, { headers: absToken ? { 'X-ABS-Token': absToken } : {} }).then(function(r) {
     console.log('[ABS] streamurl status:', r.status);
     return r.json();
   }).then(function(d) {
