@@ -559,9 +559,10 @@ app.post('/api/romm/login', (req, res) => {
   const loginUrl = new URL(`${base}/api/auth/login`);
   const port     = parseInt(loginUrl.port) || (base.startsWith('https') ? 443 : 80);
 
-  // ROMM uses fastapi-csrf-protect. Strategy:
-  // 1. GET any page to get the CSRF cookie (fastapi-csrf-token)
-  // 2. POST login with that cookie value in X-CSRF-Token header
+  // ROMM fastapi-csrf-protect flow:
+  // 1. GET /api/auth/token → JSON body has {token: "..."} (unsigned, for header)
+  //                        → Set-Cookie has signed token (for Cookie header)
+  // 2. POST /api/auth/login with X-CSRF-Token: <unsigned> and Cookie: <signed>
   const doLogin = (csrfToken, cookieHeader) => {
     const body = new URLSearchParams({ username, password, grant_type: 'password' }).toString();
     const headers = {
@@ -573,7 +574,7 @@ app.post('/api/romm/login', (req, res) => {
     };
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
-      headers['Cookie'] = cookieHeader;
+      headers['Cookie']       = cookieHeader;
     }
     console.log('[ROMM] logging in, csrfToken:', csrfToken ? csrfToken.slice(0,20)+'...' : 'none');
     const postReq = lib.request({
@@ -603,41 +604,38 @@ app.post('/api/romm/login', (req, res) => {
     postReq.end();
   };
 
-  // GET root to obtain CSRF cookie
-  const csrfGetUrl = new URL(`${base}/`);
-  const csrfReq = lib.request({
-    method: 'GET', hostname: csrfGetUrl.hostname,
-    port: parseInt(csrfGetUrl.port) || port,
-    path: csrfGetUrl.pathname,
-    headers: { 'Accept': 'text/html,application/json' }
-  }, (csrfRes) => {
-    const rawCookies = csrfRes.headers['set-cookie'] || [];
-    // fastapi-csrf-protect sets 'fastapi-csrf-token' cookie
-    // Extract all cookie key=value pairs
+  // GET /api/auth/token — ROMM's dedicated CSRF token endpoint
+  // Returns { token: "<unsigned csrf>" } in body + signed token in Set-Cookie
+  const tokenUrl = new URL(`${base}/api/auth/token`);
+  const csrfReq  = lib.request({
+    method: 'GET', hostname: tokenUrl.hostname,
+    port: parseInt(tokenUrl.port) || port,
+    path: tokenUrl.pathname,
+    headers: { 'Accept': 'application/json' }
+  }, (tokenRes) => {
+    // Collect cookie for the Cookie header
+    const rawCookies  = tokenRes.headers['set-cookie'] || [];
     const cookiePairs = rawCookies.map(c => c.split(';')[0]).filter(Boolean);
     const cookieHeader = cookiePairs.join('; ');
-    let csrfToken = '';
-    for (const pair of cookiePairs) {
-      const m = pair.match(/fastapi-csrf-token=([^;]+)/i)
-             || pair.match(/csrftoken=([^;]+)/i)
-             || pair.match(/csrf[_-]token=([^;]+)/i)
-             || pair.match(/csrf=([^;]+)/i);
-      if (m) { csrfToken = m[1]; break; }
-    }
-    let csrfBody = '';
-    csrfRes.on('data', c => csrfBody += c);
-    csrfRes.on('end', () => {
-      // Also try to find CSRF token in response body
-      if (!csrfToken) {
-        const bodyMatch = csrfBody.match(/"csrf[_-]?token"\s*:\s*"([^"]+)"/i)
-                       || csrfBody.match(/name="csrf[_-]?token"[^>]*value="([^"]+)"/i);
-        if (bodyMatch) csrfToken = bodyMatch[1];
-      }
+
+    let body = '';
+    tokenRes.on('data', c => body += c);
+    tokenRes.on('end', () => {
+      console.log('[ROMM] csrf token status:', tokenRes.statusCode, body.slice(0, 200));
+      let csrfToken = '';
+      try {
+        const j = JSON.parse(body);
+        // JSON body has the unsigned token for the X-CSRF-Token header
+        csrfToken = j.token || j.csrf_token || '';
+      } catch {}
       doLogin(csrfToken, cookieHeader);
     });
   });
-  csrfReq.on('error', () => doLogin('', ''));
-  csrfReq.setTimeout(5000, () => { csrfReq.destroy(); doLogin('', ''); });
+  csrfReq.on('error', (e) => {
+    console.log('[ROMM] csrf GET failed:', e.message, '— trying without CSRF');
+    doLogin('', '');
+  });
+  csrfReq.setTimeout(8000, () => { csrfReq.destroy(); doLogin('', ''); });
   csrfReq.end();
 });
 
