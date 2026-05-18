@@ -1152,11 +1152,11 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater' || animMode === 'galaxy');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
-    case 'galaxy':    drawGalaxy();                              break;
+    case 'galaxy':    useGL ? renderGLGalaxy()   : drawGalaxy();     break;
     case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
     case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
@@ -2729,6 +2729,8 @@ var glProgNebula  = null;
 var glProgDeepSea    = null;
 var glDeepSeaLocs    = {};
 var glProgCrystals   = null;
+var glProgGalaxy     = null;
+var glGalaxyLocs     = {};
 var glCrystalLocs    = {};
 var glNebLocs     = {};
 var glAuroraLocs = {};
@@ -3203,6 +3205,101 @@ function glCacheUniforms(prog) {
 // ── Initialise WebGL ──────────────────────────────────────────────────────
 
 
+var GL_GALAXY_FRAG = [
+  'precision mediump float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0, u_c1, u_c2, u_c3, u_c4, u_c5;',
+  'uniform vec3  u_bg0, u_bg1, u_bg2;',
+  '',
+  'float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }',
+  '',
+  'float star(vec2 uv, float threshold){',
+  '  float n = hash(floor(uv*600.0));',
+  '  if(n > threshold) return 0.0;',
+  '  vec2 f = fract(uv*600.0)-0.5;',
+  '  float d = length(f);',
+  '  float b = hash(floor(uv*600.0)+vec2(7.3,2.1));',
+  '  float twinkle = 0.7 + 0.3*sin(u_time*0.002*(1.0+b*3.0)+b*6.28);',
+  '  return smoothstep(0.2,0.0,d)*twinkle;',
+  '}',
+  '',
+  '// Spiral arm function',
+  'float spiralArm(vec2 p, float armAngle, float twist){',
+  '  float r = length(p);',
+  '  float a = atan(p.y, p.x);',
+  '  float armA = armAngle + twist * r;',
+  '  float da = abs(mod(a - armA + 3.14159, 6.28318) - 3.14159);',
+  '  float arm = exp(-da*da*8.0) * exp(-r*1.8);',
+  '  return arm;',
+  '}',
+  '',
+  'void main(){',
+  '  vec2 uv  = gl_FragCoord.xy / u_res;',
+  '  vec2 st  = uv * 2.0 - 1.0;',
+  '  st.x    *= u_res.x / u_res.y;',
+  '',
+  '  // Galaxy rotation over time',
+  '  float spinT = u_time * 0.00018;',
+  '  float cosS = cos(spinT), sinS = sin(spinT);',
+  '  vec2 rot = vec2(st.x*cosS - st.y*sinS, st.x*sinS + st.y*cosS);',
+  '',
+  '  // Elliptical projection (tilt)',
+  '  vec2 gp = vec2(rot.x, rot.y * 0.6);',
+  '  float r  = length(gp);',
+  '',
+  '  // Background gradient',
+  '  vec3 bg = mix(u_bg0, u_bg1, smoothstep(0.0, 1.0, r));',
+  '  vec3 col = bg;',
+  '',
+  '  // Galactic core glow',
+  '  float core = exp(-r*r*6.0);',
+  '  float coreHalo = exp(-r*r*1.2);',
+  '  col = mix(col, u_c0*1.5, coreHalo*0.6);',
+  '  col = mix(col, vec3(1.0), core*0.5);',
+  '',
+  '  // Spiral arms — 2 main arms + 2 minor',
+  '  float arm0 = spiralArm(gp, 0.0,      12.0);',
+  '  float arm1 = spiralArm(gp, 3.14159,  12.0);',
+  '  float arm2 = spiralArm(gp, 1.5708,   10.0) * 0.5;',
+  '  float arm3 = spiralArm(gp, 4.7124,   10.0) * 0.5;',
+  '  float arms = (arm0 + arm1) + (arm2 + arm3);',
+  '',
+  '  // Color the arms with theme palette',
+  '  vec3 armCol  = mix(u_c1, u_c2, smoothstep(0.0, 1.0, gp.x*0.5+0.5));',
+  '  vec3 armCol2 = mix(u_c3, u_c4, smoothstep(0.0, 1.0, gp.y*0.5+0.5));',
+  '  col = mix(col, armCol,  arm0 * 0.9 * u_intensity);',
+  '  col = mix(col, armCol2, arm1 * 0.9 * u_intensity);',
+  '  col = mix(col, u_c5*0.6, (arm2+arm3) * 0.5 * u_intensity);',
+  '',
+  '  // Dust lane — dark band through center',
+  '  float dust = exp(-gp.y*gp.y*60.0) * exp(-r*2.0);',
+  '  col = mix(col, col*0.3, dust*0.6);',
+  '',
+  '  // Stars — dense in arms, sparse in halo',
+  '  float starDensity = 0.997 - arms*0.04 - core*0.05;',
+  '  float s = star(uv + vec2(spinT*0.01), starDensity);',
+  '  // Tint stars by position',
+  '  vec3 starTint = mix(u_c0, vec3(1.0,0.95,0.85), hash(floor((uv+vec2(spinT*0.01))*600.0)));',
+  '  col += s * starTint * 1.2;',
+  '',
+  '  // Background stars (much sparser)',
+  '  float bgStar = star(uv * 0.5 + vec2(0.1), 0.9985);',
+  '  col += bgStar * vec3(0.7,0.8,1.0) * 0.6;',
+  '',
+  '  // Outer halo shimmer',
+  '  float halo = exp(-r*r*0.8) * (1.0-exp(-r*r*2.0));',
+  '  col += halo * u_c1 * 0.15 * u_intensity;',
+  '',
+  '  // Vignette',
+  '  col *= 1.0 - smoothstep(0.7, 1.4, length(st));',
+  '',
+  '  gl_FragColor = vec4(col, 1.0);',
+  '}'
+].join('\n');
+
+
 function initWebGL() {
   if (!glCanvas) return false;
   try {
@@ -3226,6 +3323,7 @@ function initWebGL() {
     glProgNebula  = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
     glProgDeepSea   = glCompileProgram(GL_VERT, GL_DEEPSEA_FRAG);
     glProgCrystals  = glCompileProgram(GL_VERT, GL_CRYSTALS_FRAG);
+    glProgGalaxy    = glCompileProgram(GL_VERT, GL_GALAXY_FRAG);
 
     // Independent failures — one bad shader doesn't kill the rest
     if (!glProgAurora && !glProgInk && !glProgNebula && !glProgDeepSea) { gl = null; return false; }
@@ -3237,6 +3335,7 @@ function initWebGL() {
     glNebLocs     = glCacheUniforms(glProgNebula);
     if (glProgDeepSea)   glDeepSeaLocs   = glCacheUniforms(glProgDeepSea);
     if (glProgCrystals) glCrystalLocs   = glCacheUniforms(glProgCrystals);
+    if (glProgGalaxy)   glGalaxyLocs    = glCacheUniforms(glProgGalaxy);
 
     // Handle context loss gracefully
     glCanvas.addEventListener('webglcontextlost', function(e) {
@@ -3308,6 +3407,7 @@ function glRenderFrame(prog, locs, useAccentForC0) {
 function renderGLAurora()  { glRenderFrame(glProgAurora, glAuroraLocs); }
 function renderGLDeepSea()    { if (glProgDeepSea)   glRenderFrame(glProgDeepSea,   glDeepSeaLocs);   else drawUnderwater(); }
 function renderGLCrystals()   { if (glProgCrystals)  glRenderFrame(glProgCrystals,  glCrystalLocs);   else drawBokeh(); }
+function renderGLGalaxy()     { if (glProgGalaxy)    glRenderFrame(glProgGalaxy,    glGalaxyLocs);    else drawGalaxy(); }
 function renderGLInk()     { glRenderFrame(glProgInk, glInkLocs); }
 function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
 
