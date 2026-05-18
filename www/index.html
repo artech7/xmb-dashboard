@@ -1713,11 +1713,12 @@ function drawGalaxy() {
   // Global spin — faster than before
   var spinT = t * 0.00022 * spd;
   var [ar,ag,ab] = accentRgb;
+  var iMult = blobOpacityMult || 1.0; // intensity multiplier
 
   // ── Background deep-space gradient ───────────────────────
   var bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, maxR*1.2);
-  bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+',0.18)');
-  bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+',0.08)');
+  bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+','+(0.18*iMult)+')');
+  bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+','+(0.08*iMult)+')');
   bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
 
@@ -1753,7 +1754,7 @@ function drawGalaxy() {
       var offX   = cx2 + Math.cos(lobeAngle) * cr * 0.28 * li;
       var offY   = cy2 + Math.sin(lobeAngle) * cr * 0.28 * li * ellipse;
       var lobeCol = li % 3 === 0 ? pCol3 : (li % 2 === 0 ? pCol2 : pCol);
-      var lobeA   = c.alpha * (0.85 - li * 0.10);
+      var lobeA   = c.alpha * (0.85 - li * 0.10) * iMult;
 
       ctx.save();
       ctx.translate(offX, offY);
@@ -1782,7 +1783,7 @@ function drawGalaxy() {
       ctx.rotate(tendAngle);
       ctx.scale(0.3, 1.0); // elongated radially
       var tg = ctx.createRadialGradient(0, 0, 0, 0, 0, tendR);
-      tg.addColorStop(0,   'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.38)+')');
+      tg.addColorStop(0,   'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.38*iMult)+')');
       tg.addColorStop(0.5, 'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.12)+')');
       tg.addColorStop(1,   'rgba(0,0,0,0)');
       ctx.fillStyle = tg;
@@ -1796,7 +1797,7 @@ function drawGalaxy() {
     var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.5 * ellipse;
     var bleedR = cr * 0.85;
     var bg2 = ctx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedR);
-    bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.5)+')');
+    bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.5*iMult)+')');
     bg2.addColorStop(0.6, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.14)+')');
     bg2.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = bg2;
@@ -1805,8 +1806,8 @@ function drawGalaxy() {
 
   // ── Bright core ───────────────────────────────────────────
   var core = ctx.createRadialGradient(cx,cy,0,cx,cy,maxR*0.18);
-  core.addColorStop(0,   'rgba(255,255,255,0.55)');
-  core.addColorStop(0.15,'rgba('+ar+','+ag+','+ab+',0.28)');
+  core.addColorStop(0,   'rgba(255,255,255,'+(0.55*iMult)+')');
+  core.addColorStop(0.15,'rgba('+ar+','+ag+','+ab+','+(0.28*iMult)+')');
   core.addColorStop(0.5, 'rgba('+Math.round(ar*0.5)+','+Math.round(ag*0.5)+','+Math.round(ab*0.5)+',0.10)');
   core.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = core; ctx.fillRect(0,0,W,H);
@@ -1815,7 +1816,7 @@ function drawGalaxy() {
   var bgStars = galaxyStars._bgStars || [];
   bgStars.forEach(function(s) {
     var tw = 0.5 + 0.5 * Math.sin(t * s.blinkRate + s.phase);
-    var a  = s.alpha * (0.4 + 0.6 * tw);
+    var a  = s.alpha * (0.4 + 0.6 * tw) * iMult;
     var sx = s.x * W, sy = s.y * H;
     ctx.beginPath();
     ctx.arc(sx, sy, s.size * tw * 0.8 + 0.2, 0, Math.PI * 2);
@@ -1859,13 +1860,13 @@ function drawGalaxy() {
     var sx = cx + Math.cos(ang3) * s.dist * maxR;
     var sy = cy + Math.sin(ang3) * s.dist * maxR * ellipse;
     var tw = 0.75 + Math.sin(t * s.twinkle + s.phase) * 0.25;
-    var sz = s.size * tw;
+    var sz = s.size * tw * Math.max(0.3, iMult);
     ctx.beginPath();
     ctx.arc(sx, sy, sz, 0, Math.PI*2);
     var col;
-    if (s.blueish)     col = 'rgba(180,210,255,'+(s.alpha*tw)+')';
-    else if (s.color)  { var pS=palette[Math.floor(s.phase*3)%palette.length]||[ar,ag,ab]; col='rgba('+pS[0]+','+pS[1]+','+pS[2]+','+(s.alpha*tw)+')'; }
-    else               col = 'rgba(255,255,255,'+(s.alpha*tw)+')';
+    if (s.blueish)     col = 'rgba(180,210,255,'+(s.alpha*tw*iMult)+')';
+    else if (s.color)  { var pS=palette[Math.floor(s.phase*3)%palette.length]||[ar,ag,ab]; col='rgba('+pS[0]+','+pS[1]+','+pS[2]+','+(s.alpha*tw*iMult)+')'; }
+    else               col = 'rgba(255,255,255,'+(s.alpha*tw*iMult)+')';
     ctx.fillStyle = col;
     ctx.fill();
 
