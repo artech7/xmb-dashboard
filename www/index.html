@@ -1741,7 +1741,7 @@ function drawGalaxy() {
     ctx.filter = 'blur(' + Math.round(cr * 0.22) + 'px)';
 
     // Main blob — large
-    var cg = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, cr * 1.15);
+    var cg = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, cr * 1.5);
     cg.addColorStop(0,    'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+(c.alpha * 1.2)+')');
     cg.addColorStop(0.30, 'rgba('+pCol[0]+','+pCol[1]+','+pCol[2]+','+(c.alpha * 0.7)+')');
     cg.addColorStop(0.60, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha * 0.25)+')');
@@ -1753,22 +1753,22 @@ function drawGalaxy() {
 
     // Noise passes — 6 offset sub-blobs per cloud, no blur
     // Placed using noise-driven offsets to break the sphere silhouette
-    var numTentacles = 6;
+    var numTentacles = 10;
     for (var n = 0; n < numTentacles; n++) {
       var nAngle = (n / numTentacles) * Math.PI * 2 + ang * 0.3 + c.paletteIdx;
-      // Noise-driven offset distance
+      // Noise-driven offset distance — much larger reach
       var noiseVal = fbm(Math.cos(nAngle) * 2, Math.sin(nAngle) * 2, c.paletteIdx * 17 + n);
-      var offDist  = cr * (0.35 + noiseVal * 0.55);
+      var offDist  = cr * (0.60 + noiseVal * 1.10);
       var offX     = cx2 + Math.cos(nAngle) * offDist;
       var offY     = cy2 + Math.sin(nAngle) * offDist * ellipse;
-      var subR     = cr * (0.25 + noiseVal * 0.35);
+      var subR     = cr * (0.50 + noiseVal * 0.70);
 
       // Alternate between main and neighbor colors
       var subCol = n % 3 === 0 ? pCol3 : (n % 2 === 0 ? pCol2 : pCol);
       var subA   = c.alpha * (0.3 + noiseVal * 0.3);
 
       ctx.save();
-      ctx.filter = 'blur(' + Math.round(subR * 0.35) + 'px)';
+      ctx.filter = 'blur(' + Math.round(subR * 0.45) + 'px)';
       var sg = ctx.createRadialGradient(offX, offY, 0, offX, offY, subR);
       sg.addColorStop(0,    'rgba('+subCol[0]+','+subCol[1]+','+subCol[2]+','+subA+')');
       sg.addColorStop(0.5,  'rgba('+subCol[0]+','+subCol[1]+','+subCol[2]+','+(subA*0.4)+')');
