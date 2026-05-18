@@ -803,6 +803,8 @@ html, body {
 </div>
 
 <script>
+console.log('[XMB] Build 20260518-0152 loaded — ROMM+ABS multi-user');
+
 // ─── ICONS ────────────────────────────────────────────────────────────────────
 const CAT_ICONS = {
   network: `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -4119,16 +4121,6 @@ init().then(function() {
               <label class="s-label">Server URL</label>
               <input class="s-input" id="abs-url" type="text" placeholder="http://audiobookshelf:13378" style="width:100%">
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div class="s-field-group">
-                <label class="s-label">Username</label>
-                <input class="s-input" id="abs-user" type="text" placeholder="admin">
-              </div>
-              <div class="s-field-group">
-                <label class="s-label">Password</label>
-                <input class="s-input" id="abs-pass" type="password" placeholder="••••••••">
-              </div>
-            </div>
             <div class="s-field-group">
               <label class="s-label">Inject into Category</label>
               <select id="abs-cat" class="s-input" style="background:#1a1a2e;color:#fff;width:100%">
@@ -4137,8 +4129,10 @@ init().then(function() {
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
               <button class="s-btn s-btn-primary" id="abs-save-btn">Save</button>
-              <button class="s-btn" id="abs-test-btn" disabled style="opacity:0.35;cursor:not-allowed">Test Connection</button>
               <span id="abs-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
+            </div>
+            <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,0.04);border-radius:6px;font-size:12px;color:rgba(255,255,255,0.45);line-height:1.6">
+              Users sign in with their own ABS credentials directly in the Books category. No passwords stored here.
             </div>
           </div>
 
@@ -6778,14 +6772,7 @@ document.getElementById('s-nav-abs-integration').addEventListener('click', funct
 
 function populateAbsView() {
   var absCfg = (settingsConfig && settingsConfig.abs) || {};
-  document.getElementById('abs-url').value  = absCfg.url      || '';
-  document.getElementById('abs-user').value = absCfg.username || '';
-  document.getElementById('abs-pass').value = '';
-  // Enable test button if already connected
-  var tb = document.getElementById('abs-test-btn');
-  if (absCfg.url && absCfg.username) {
-    tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = '';
-  }
+  document.getElementById('abs-url').value = absCfg.url || '';
   var sel = document.getElementById('abs-cat');
   sel.innerHTML = '<option value="">— select category —</option>';
   (settingsConfig && settingsConfig.categories || []).forEach(function(cat) {
@@ -6798,52 +6785,19 @@ function populateAbsView() {
 }
 
 document.getElementById('abs-save-btn').addEventListener('click', function() {
-  var st   = document.getElementById('abs-status');
-  var url  = document.getElementById('abs-url').value.trim();
-  var user = document.getElementById('abs-user').value.trim();
-  var pass = document.getElementById('abs-pass').value;
+  var st    = document.getElementById('abs-status');
+  var url   = document.getElementById('abs-url').value.trim();
   var catId = document.getElementById('abs-cat').value;
-  if (!url || !user || !pass) { st.textContent = '✗ URL, username and password required'; return; }
-  st.textContent = 'Connecting…';
-  fetch('/api/abs/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settingsToken },
-    body: JSON.stringify({ url: url, username: user, password: pass, categoryId: catId })
-  }).then(function(r) { return r.json(); }).then(function(d) {
-    if (d.ok) {
-      if (!settingsConfig.abs) settingsConfig.abs = {};
-      settingsConfig.abs.url        = url;
-      settingsConfig.abs.username   = user;
-      settingsConfig.abs.categoryId = catId;
-      // token is saved server-side by the login route
-      absCache = {};
-      saveConfig().then(function() {
-        st.textContent = '✓ Connected';
-        var tb = document.getElementById('abs-test-btn');
-        tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = '';
-        setTimeout(function() { st.textContent = ''; }, 3000);
-        // Reload client config so injectAbsItems picks up new categoryId
-        return fetch('/api/config').then(function(r){ return r.json(); }).then(function(c){ config = c; });
-      });
-    } else {
-      st.textContent = '✗ ' + (d.error || 'Login failed');
-    }
-  }).catch(function() { st.textContent = '✗ Connection failed'; });
-});
-
-document.getElementById('abs-test-btn').addEventListener('click', function() {
-  var st = document.getElementById('abs-status');
-  st.textContent = 'Testing…';
-  fetch('/api/abs/ping', { headers: { Authorization: 'Bearer ' + settingsToken } })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.libraries !== undefined) {
-        st.textContent = '✓ Connected — ' + d.libraries + ' librar' + (d.libraries === 1 ? 'y' : 'ies');
-      } else {
-        st.textContent = '✗ ' + (d.error || 'Failed');
-      }
-    })
-    .catch(function() { st.textContent = '✗ Connection failed'; });
+  if (!url) { st.textContent = '✗ Server URL required'; return; }
+  if (!settingsConfig.abs) settingsConfig.abs = {};
+  settingsConfig.abs.url        = url;
+  settingsConfig.abs.categoryId = catId;
+  absCache = {};
+  saveConfig().then(function() {
+    st.textContent = '✓ Saved';
+    setTimeout(function() { st.textContent = ''; }, 2500);
+    return fetch('/api/config').then(function(r){ return r.json(); }).then(function(c){ config = c; });
+  }).catch(function(e) { st.textContent = '✗ ' + e.message; });
 });
 
 // ── ABS API fetch with cache ──────────────────────────────────────────────────

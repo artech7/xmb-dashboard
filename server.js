@@ -538,7 +538,7 @@ app.post('/api/romm/login', (req, res) => {
   const fullUrl = `${base}/api/auth/login`;
   const lib     = fullUrl.startsWith('https') ? https : http;
   // ROMM uses OAuth2 password flow — form-encoded body
-  const body    = new URLSearchParams({ username, password }).toString();
+  const body    = new URLSearchParams({ username, password, grant_type: 'password' }).toString();
   const urlObj  = new URL(fullUrl);
 
   const req2 = lib.request({
@@ -553,15 +553,19 @@ app.post('/api/romm/login', (req, res) => {
     let data = '';
     r2.on('data', c => data += c);
     r2.on('end', () => {
-      console.log('[ROMM] login status:', r2.statusCode, 'response:', data.slice(0, 200));
+      console.log('[ROMM] login status:', r2.statusCode, 'response:', data.slice(0, 300));
       try {
         const json = JSON.parse(data);
         if (json.access_token) {
           res.json({ ok: true, token: json.access_token, username });
         } else {
-          res.status(401).json({ error: json.detail || json.message || 'Login failed' });
+          res.status(401).json({ error: json.detail || json.message || 'Login failed (check username/password)' });
         }
-      } catch { res.status(502).json({ error: 'Bad response from ROMM' }); }
+      } catch (e) {
+        // Non-JSON response — could be HTML error page
+        const preview = data.slice(0, 100).replace(/<[^>]+>/g, '').trim();
+        res.status(502).json({ error: 'ROMM returned unexpected response: ' + (preview || 'empty') });
+      }
     });
   });
   req2.on('error', err => res.status(502).json({ error: err.message }));
