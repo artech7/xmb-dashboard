@@ -506,16 +506,18 @@ html, body {
   /* ── Item panel: full-width scrollable list ── */
   #item-panel {
     position: fixed;
-    top: 116px;
+    /* cat-row: top:52px + ~56px height = 108px, add small gap */
+    top: 112px;
     left: 0; right: 0; bottom: 0;
     transform: none;
     min-width: unset;
     max-width: unset;
     width: 100%;
-    padding: 0 0 80px;
+    padding: 0 0 56px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     height: auto;
+    box-sizing: border-box;
   }
   #item-panel::-webkit-scrollbar { display: none; }
   .item-list {
@@ -578,16 +580,16 @@ html, body {
   #music-back-btn {
     display: none;
     position: fixed;
-    bottom: 24px;
+    bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 30;
     background: rgba(20,20,40,0.88);
     border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 24px;
-    padding: 12px 32px;
+    border-radius: 20px;
+    padding: 9px 24px;
     color: #fff;
-    font-size: 14px;
+    font-size: 13px;
     letter-spacing: 0.08em;
     cursor: pointer;
     backdrop-filter: blur(12px);
@@ -606,6 +608,28 @@ html, body {
   }
   #music-level-title.visible { display: block; }
   #sub-search { font-size: 15px !important; padding: 10px 14px !important; }
+
+  /* Compact sort/search bars on mobile */
+  [data-sub-sort], [data-abs-sort], [data-romm-sort] {
+    padding: 3px 12px 6px !important;
+    gap: 4px !important;
+  }
+  [data-sub-sort] button, [data-abs-sort] button, [data-romm-sort] button {
+    padding: 2px 8px !important;
+    font-size: 10px !important;
+  }
+  [data-sub="search"], #sub-search {
+    padding: 3px 12px 6px !important;
+  }
+  #sub-search {
+    padding: 6px 10px !important;
+    font-size: 14px !important;
+  }
+  /* xmb-item slightly tighter on mobile */
+  .xmb-item {
+    min-height: 56px !important;
+    padding: 11px 16px !important;
+  }
 }
 
 @media (max-width: 480px) {
