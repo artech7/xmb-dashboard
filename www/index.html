@@ -6378,7 +6378,10 @@ function musicRenderLevel() {
       musicStack[musicStack.length-1].selectedIdx = i;
       itemIdx = i;
       updateItemSelection();
-      musicItemAction(item);
+      // Route to correct handler based on item type
+      if (item._absType) absItemAction(item);
+      else if (item._rommType) rommItemAction(item);
+      else musicItemAction(item);
     });
     listEl.appendChild(el);
   });
@@ -7040,6 +7043,9 @@ function absInjectSortBar(rawItems) {
   label.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.35);margin-right:6px';
   bar.appendChild(label);
 
+  var absCountSpan = document.createElement('span');
+  absCountSpan.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.25);margin-left:auto;padding-right:4px';
+
   var sortFns = {
     'Title':  function(a,b){ return a.name.localeCompare(b.name); },
     'Author': function(a,b){ return (a.author||'').localeCompare(b.author||''); },
@@ -7117,6 +7123,7 @@ function absInjectSortBar(rawItems) {
       });
     }
 
+    absCountSpan.textContent = allItems.length + ' items';
     updateItemSelection();
     scrollItemList();
   }
@@ -7173,6 +7180,11 @@ function subInjectSortBar(rawItems) {
   label.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.35);margin-right:6px';
   bar.appendChild(label);
 
+  // Count span — updated per sort
+  var countSpan = document.createElement('span');
+  countSpan.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.25);margin-left:auto;padding-right:4px';
+  // appended after buttons
+
   var catItems = (config.categories && config.categories[catIdx] && config.categories[catIdx].items) || [];
 
   function applySubSort(key) {
@@ -7222,6 +7234,7 @@ function subInjectSortBar(rawItems) {
 
     allItems = catItems.concat(filtered);
     itemIdx = 0;
+    countSpan.textContent = allItems.length - catItems.length + ' items';
     updateItemSelection();
     scrollItemList();
   }
@@ -7235,6 +7248,8 @@ function subInjectSortBar(rawItems) {
     btn.addEventListener('click', function(e) { e.stopPropagation(); applySubSort(key); });
     bar.appendChild(btn);
   });
+
+  bar.appendChild(countSpan);
 
   // Insert after search bar (or after divider if no search)
   var insertAfter = searchEl || divider;
@@ -7630,6 +7645,11 @@ function rommInjectSortBar(listEl) {
   label.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(255,255,255,0.35);margin-right:6px';
   bar.appendChild(label);
 
+  var rommCountEl = document.createElement('span');
+  rommCountEl.className = 'romm-count';
+  rommCountEl.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.25);margin-left:auto;padding-right:4px';
+  bar.appendChild(rommCountEl);
+
   _rommSortActive = 'Console';
 
   function applyRommSort(key) {
@@ -7673,6 +7693,9 @@ function rommInjectSortBar(listEl) {
     items.forEach(function(item) {
       listEl.appendChild(rommMakeItemEl(item, listEl));
     });
+    // Update count in bar
+    var rc = bar.querySelector('.romm-count');
+    if (rc) rc.textContent = items.length + ' items';
     updateItemSelection();
     scrollItemList();
   }
