@@ -9660,6 +9660,22 @@ document.getElementById('prefs-overlay').addEventListener('click', function(e){
   if (e.target===document.getElementById('prefs-overlay')) closePrefs();
 });
 
+// Get number of visible columns in the theme swatch grid
+function getThemeGridCols() {
+  var container = document.getElementById('theme-swatches');
+  if (!container) return 7; // fallback
+  var swatches = container.querySelectorAll('.theme-swatch');
+  if (swatches.length < 2) return 7;
+  // Count swatches in the first visual row by comparing offsetTop
+  var firstTop = swatches[0].offsetTop;
+  var cols = 0;
+  for (var i = 0; i < swatches.length; i++) {
+    if (swatches[i].offsetTop === firstTop) cols++;
+    else break;
+  }
+  return cols || 7;
+}
+
 // ─── KEYBOARD HANDLER (only active when prefs open) ───────────────────────────
 document.addEventListener('keydown', function(e) {
   if (!document.getElementById('prefs-overlay').classList.contains('open')) return;
@@ -9670,14 +9686,43 @@ document.addEventListener('keydown', function(e) {
 
     case 'ArrowDown':
       e.preventDefault();
-      prefFocusRow = Math.min(8, prefFocusRow + 1);
-      prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
+      if (prefFocusRow === 0) {
+        // Move down within theme grid
+        var gridCols = getThemeGridCols();
+        var next = prefFocusCol + gridCols;
+        if (next < ROW_COLS[0]) {
+          prefFocusCol = next;
+        } else {
+          // Bottom of theme grid — go to row 1
+          prefFocusRow = 1;
+          prefFocusCol = clampCol(1, prefFocusCol % gridCols);
+        }
+      } else {
+        prefFocusRow = Math.min(ROW_COLS.length - 1, prefFocusRow + 1);
+        prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
+      }
       applyKbFocus(); break;
 
     case 'ArrowUp':
       e.preventDefault();
-      prefFocusRow = Math.max(0, prefFocusRow - 1);
-      prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
+      if (prefFocusRow === 0) {
+        // Move up within theme grid
+        var gridCols = getThemeGridCols();
+        var prev = prefFocusCol - gridCols;
+        if (prev >= 0) {
+          prefFocusCol = prev;
+        }
+        // Already at top row of themes — stay put
+      } else if (prefFocusRow === 1) {
+        // Go back into theme grid — last visual row
+        var gridCols = getThemeGridCols();
+        var lastRow  = Math.floor((ROW_COLS[0] - 1) / gridCols) * gridCols;
+        prefFocusRow = 0;
+        prefFocusCol = Math.min(lastRow + prefFocusCol, ROW_COLS[0] - 1);
+      } else {
+        prefFocusRow = Math.max(0, prefFocusRow - 1);
+        prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
+      }
       applyKbFocus(); break;
 
     case 'ArrowRight':
