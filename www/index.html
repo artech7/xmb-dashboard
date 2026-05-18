@@ -4369,6 +4369,13 @@ var activeCatIdx   = null;
 
 
 
+// ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
+var THEME_KEYS = Object.keys(NEBULA_THEMES);
+var ROW_COLS   = [THEME_KEYS.length, 10, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=particles, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
+var prefFocusRow = 0;
+var prefFocusCol = 0;
+
+
 function clampCol(row, col) {
   return Math.max(0, Math.min(col, ROW_COLS[row] - 1));
 }
