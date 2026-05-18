@@ -556,47 +556,92 @@ app.post('/api/romm/login', async (req, res) => {
 
   const base = url.replace(/\/$/, '');
 
+  // Helper: extract cookies from a fetch response
+  const getCookies = (r) => {
+    const raw = r.headers.raw ? r.headers.raw()['set-cookie'] : [];
+    return (raw || []).map(c => c.split(';')[0]).filter(Boolean);
+  };
+
   try {
-    // Step 1: GET /api/auth/token to get CSRF token + cookie
     let csrfToken = '';
-    let cookieHeader = '';
-    try {
-      const tokenRes = await fetch(`${base}/api/auth/token`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      const rawCookies = tokenRes.headers.raw ? tokenRes.headers.raw()['set-cookie'] : [];
-      const setCookies = (rawCookies || []).map(c => c.split(';')[0]).filter(Boolean);
-      cookieHeader = setCookies.join('; ');
-      const tokenData = await tokenRes.json().catch(() => ({}));
-      csrfToken = tokenData.token || tokenData.csrf_token || '';
-      console.log('[ROMM] csrf token status:', tokenRes.status, 'token:', csrfToken.slice(0,20), 'cookies:', cookieHeader.slice(0,60));
-    } catch (e) {
-      console.log('[ROMM] csrf fetch failed:', e.message);
+    let cookieStr = '';
+
+    // Try ROMM's CSRF token endpoints in order
+    const csrfEndpoints = [
+      '/api/auth/token',   // newer ROMM
+      '/api/auth/csrf',    // possible alternative
+      '/',                 // fall back to main page
+    ];
+
+    for (const ep of csrfEndpoints) {
+      try {
+        const r = await fetch(`${base}${ep}`, {
+          headers: { 'Accept': 'application/json, text/html' }
+        });
+        console.log(`[ROMM] GET ${ep} →`, r.status);
+
+        const cookies = getCookies(r);
+        if (cookies.length) cookieStr = cookies.join('; ');
+
+        const text = await r.text();
+
+        // Try JSON body first (newer ROMM returns {token: "..."})
+        try {
+          const j = JSON.parse(text);
+          if (j.token || j.csrf_token) {
+            csrfToken = j.token || j.csrf_token;
+            console.log('[ROMM] csrf token from JSON body:', csrfToken.slice(0,20));
+            break;
+          }
+        } catch {}
+
+        // Try cookies — look for any csrf-named cookie
+        for (const pair of cookies) {
+          const m = pair.match(/(?:fastapi-csrf-token|csrf[-_]token|csrftoken|xsrf[-_]token|_csrf)=([^;]+)/i);
+          if (m) { csrfToken = m[1]; console.log('[ROMM] csrf from cookie:', pair.slice(0,40)); break; }
+        }
+
+        // Try meta tag in HTML
+        if (!csrfToken) {
+          const meta = text.match(/<meta[^>]+name=["']?csrf[-_]?token["']?[^>]+content=["']([^"']+)/i)
+                    || text.match(/csrf[-_]?token["']?\s*:\s*["']([^"']+)/i);
+          if (meta) { csrfToken = meta[1]; console.log('[ROMM] csrf from HTML:', csrfToken.slice(0,20)); }
+        }
+
+        if (csrfToken) break;
+      } catch (e) {
+        console.log(`[ROMM] GET ${ep} failed:`, e.message);
+      }
     }
 
-    // Step 2: POST login with form body + CSRF token
+    console.log('[ROMM] final csrfToken:', csrfToken ? csrfToken.slice(0,20)+'...' : 'none');
+    console.log('[ROMM] cookieStr:', cookieStr.slice(0, 80));
+
+    // POST login
     const body = new URLSearchParams({ username, password, grant_type: 'password' }).toString();
     const loginHeaders = {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Accept': 'application/json',
+      'Referer': base + '/',
+      'Origin': base,
     };
-    if (csrfToken) loginHeaders['X-CSRF-Token'] = csrfToken;
-    if (cookieHeader) loginHeaders['Cookie'] = cookieHeader;
+    if (csrfToken)  loginHeaders['X-CSRF-Token']   = csrfToken;
+    if (csrfToken)  loginHeaders['X-XSRF-TOKEN']   = csrfToken; // some impls use this
+    if (cookieStr)  loginHeaders['Cookie']          = cookieStr;
 
     const loginRes = await fetch(`${base}/api/auth/login`, {
-      method: 'POST',
-      headers: loginHeaders,
-      body
+      method: 'POST', headers: loginHeaders, body
     });
 
-    const data = await loginRes.text();
-    console.log('[ROMM] login status:', loginRes.status, data.slice(0, 300));
+    const text = await loginRes.text();
+    console.log('[ROMM] login status:', loginRes.status, text.slice(0, 300));
 
-    const json = JSON.parse(data);
-    if (json.access_token) {
-      res.json({ ok: true, token: json.access_token, username });
-    } else {
-      res.status(401).json({ error: json.detail || json.message || 'Login failed' });
+    try {
+      const json = JSON.parse(text);
+      if (json.access_token) return res.json({ ok: true, token: json.access_token, username });
+      res.status(loginRes.status === 403 ? 403 : 401).json({ error: json.detail || json.message || 'Login failed' });
+    } catch {
+      res.status(502).json({ error: text.slice(0, 120) || 'Unexpected response' });
     }
   } catch (e) {
     console.error('[ROMM] login error:', e.message);
