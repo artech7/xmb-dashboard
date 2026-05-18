@@ -320,7 +320,7 @@ function absRequest(absCfg, method, endpoint, body, res, reqToken) {
 }
 
 // Login — returns token
-app.post('/api/abs/login', auth, (req, res) => {
+app.post('/api/abs/login', (req, res) => {
   const { url, username, password, categoryId } = req.body || {};
   if (!url || !username || !password) return res.status(400).json({ error: 'Missing credentials' });
   const base    = url.replace(/\/$/, '');
@@ -537,8 +537,8 @@ app.post('/api/romm/login', (req, res) => {
   const base    = url.replace(/\/$/, '');
   const fullUrl = `${base}/api/auth/login`;
   const lib     = fullUrl.startsWith('https') ? https : http;
-  // ROMM uses Basic auth for login
-  const creds   = Buffer.from(`${username}:${password}`).toString('base64');
+  // ROMM uses OAuth2 password flow — form-encoded body
+  const body    = new URLSearchParams({ username, password }).toString();
   const urlObj  = new URL(fullUrl);
 
   const req2 = lib.request({
@@ -547,24 +547,26 @@ app.post('/api/romm/login', (req, res) => {
     path: urlObj.pathname,
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${creds}`
+      'Content-Length': Buffer.byteLength(body)
     }
   }, (r2) => {
     let data = '';
     r2.on('data', c => data += c);
     r2.on('end', () => {
+      console.log('[ROMM] login status:', r2.statusCode, 'response:', data.slice(0, 200));
       try {
         const json = JSON.parse(data);
         if (json.access_token) {
           res.json({ ok: true, token: json.access_token, username });
         } else {
-          res.status(401).json({ error: json.detail || 'Login failed' });
+          res.status(401).json({ error: json.detail || json.message || 'Login failed' });
         }
       } catch { res.status(502).json({ error: 'Bad response from ROMM' }); }
     });
   });
   req2.on('error', err => res.status(502).json({ error: err.message }));
-  req2.write(''); // empty body, auth is in header
+  req2.setTimeout(10000, () => { req2.destroy(); res.status(504).json({ error: 'Timeout' }); });
+  req2.write(body);
   req2.end();
 });
 
