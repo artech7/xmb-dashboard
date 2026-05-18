@@ -4176,6 +4176,10 @@ init().then(function() {
               <input class="s-input" id="romm-url" type="text" placeholder="http://romm:3000" style="width:100%">
             </div>
             <div class="s-field-group">
+              <label class="s-label">API Token</label>
+              <input class="s-input" id="romm-token" type="password" placeholder="Create in ROMM → Settings → API Tokens" style="width:100%">
+            </div>
+            <div class="s-field-group">
               <label class="s-label">Inject into Category</label>
               <select id="romm-cat" class="s-input" style="background:#1a1a2e;color:#fff;width:100%">
                 <option value="">— select category —</option>
@@ -4183,10 +4187,8 @@ init().then(function() {
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
               <button class="s-btn s-btn-primary" id="romm-save-btn">Save</button>
+              <button class="s-btn" id="romm-test-btn" style="opacity:0.35;cursor:not-allowed" disabled>Test Connection</button>
               <span id="romm-status" style="font-size:12px;color:rgba(255,255,255,0.55)"></span>
-            </div>
-            <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,0.04);border-radius:6px;font-size:12px;color:rgba(255,255,255,0.45);line-height:1.6">
-              Users log in with their own ROMM credentials directly in the category — no passwords stored here.
             </div>
           </div>
 
@@ -7528,7 +7530,10 @@ document.getElementById('s-nav-romm-integration').addEventListener('click', func
 
 function populateRommView() {
   var cfg = (settingsConfig && settingsConfig.romm) || {};
-  document.getElementById('romm-url').value = cfg.url || '';
+  document.getElementById('romm-url').value   = cfg.url   || '';
+  document.getElementById('romm-token').value = cfg.token ? '••••••••' : '';
+  var tb = document.getElementById('romm-test-btn');
+  if (cfg.url && cfg.token) { tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = ''; }
   var sel = document.getElementById('romm-cat');
   sel.innerHTML = '<option value="">— select category —</option>';
   (settingsConfig && settingsConfig.categories || []).forEach(function(cat) {
@@ -7541,21 +7546,39 @@ function populateRommView() {
 }
 
 document.getElementById('romm-save-btn').addEventListener('click', function() {
-  var st = document.getElementById('romm-status');
+  var st  = document.getElementById('romm-status');
+  var url = document.getElementById('romm-url').value.trim();
+  var tok = document.getElementById('romm-token').value.trim();
+  var cat = document.getElementById('romm-cat').value;
   if (!settingsConfig) return;
-  settingsConfig.romm = {
-    url: document.getElementById('romm-url').value.trim(),
-    categoryId: document.getElementById('romm-cat').value
-  };
+  if (!settingsConfig.romm) settingsConfig.romm = {};
+  settingsConfig.romm.url        = url;
+  settingsConfig.romm.categoryId = cat;
+  // Only update token if user typed something new (not the placeholder dots)
+  if (tok && tok !== '••••••••') settingsConfig.romm.token = tok;
+  rommCache = {};
   saveConfig().then(function() {
     st.textContent = '✓ Saved';
+    var tb = document.getElementById('romm-test-btn');
+    if (url && settingsConfig.romm.token) { tb.disabled = false; tb.style.opacity = ''; tb.style.cursor = ''; }
     setTimeout(function() { st.textContent = ''; }, 2500);
-    // Reload config so injectRommItems picks up new categoryId
     return fetch('/api/config').then(function(r){ return r.json(); }).then(function(c){ config = c; });
   }).catch(function(e) { st.textContent = '✗ ' + e.message; });
 });
 
-// ── Session state (per user, not stored server-side) ─────────────────────────
+document.getElementById('romm-test-btn').addEventListener('click', function() {
+  var st = document.getElementById('romm-status');
+  st.textContent = 'Testing…';
+  fetch('/api/romm/platforms', {
+    headers: { 'Authorization': 'Bearer ' + settingsToken }
+  }).then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (Array.isArray(d)) st.textContent = '✓ Connected — ' + d.length + ' platform' + (d.length !== 1 ? 's' : '');
+    else st.textContent = '✗ ' + (d.error || 'Failed');
+  }).catch(function() { st.textContent = '✗ Connection failed'; });
+});
+
+// ── Session state (per user, sessionStorage) ─────────────────────────────────
 var rommToken    = sessionStorage.getItem('romm-token')    || null;
 var rommUsername = sessionStorage.getItem('romm-username') || null;
 var rommCache    = {};
@@ -7570,10 +7593,7 @@ function rommFetch(endpoint, params) {
   }).then(function(r) {
     if (r.status === 401) { rommLogout(); throw new Error('Unauthorized'); }
     return r.json();
-  }).then(function(d) {
-    rommCache[cacheKey] = d;
-    return d;
-  });
+  }).then(function(d) { rommCache[cacheKey] = d; return d; });
 }
 
 function rommLogout() {
@@ -7603,46 +7623,99 @@ function rommShowLoginPanel(listEl, onSuccess) {
 
   // Focus username field
   setTimeout(function() {
-    var u = document.getElementById('romm-login-user');
+    var u = document.getElementById('romm-login-token');
     if (u) u.focus();
   }, 100);
 
+  // Login directly from the browser to ROMM — no server proxy needed
+  // This bypasses CSRF because the browser IS the legitimate client
   function doLogin() {
     var user = (document.getElementById('romm-login-user').value || '').trim();
-    var pass  = document.getElementById('romm-login-pass').value || '';
-    var st    = document.getElementById('romm-login-status');
+    var pass = document.getElementById('romm-login-pass').value || '';
+    var st   = document.getElementById('romm-login-status');
     if (!user || !pass) { st.textContent = 'Enter username and password'; return; }
     st.textContent = 'Signing in…';
     document.getElementById('romm-login-btn').disabled = true;
 
-    fetch('/api/romm/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user, password: pass })
-    }).then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.ok && d.token) {
-        rommToken    = d.token;
-        rommUsername = d.username || user;
-        sessionStorage.setItem('romm-token', rommToken);
-        sessionStorage.setItem('romm-username', rommUsername);
-        rommCache = {}; // clear any unauthenticated cache
-        onSuccess();
-      } else {
-        st.textContent = '✗ ' + (d.error || 'Login failed');
-        document.getElementById('romm-login-btn').disabled = false;
-      }
-    }).catch(function() {
-      document.getElementById('romm-login-status').textContent = '✗ Connection failed';
-      document.getElementById('romm-login-btn').disabled = false;
-    });
+    // Step 1: get ROMM base URL from our server
+    fetch('/api/romm/url')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.url) throw new Error('ROMM not configured');
+        var rommBase = d.url;
+
+        // Step 2: get CSRF token directly from ROMM
+        return fetch(rommBase + '/api/auth/token', { credentials: 'include' })
+          .then(function(r) {
+            var csrfToken = '';
+            // Try to get token from response
+            return r.json().catch(function() { return {}; }).then(function(j) {
+              csrfToken = j.token || j.csrf_token || '';
+              // Step 3: POST login directly to ROMM with CSRF token
+              var body = new URLSearchParams({ username: user, password: pass, grant_type: 'password' }).toString();
+              var headers = {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+              };
+              if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+              return fetch(rommBase + '/api/auth/login', {
+                method: 'POST',
+                headers: headers,
+                body: body,
+                credentials: 'include'
+              });
+            });
+          });
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.access_token) {
+          rommToken    = d.access_token;
+          rommUsername = user;
+          sessionStorage.setItem('romm-token', rommToken);
+          sessionStorage.setItem('romm-username', rommUsername);
+          rommCache = {};
+          onSuccess();
+        } else {
+          st.textContent = '✗ ' + (d.detail || d.message || 'Login failed');
+          document.getElementById('romm-login-btn').disabled = false;
+        }
+      })
+      .catch(function(e) {
+        // If direct login fails (CORS), fall back to server proxy
+        fetch('/api/romm/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: user, password: pass })
+        }).then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.ok && d.token) {
+            rommToken    = d.token;
+            rommUsername = d.username || user;
+            sessionStorage.setItem('romm-token', rommToken);
+            sessionStorage.setItem('romm-username', rommUsername);
+            rommCache = {};
+            onSuccess();
+          } else {
+            st.textContent = '✗ ' + (d.error || 'Login failed');
+            document.getElementById('romm-login-btn').disabled = false;
+          }
+        }).catch(function() {
+          document.getElementById('romm-login-status').textContent = '✗ Connection failed';
+          document.getElementById('romm-login-btn').disabled = false;
+        });
+      });
   }
 
   document.getElementById('romm-login-btn').addEventListener('click', doLogin);
-  // Enter key submits
   panel.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') doLogin();
   });
+
+  setTimeout(function() {
+    var u = document.getElementById('romm-login-user');
+    if (u) u.focus();
+  }, 100);
 }
 
 // ── Inject ROMM items into category ──────────────────────────────────────────
@@ -7668,9 +7741,7 @@ function injectRommItems() {
   listEl.appendChild(div);
 
   if (!rommToken) {
-    // Show login panel
     rommShowLoginPanel(listEl, function() {
-      // After login, re-inject
       listEl.querySelector('[data-romm="login"]').remove();
       div.textContent = 'ROMM — ' + rommUsername;
       loadRommContent(listEl, snapIdx);
