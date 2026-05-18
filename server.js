@@ -376,7 +376,9 @@ app.get('/api/abs/library/:id/items', (req, res) => {
   const cfg    = readConfig();
   const limit  = req.query.limit || 100;
   const page   = req.query.page  || 0;
-  absRequest(cfg.abs || {}, 'GET', `/api/libraries/${req.params.id}/items?limit=${limit}&page=${page}&sort=media.metadata.title`, null, res);
+  const sort   = req.query.sort  || 'media.metadata.title';
+  const desc   = req.query.desc  || '0';
+  absRequest(cfg.abs || {}, 'GET', `/api/libraries/${req.params.id}/items?limit=${limit}&page=${page}&sort=${sort}&desc=${desc}`, null, res);
 });
 
 app.get('/api/abs/item/:id', (req, res) => {

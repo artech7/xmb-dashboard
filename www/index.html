@@ -3464,6 +3464,11 @@ function openItem(item) {
     return;
   }
 
+  // If iframe is already showing this URL, don't reload
+  if (wrap.style.display !== 'none' && wrap.classList.contains('visible') && frame.src === item.url) {
+    return;
+  }
+
   // Step 1: zoom out + fade dashboard to black
   if (root)    root.classList.add('launching');
   if (overlay) overlay.classList.add('launching');
@@ -3484,6 +3489,7 @@ function openItem(item) {
     }, 8000);
 
     _frameLoadHandler = function() {
+      if (frame.dataset.fullyLoaded === '1') return; // absorb internal navigation
       clearTimeout(frameTimeout);
       frame.removeEventListener('load', _frameLoadHandler);
       _frameLoadHandler = null;
@@ -3512,9 +3518,8 @@ function openItem(item) {
         if (overlay) overlay.classList.remove('launching');
         wrap.classList.add('visible');
         setTimeout(function() { frame.classList.add('loaded'); }, 80);
-        // Add permanent silent handler so internal navigations
-        // within the iframe don't trigger any more logic
-        frame.addEventListener('load', function() { /* absorb internal navs */ });
+        // Mark frame as fully loaded — subsequent load events are internal navs
+        frame.dataset.fullyLoaded = '1';
       }, 180);
     };
 
@@ -3542,6 +3547,7 @@ function closeServiceFrame() {
   setTimeout(function() {
     wrap.style.display = 'none';
     frame.src = 'about:blank';
+    frame.dataset.fullyLoaded = '';
     if (root) root.classList.remove('launching');
     setTimeout(function() {
       if (overlay) overlay.classList.remove('launching');
@@ -6847,6 +6853,26 @@ function absFetch(endpoint) {
     .then(function(d) { absCache[endpoint] = d; return d; });
 }
 
+// Fetch all pages from a paginated ABS endpoint
+function absFetchAllPages(baseEndpoint) {
+  var allResults = [];
+  var pageSize = 100;
+  function fetchPage(page) {
+    var url = baseEndpoint + '?limit=' + pageSize + '&page=' + page + '&sort=media.metadata.title&desc=0';
+    return absFetch(url).then(function(d) {
+      var results = d.results || [];
+      allResults = allResults.concat(results);
+      var total = d.total || 0;
+      var fetched = (page + 1) * pageSize;
+      if (fetched < total && results.length === pageSize) {
+        return fetchPage(page + 1);
+      }
+      return allResults;
+    });
+  }
+  return fetchPage(0);
+}
+
 // ── Inject ABS items into category ───────────────────────────────────────────
 var _absItems = [];
 
@@ -6919,8 +6945,7 @@ function injectAbsItems() {
 // ── ABS drill-down actions ────────────────────────────────────────────────────
 function absItemAction(item) {
   if (item._absType === 'library') {
-    absFetch('/library/' + item._absId + '/items?limit=100').then(function(d) {
-      var results = d.results || [];
+    absFetchAllPages('/library/' + item._absId + '/items').then(function(results) {
       var isBook = item._absMediaType !== 'podcast';
       var rawItems = results.map(function(r) {
         var meta = (r.media && r.media.metadata) || {};
@@ -7146,6 +7171,7 @@ function absInjectSortBar(rawItems) {
     }
   });
 
+  bar.appendChild(absCountSpan);
   listEl.insertBefore(bar, listEl.firstChild);
 }
 
@@ -7557,7 +7583,7 @@ function loadRommContent(listEl, snapIdx) {
   // Fetch platforms + recent ROMs in parallel
   Promise.all([
     rommFetch('/platforms'),
-    rommFetch('/roms', { size: 200, order_by: 'id', order_dir: 'asc' })
+    rommFetch('/roms', { size: 500, order_by: 'id', order_dir: 'asc' })
   ]).then(function(results) {
     if (catIdx !== snapIdx) return;
     var currentList = document.querySelector('.item-list');
