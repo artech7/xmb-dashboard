@@ -4434,9 +4434,11 @@ function closePrefs() {
   document.getElementById('prefs-overlay').classList.remove('open');
 }
 
-document.getElementById('prefs-close').addEventListener('click', closePrefs);
-document.getElementById('prefs-overlay').addEventListener('click', function(e){
-  if (e.target===document.getElementById('prefs-overlay')) closePrefs();
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('prefs-close').addEventListener('click', closePrefs);
+  document.getElementById('prefs-overlay').addEventListener('click', function(e){
+    if (e.target === document.getElementById('prefs-overlay')) closePrefs();
+  });
 });
 
 // Get number of visible columns in the theme swatch grid
