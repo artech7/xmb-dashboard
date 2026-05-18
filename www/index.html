@@ -1152,11 +1152,30 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
+  var useGL      = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
+  var galaxyCombo = glSupported && animMode === 'galaxy';
+  // Galaxy combo: render nebula to glCanvas offscreen, composite into 2D canvas
+  if (galaxyCombo) {
+    glCanvas.style.display = '';  // must be visible for GL to render
+    canvas.style.display   = '';  // 2D canvas on top
+    glCanvas.style.opacity = '0'; // hide GL canvas visually (used as source only)
+    glCanvas.style.zIndex  = '-1';
+  } else {
+    glCanvas.style.opacity = '';
+    glCanvas.style.zIndex  = '1';
+  }
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
-    case 'galaxy':    drawGalaxy();                              break;
+    case 'galaxy':
+      if (galaxyCombo) {
+        // Render nebula to glCanvas, then composite + draw stars
+        glRenderFrame(glProgNebula, glNebLocs, true);
+        drawGalaxy(); // drawGalaxy will composite glCanvas as bg
+      } else {
+        drawGalaxy();
+      }
+      break;
     case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
     case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
@@ -1695,12 +1714,17 @@ function drawGalaxy() {
   var spinT = t * 0.00022 * spd;
   var [ar,ag,ab] = accentRgb;
 
-  // ── Background deep-space gradient ───────────────────────
-  var bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, maxR*1.2);
-  bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+',0.18)');
-  bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+',0.08)');
-  bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
-  ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
+  // ── Background: nebula GL composite or gradient fallback ─
+  if (glSupported && glProgNebula && glCanvas && glCanvas.style.display !== 'none') {
+    // Composite the nebula render from glCanvas as the galaxy background
+    ctx.drawImage(glCanvas, 0, 0, W, H);
+  } else {
+    var bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, maxR*1.2);
+    bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+',0.18)');
+    bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+',0.08)');
+    bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
+  }
 
   // ── Gas clouds — noisy, gaseous, large nebulae ──────────────
   var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
