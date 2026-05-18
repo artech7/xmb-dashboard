@@ -1152,11 +1152,11 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater' || animMode === 'galaxy');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
   canvas.style.display    = useGL ? 'none' : '';
   if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
   switch(animMode) {
-    case 'galaxy':    useGL ? renderGLGalaxy()   : drawGalaxy();     break;
+    case 'galaxy':    drawGalaxy();                              break;
     case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
     case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
@@ -1665,17 +1665,17 @@ function drawGalaxy() {
   bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
 
-  // ── Gas clouds (behind stars) ─────────────────────────────
-  galaxyClouds.forEach(function(c) {
+  // ── Gas clouds — use full theme palette for color variation ──
+  var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
+  galaxyClouds.forEach(function(c, ci) {
     var ang = c.baseAngle + spinT * 0.4;
     var cx2 = cx + Math.cos(ang) * c.dist * maxR;
     var cy2 = cy + Math.sin(ang) * c.dist * maxR * ellipse;
     var cr = c.r * maxR;
     var cg = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, cr);
-    var r2 = c.warm ? Math.round(ar*0.9 + 40) : ar;
-    var g2 = c.warm ? Math.round(ag*0.6) : Math.round(ag*0.8);
-    var b2 = c.warm ? Math.round(ab*0.3) : Math.round(ab*1.1);
-    r2 = Math.min(255,r2); b2 = Math.min(255,b2);
+    // Cycle through palette colors for each cloud
+    var pCol = palette[ci % palette.length] || [ar,ag,ab];
+    var r2 = Math.min(255, pCol[0]), g2 = pCol[1], b2 = Math.min(255, pCol[2]);
     cg.addColorStop(0,   'rgba('+r2+','+g2+','+b2+','+c.alpha+')');
     cg.addColorStop(0.5, 'rgba('+r2+','+g2+','+b2+','+(c.alpha*0.4)+')');
     cg.addColorStop(1,   'rgba(0,0,0,0)');
@@ -1702,9 +1702,10 @@ function drawGalaxy() {
       var ax = cx + Math.cos(ang2) * r2b;
       var ay = cy + Math.sin(ang2) * r2b * ellipse;
       var gRad = maxR * (0.04 + frac * 0.05);
+      var pArm = palette[(arm * 2) % palette.length] || [ar,ag,ab];
       var glow = ctx.createRadialGradient(ax,ay,0,ax,ay,gRad);
       var a = (1-frac) * (1-frac) * 0.05;
-      glow.addColorStop(0,'rgba('+ar+','+ag+','+ab+','+a+')');
+      glow.addColorStop(0,'rgba('+pArm[0]+','+pArm[1]+','+pArm[2]+','+a+')');
       glow.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle = glow; ctx.fillRect(0,0,W,H);
     }
@@ -1728,15 +1729,16 @@ function drawGalaxy() {
     ctx.arc(sx, sy, sz, 0, Math.PI*2);
     var col;
     if (s.blueish)     col = 'rgba(180,210,255,'+(s.alpha*tw)+')';
-    else if (s.color)  col = 'rgba('+ar+','+ag+','+ab+','+(s.alpha*tw)+')';
+    else if (s.color)  { var pS=palette[Math.floor(s.phase*3)%palette.length]||[ar,ag,ab]; col='rgba('+pS[0]+','+pS[1]+','+pS[2]+','+(s.alpha*tw)+')'; }
     else               col = 'rgba(255,255,255,'+(s.alpha*tw)+')';
     ctx.fillStyle = col;
     ctx.fill();
 
     // Tiny halo on bright stars
     if (s.size > 1.2) {
+      var hStar = palette[Math.floor(Math.random()*palette.length)] || [ar,ag,ab];
       var halo = ctx.createRadialGradient(sx,sy,0,sx,sy,sz*5);
-      halo.addColorStop(0,'rgba('+ar+','+ag+','+ab+','+(s.alpha*0.18*tw)+')');
+      halo.addColorStop(0,'rgba('+hStar[0]+','+hStar[1]+','+hStar[2]+','+(s.alpha*0.18*tw)+')');
       halo.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle = halo;
       var hr = sz*5;
