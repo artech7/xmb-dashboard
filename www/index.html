@@ -1252,8 +1252,11 @@ function pfTriggerScatter() {
 
 function initParticleFlow() {
   pfParticles = [];
+  var mult  = (window.particleMult !== undefined) ? window.particleMult : 1.0;
+  if (mult === 0) { pfObstacles = []; pfObsTimer = 0; return; }
   // Fewer particles on mobile — most of screen is covered by the item list
-  var count = isMobile ? Math.floor(PF_COUNT * 0.45) : PF_COUNT;
+  var base  = isMobile ? Math.floor(PF_COUNT * 0.45) : PF_COUNT;
+  var count = Math.round(base * mult);
   for (var i = 0; i < count; i++) pfParticles.push(pfNewParticle());
   pfObstacles = [];
   pfObsTimer  = 0;
@@ -1681,9 +1684,10 @@ function initGalaxyStars() {
     });
   }
 
-  // Background static stars — scattered across full screen, random blink rates
+  // Background static stars — count scales with particle setting
   galaxyStars._bgStars = [];
-  var numBgStars = 280;
+  var mult = (window.particleMult !== undefined) ? window.particleMult : 1.0;
+  var numBgStars = Math.round(280 * mult);
   for (var i = 0; i < numBgStars; i++) {
     galaxyStars._bgStars.push({
       x:       Math.random(),           // 0..1 screen fraction
@@ -6697,7 +6701,14 @@ function applyPrefs(prefs) {
   var im = {dim:0.45,normal:1.0,vivid:1.7}; blobOpacityMult = im[prefs.intensity]||1.0;
   // Particle density — controls all particle systems
   var pm = {off:0.0, normal:1.0, dense:2.0};
-  window.particleMult = (prefs.particles && pm[prefs.particles] !== undefined) ? pm[prefs.particles] : 1.0;
+  var newMult = (prefs.particles && pm[prefs.particles] !== undefined) ? pm[prefs.particles] : 1.0;
+  if (newMult !== window.particleMult) {
+    window.particleMult = newMult;
+    pfParticles = null; // reinit particle flow with new count
+    galaxyStars = null; // reinit background stars too
+  } else {
+    window.particleMult = newMult;
+  }
 
   // Canvas 2D stars
   var sm = {off:0, normal:240, dense:420};
