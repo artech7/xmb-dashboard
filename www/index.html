@@ -4369,11 +4369,6 @@ var activeCatIdx   = null;
 
 
 
-// ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
-var THEME_KEYS = Object.keys(NEBULA_THEMES);
-var ROW_COLS   = [THEME_KEYS.length, 10, 3, 3, 3, 2, 3, 3, 1];   // row 0=themes, 1=animStyle, 2=intensity, 3=particles, 4=fontSize, 5=showDesc, 6=clock, 7=motion, 8=reset
-var prefFocusRow = 0;
-var prefFocusCol = 0;
 
 
 function clampCol(row, col) {
@@ -6596,6 +6591,13 @@ var NEBULA_THEMES = {
     bg:['#120800','#0d0600','#080400']
   }
 };
+// ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
+// Must be after NEBULA_THEMES so Object.keys() returns all themes
+var THEME_KEYS   = Object.keys(NEBULA_THEMES);
+var ROW_COLS     = [THEME_KEYS.length, 10, 3, 3, 3, 2, 3, 3, 1];
+var prefFocusRow = 0;
+var prefFocusCol = 0;
+
 
 // ─── PREFS STATE ──────────────────────────────────────────────────────────────
 var DEFAULT_PREFS = { theme:'default', intensity:'normal', particles:'normal', fontSize:'normal', showDesc:'show', clockFmt:'default', motion:'normal', animStyle:'nebula' };
