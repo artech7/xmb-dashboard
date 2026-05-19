@@ -1760,6 +1760,7 @@ function drawGalaxy() {
       ctx.translate(offX, offY);
       ctx.rotate(lobeAngle);
       ctx.scale(scaleX, scaleY * ellipse);
+      ctx.beginPath(); ctx.arc(0, 0, lobeR, 0, Math.PI * 2); ctx.clip();
       var lg = ctx.createRadialGradient(0, 0, 0, 0, 0, lobeR);
       lg.addColorStop(0,    'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+lobeA+')');
       lg.addColorStop(0.4,  'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+(lobeA*0.5)+')');
@@ -1782,6 +1783,7 @@ function drawGalaxy() {
       ctx.translate(tendX, tendY);
       ctx.rotate(tendAngle);
       ctx.scale(0.3, 1.0); // elongated radially
+      ctx.beginPath(); ctx.arc(0, 0, tendR, 0, Math.PI * 2); ctx.clip();
       var tg = ctx.createRadialGradient(0, 0, 0, 0, 0, tendR);
       tg.addColorStop(0,   'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.38*iMult)+')');
       tg.addColorStop(0.5, 'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.12)+')');
@@ -1796,13 +1798,16 @@ function drawGalaxy() {
     var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.5;
     var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.5 * ellipse;
     var bleedR = cr * 0.85;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(bleedX, bleedY, bleedR, 0, Math.PI * 2); ctx.clip();
     var bg2 = ctx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedR);
     bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.5*iMult)+')');
     bg2.addColorStop(0.6, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.14)+')');
     bg2.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = bg2;
     ctx.fillRect(bleedX-bleedR, bleedY-bleedR, bleedR*2, bleedR*2);
-  });;
+    ctx.restore();
+  });
 
   // ── Bright core ───────────────────────────────────────────
   var core = ctx.createRadialGradient(cx,cy,0,cx,cy,maxR*0.18);
