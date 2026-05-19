@@ -1814,6 +1814,8 @@ function drawGalaxy() {
 
   // ── Background static stars (full screen, random blink) ──
   var bgStars = galaxyStars._bgStars || [];
+  ctx.save(); // isolate from any lingering cloud transforms
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset to identity
   bgStars.forEach(function(s) {
     var tw = 0.5 + 0.5 * Math.sin(t * s.blinkRate + s.phase);
     var a  = s.alpha * (0.4 + 0.6 * tw) * iMult;
@@ -1825,6 +1827,7 @@ function drawGalaxy() {
       : 'rgba(255,255,255,' + a + ')';
     ctx.fill();
   });
+  ctx.restore();
 
   // ── Arm glow trails ───────────────────────────────────────
   var arms = 3;
@@ -1848,6 +1851,8 @@ function drawGalaxy() {
   }
 
   // ── Stars ────────────────────────────────────────────────
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset — clouds leave transform dirty
   galaxyStars.forEach(function(s) {
     var ang3;
     if (s.type === 'arm') {
@@ -1881,6 +1886,7 @@ function drawGalaxy() {
       ctx.fillRect(sx-hr,sy-hr,hr*2,hr*2);
     }
   });
+  ctx.restore(); // undo setTransform reset
 
   drawVignette();
 }
