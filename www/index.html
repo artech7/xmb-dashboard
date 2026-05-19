@@ -1065,31 +1065,19 @@ function drawBlob(cx, cy, radius, rgb, alpha) {
 }
 
 function resize() {
-  var dpr = Math.min(window.devicePixelRatio || 1, 2); // cap at 2x for perf
-  var vw  = window.innerWidth;
-  var vh  = window.innerHeight;
-  // W and H stay in CSS pixels — all drawing coords use CSS pixels
-  // The canvas buffer is larger (physical pixels) for sharpness
-  W = vw;
-  H = vh;
-  canvas.width  = Math.round(vw * dpr);
-  canvas.height = Math.round(vh * dpr);
-  canvas.style.width  = vw + 'px';
-  canvas.style.height = vh + 'px';
-  ctx.scale(dpr, dpr); // scale context so arc/fillRect coords stay in CSS pixels
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  W = canvas.width  = vw;
+  H = canvas.height = vh;
   initStars();
-  // GL canvas — same DPR treatment
   if (glCanvas) {
-    glCanvas.width  = Math.round(vw * dpr);
-    glCanvas.height = Math.round(vh * dpr);
-    glCanvas.style.width  = vw + 'px';
-    glCanvas.style.height = vh + 'px';
+    glCanvas.width  = vw;
+    glCanvas.height = vh;
   }
   if (gl) {
-    gl.viewport(0, 0, Math.round(vw * dpr), Math.round(vh * dpr));
+    gl.viewport(0, 0, vw, vh);
     glLastW = 0; glLastH = 0;
   }
-  // Reset screen-size-dependent animation states
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
   auroraCurtains = null; bokehCircles = null; inkBlobs = null;
