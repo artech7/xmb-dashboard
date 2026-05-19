@@ -162,9 +162,6 @@ app.put('/api/config', auth, (req, res) => {
     if (existing.abs && existing.abs.token && cfg.abs) {
       cfg.abs.token = existing.abs.token; // never let client overwrite the token
     }
-    if (existing.romm && existing.romm.token && cfg.romm && !cfg.romm.token) {
-      cfg.romm.token = existing.romm.token; // preserve romm token
-    }
     if (existing.subsonic && existing.subsonic.password && cfg.subsonic && !cfg.subsonic.password) {
       cfg.subsonic.password = existing.subsonic.password;
     }
