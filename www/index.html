@@ -1068,14 +1068,15 @@ function resize() {
   var dpr = Math.min(window.devicePixelRatio || 1, 2); // cap at 2x for perf
   var vw  = window.innerWidth;
   var vh  = window.innerHeight;
-  // Canvas 2D — scale by DPR so pixels are 1:1 on retina/high-DPI screens
-  // Without this, canvas renders at logical resolution and CSS upscales it,
-  // creating a visible grid/moiré pattern on high-DPI displays
-  W = canvas.width  = Math.round(vw * dpr);
-  H = canvas.height = Math.round(vh * dpr);
+  // W and H stay in CSS pixels — all drawing coords use CSS pixels
+  // The canvas buffer is larger (physical pixels) for sharpness
+  W = vw;
+  H = vh;
+  canvas.width  = Math.round(vw * dpr);
+  canvas.height = Math.round(vh * dpr);
   canvas.style.width  = vw + 'px';
   canvas.style.height = vh + 'px';
-  ctx.scale(dpr, dpr); // scale context so drawing coords stay in CSS pixels
+  ctx.scale(dpr, dpr); // scale context so arc/fillRect coords stay in CSS pixels
   initStars();
   // GL canvas — same DPR treatment
   if (glCanvas) {
