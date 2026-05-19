@@ -1064,31 +1064,18 @@ function drawBlob(cx, cy, radius, rgb, alpha) {
   ctx.fillRect(0, 0, W, H);
 }
 
-var _dpr = 1; // global DPR — set in resize, used by animLoop clearRect
-
 function resize() {
-  _dpr = Math.min(window.devicePixelRatio || 1, 2);
   var vw = window.innerWidth;
   var vh = window.innerHeight;
-  // W/H stay in CSS pixels — all drawing math uses these
-  W = vw;
-  H = vh;
-  // canvas.width assignment resets context state (including any prior scale)
-  // so ctx.scale() here is always fresh, never accumulates
-  canvas.width  = Math.round(vw * _dpr);
-  canvas.height = Math.round(vh * _dpr);
-  canvas.style.width  = vw + 'px';
-  canvas.style.height = vh + 'px';
-  ctx.scale(_dpr, _dpr); // scale persists across frames until next resize
+  W = canvas.width  = vw;
+  H = canvas.height = vh;
   initStars();
   if (glCanvas) {
-    glCanvas.width  = Math.round(vw * _dpr);
-    glCanvas.height = Math.round(vh * _dpr);
-    glCanvas.style.width  = vw + 'px';
-    glCanvas.style.height = vh + 'px';
+    glCanvas.width  = vw;
+    glCanvas.height = vh;
   }
   if (gl) {
-    gl.viewport(0, 0, Math.round(vw * _dpr), Math.round(vh * _dpr));
+    gl.viewport(0, 0, vw, vh);
     glLastW = 0; glLastH = 0;
   }
   galaxyStars = null; causticPoints = null; solarParticles = null;
