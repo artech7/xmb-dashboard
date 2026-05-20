@@ -1149,7 +1149,17 @@ function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
   canvas.style.display    = useGL ? 'none' : '';
-  if (glCanvas) glCanvas.style.display = useGL ? '' : 'none';
+  if (glCanvas) {
+    glCanvas.style.display = useGL ? '' : 'none';
+    // Ensure GL canvas buffer matches viewport (can drift on mobile orientation change)
+    if (useGL && (glCanvas.width !== W || glCanvas.height !== H)) {
+      glCanvas.width  = W;
+      glCanvas.height = H;
+      glCanvas.style.width  = W + 'px';
+      glCanvas.style.height = H + 'px';
+      if (gl) gl.viewport(0, 0, W, H);
+    }
+  }
   switch(animMode) {
     case 'galaxy':    drawGalaxy();                              break;
     case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
@@ -3447,7 +3457,9 @@ var GL_GALAXY_FRAG = [
 function initWebGL() {
   if (!glCanvas) return false;
   try {
-    gl = glCanvas.getContext('webgl') || glCanvas.getContext('experimental-webgl');
+    // Mobile-friendly context options: no antialias for perf, preserve drawing buffer
+    var ctxOpts = { antialias: false, alpha: true, preserveDrawingBuffer: false, powerPreference: 'default' };
+    gl = glCanvas.getContext('webgl', ctxOpts) || glCanvas.getContext('experimental-webgl', ctxOpts);
     if (!gl) { console.log('WebGL not available — using Canvas 2D fallback'); return false; }
 
     glCanvas.width  = W;
