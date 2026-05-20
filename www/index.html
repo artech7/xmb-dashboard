@@ -824,7 +824,7 @@ html, body {
 <body>
 
 <canvas id="bg-canvas"></canvas>
-<canvas id="gl-canvas" style="position:fixed;top:0;left:0;z-index:1;pointer-events:none;display:none"></canvas>
+<canvas id="gl-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none"></canvas>
 <div id="loading">
   <div id="loading-title">Homelab</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
@@ -1070,8 +1070,10 @@ function resize() {
   H = canvas.height = vh;
   initStars();
   if (glCanvas) {
-    glCanvas.width  = vw;
-    glCanvas.height = vh;
+    glCanvas.width        = vw;
+    glCanvas.height       = vh;
+    glCanvas.style.width  = vw + 'px';
+    glCanvas.style.height = vh + 'px';
   }
   if (gl) {
     gl.viewport(0, 0, vw, vh);
@@ -1080,7 +1082,7 @@ function resize() {
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
   auroraCurtains = null; bokehCircles = null; inkBlobs = null;
-  hexGridCanvas = null; hexCells = null;
+  hexGridCanvas = null; hexCells = null; pfParticles = null;
 }
 
 function drawNebula() {
@@ -3969,7 +3971,7 @@ async function init() {
 
 
 // ─── MOBILE SUPPORT ───────────────────────────────────────────────────────────
-var isMobile = window.matchMedia('(max-width: 768px)').matches;
+var isMobile = window.matchMedia('(max-width: 768px)').matches || (('ontouchstart' in window) && window.innerWidth < 1024);
 window.matchMedia('(max-width: 768px)').addEventListener('change', function(e) {
   isMobile = e.matches;
   pfParticles = null; // reinit particle count for new screen size
