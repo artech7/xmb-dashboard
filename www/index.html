@@ -23,7 +23,7 @@
 html, body {
   width: 100%; height: 100%;
   overflow: hidden;
-  background: var(--bg-dark);
+  background: #000; /* fallback only — canvases cover this */
   color: #fff;
   font-family: 'Rajdhani', sans-serif;
   user-select: none;
@@ -3466,7 +3466,7 @@ function initWebGL() {
   if (!glCanvas) return false;
   try {
     // Mobile-friendly context options: no antialias for perf, preserve drawing buffer
-    var ctxOpts = { antialias: false, alpha: true, preserveDrawingBuffer: false, powerPreference: 'default' };
+    var ctxOpts = { antialias: false, alpha: false, preserveDrawingBuffer: false, powerPreference: 'default' };
     gl = glCanvas.getContext('webgl', ctxOpts) || glCanvas.getContext('experimental-webgl', ctxOpts);
     if (!gl) { console.log('WebGL not available — using Canvas 2D fallback'); return false; }
 
@@ -3558,7 +3558,12 @@ function glRenderFrame(prog, locs, useAccentForC0) {
   // Always reset to main canvas to avoid fluid sim leaving dirty state
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   // Ensure viewport matches canvas (may have changed on resize)
-  gl.viewport(0, 0, glCanvas.width || W, glCanvas.height || H);
+  var gw = glCanvas.width  || W;
+  var gh = glCanvas.height || H;
+  gl.viewport(0, 0, gw, gh);
+  // Clear to opaque black before drawing — mobile needs this
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
   var pos = gl.getAttribLocation(prog, 'a_pos');
