@@ -1184,6 +1184,14 @@ resize();
 window.addEventListener('load', function() {
   glSupported = initWebGL();
   if (glSupported) resize(); // re-sync GL canvas size after init
+  // Mobile debug: show GL status briefly on screen
+  if (isMobile) {
+    var dbg = document.createElement('div');
+    dbg.style.cssText = 'position:fixed;top:4px;right:4px;z-index:9999;background:rgba(0,0,0,0.7);color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;pointer-events:none';
+    dbg.textContent = 'GL:' + (glSupported ? 'OK' : 'FAIL') + ' A:' + (!!glProgAurora) + ' N:' + (!!glProgNebula) + ' I:' + (!!glProgInk) + ' D:' + (!!glProgDeepSea);
+    document.body.appendChild(dbg);
+    setTimeout(function(){ dbg.remove(); }, 8000);
+  }
   animLoop();
 });
 
@@ -3560,12 +3568,12 @@ function glRenderFrame(prog, locs, useAccentForC0) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
-function renderGLAurora()  { glRenderFrame(glProgAurora, glAuroraLocs); }
-function renderGLDeepSea()    { if (glProgDeepSea)   glRenderFrame(glProgDeepSea,   glDeepSeaLocs);   else drawUnderwater(); }
-function renderGLCrystals()   { if (glProgCrystals)  glRenderFrame(glProgCrystals,  glCrystalLocs);   else drawBokeh(); }
-function renderGLGalaxy()     { if (glProgGalaxy)    glRenderFrame(glProgGalaxy,    glGalaxyLocs);    else drawGalaxy(); }
-function renderGLInk()     { glRenderFrame(glProgInk, glInkLocs); }
-function renderGLNebula()  { glRenderFrame(glProgNebula, glNebLocs, true); }
+function renderGLAurora()  { if (glProgAurora)  glRenderFrame(glProgAurora,  glAuroraLocs);       else { glSupported = false; drawSolarWind(); } }
+function renderGLDeepSea() { if (glProgDeepSea) glRenderFrame(glProgDeepSea, glDeepSeaLocs);      else { glSupported = false; drawUnderwater(); } }
+function renderGLCrystals(){ if (glProgCrystals)glRenderFrame(glProgCrystals,glCrystalLocs);      else drawBokeh(); }
+function renderGLGalaxy()  { if (glProgGalaxy)  glRenderFrame(glProgGalaxy,  glGalaxyLocs);       else drawGalaxy(); }
+function renderGLInk()     { if (glProgInk)     glRenderFrame(glProgInk,     glInkLocs);          else { glSupported = false; drawInkWater(); } }
+function renderGLNebula()  { if (glProgNebula)  glRenderFrame(glProgNebula,  glNebLocs, true);    else { glSupported = false; drawNebula(); } }
 
 // ── Init on load ──────────────────────────────────────────────────────────
 // initWebGL() is now called from window.load handler above
