@@ -1153,24 +1153,26 @@ function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
   if (useGL) {
-    // Clear and push 2D canvas fully behind body background
-    ctx.clearRect(0, 0, W, H);
-    canvas.style.zIndex  = '-1';  // behind body bg (#000), invisible
-    canvas.style.opacity = '0';
-    glCanvas.style.zIndex   = '1';
-    glCanvas.style.display  = '';
-    // Sync GL canvas buffer to viewport
-    if (glCanvas.width !== W || glCanvas.height !== H) {
-      glCanvas.width        = W;
-      glCanvas.height       = H;
-      glCanvas.style.width  = W + 'px';
-      glCanvas.style.height = H + 'px';
-      if (gl) gl.viewport(0, 0, W, H);
+    // Hide 2D canvas with display:none AND zero its buffer
+    // so there is literally nothing to show through on any browser/OS
+    if (canvas.style.display !== 'none') {
+      ctx.clearRect(0, 0, W, H); // clear before hiding
+      canvas.style.display = 'none';
+      canvas.width = 1; canvas.height = 1; // zero buffer — no stale pixels
+    }
+    if (glCanvas) {
+      glCanvas.style.display = '';
+      if (glCanvas.width !== W || glCanvas.height !== H) {
+        glCanvas.width  = W; glCanvas.height = H;
+        if (gl) gl.viewport(0, 0, W, H);
+      }
     }
   } else {
-    canvas.style.zIndex  = '0';
-    canvas.style.opacity = '';
-    glCanvas.style.display = 'none';
+    if (canvas.style.display === 'none') {
+      canvas.width  = W; canvas.height = H; // restore buffer
+      canvas.style.display = '';
+    }
+    if (glCanvas) glCanvas.style.display = 'none';
   }
   switch(animMode) {
     case 'galaxy':    drawGalaxy();                              break;
