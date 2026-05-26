@@ -1148,13 +1148,20 @@ var animMode = 'nebula';
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
-  canvas.style.display    = useGL ? 'none' : '';
+  // Use visibility+opacity instead of display:none — avoids compositing lag
+  // that causes the 2D canvas last-frame to show through the GL canvas
+  if (useGL) {
+    canvas.style.visibility = 'hidden';
+    ctx.clearRect(0, 0, W, H); // ensure 2D canvas is transparent, not stale
+  } else {
+    canvas.style.visibility = '';
+  }
   if (glCanvas) {
     glCanvas.style.display = useGL ? '' : 'none';
-    // Ensure GL canvas buffer matches viewport (can drift on mobile orientation change)
+    // Ensure GL canvas buffer matches viewport
     if (useGL && (glCanvas.width !== W || glCanvas.height !== H)) {
-      glCanvas.width  = W;
-      glCanvas.height = H;
+      glCanvas.width        = W;
+      glCanvas.height       = H;
       glCanvas.style.width  = W + 'px';
       glCanvas.style.height = H + 'px';
       if (gl) gl.viewport(0, 0, W, H);
