@@ -815,7 +815,7 @@ body {
 <body>
 
 <canvas id="bg-canvas"></canvas>
-<canvas id="gl-canvas" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none"></canvas>
+<canvas id="gl-canvas" style="display:none"></canvas>
 <div id="loading">
   <div id="loading-title">Homelab</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
@@ -1061,10 +1061,13 @@ function resize() {
   H = canvas.height = vh;
   initStars();
   if (glCanvas) {
-    glCanvas.width        = vw;
-    glCanvas.height       = vh;
-    glCanvas.style.width  = vw + 'px';
-    glCanvas.style.height = vh + 'px';
+    glCanvas.width  = vw;
+    glCanvas.height = vh;
+    // OffscreenCanvas has no style — only set style on DOM canvas
+    if (glCanvas.style) {
+      glCanvas.style.width  = vw + 'px';
+      glCanvas.style.height = vh + 'px';
+    }
   }
   if (gl) {
     gl.viewport(0, 0, vw, vh);
@@ -3454,8 +3457,16 @@ var GL_GALAXY_FRAG = [
 
 
 function initWebGL() {
-  if (!glCanvas) return false;
   try {
+    // OffscreenCanvas lives completely outside the DOM — no display/positioning issues
+    if (typeof OffscreenCanvas !== 'undefined') {
+      glCanvas = new OffscreenCanvas(W || window.innerWidth, H || window.innerHeight);
+    } else {
+      glCanvas = document.getElementById('gl-canvas');
+      if (!glCanvas) return false;
+      glCanvas.width  = W || window.innerWidth;
+      glCanvas.height = H || window.innerHeight;
+    }
     // Mobile-friendly context options: no antialias for perf, preserve drawing buffer
     var ctxOpts = { antialias: false, alpha: false, preserveDrawingBuffer: false, powerPreference: 'default' };
     gl = glCanvas.getContext('webgl', ctxOpts) || glCanvas.getContext('experimental-webgl', ctxOpts);
