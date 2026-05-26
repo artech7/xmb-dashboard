@@ -20,10 +20,14 @@
   --transition-speed: 0.35s;
 }
 
-html, body {
+html, html, body {
+  margin: 0;
+  padding: 0;
+}
+body {
   width: 100%; height: 100%;
   overflow: hidden;
-  background: #000; /* fallback only — canvases cover this */
+  background: #000;
   color: #fff;
   font-family: 'Rajdhani', sans-serif;
   user-select: none;
@@ -824,7 +828,7 @@ html, body {
 <body>
 
 <canvas id="bg-canvas"></canvas>
-<canvas id="gl-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none"></canvas>
+<canvas id="gl-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none"></canvas>
 <div id="loading">
   <div id="loading-title">Homelab</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
@@ -1148,24 +1152,25 @@ var animMode = 'nebula';
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
-  // Use visibility+opacity instead of display:none — avoids compositing lag
-  // that causes the 2D canvas last-frame to show through the GL canvas
   if (useGL) {
-    canvas.style.visibility = 'hidden';
-    ctx.clearRect(0, 0, W, H); // ensure 2D canvas is transparent, not stale
-  } else {
-    canvas.style.visibility = '';
-  }
-  if (glCanvas) {
-    glCanvas.style.display = useGL ? '' : 'none';
-    // Ensure GL canvas buffer matches viewport
-    if (useGL && (glCanvas.width !== W || glCanvas.height !== H)) {
+    // Clear and push 2D canvas fully behind body background
+    ctx.clearRect(0, 0, W, H);
+    canvas.style.zIndex  = '-1';  // behind body bg (#000), invisible
+    canvas.style.opacity = '0';
+    glCanvas.style.zIndex   = '1';
+    glCanvas.style.display  = '';
+    // Sync GL canvas buffer to viewport
+    if (glCanvas.width !== W || glCanvas.height !== H) {
       glCanvas.width        = W;
       glCanvas.height       = H;
       glCanvas.style.width  = W + 'px';
       glCanvas.style.height = H + 'px';
       if (gl) gl.viewport(0, 0, W, H);
     }
+  } else {
+    canvas.style.zIndex  = '0';
+    canvas.style.opacity = '';
+    glCanvas.style.display = 'none';
   }
   switch(animMode) {
     case 'galaxy':    drawGalaxy();                              break;
