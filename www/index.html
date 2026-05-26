@@ -828,7 +828,7 @@ body {
 <body>
 
 <canvas id="bg-canvas"></canvas>
-<canvas id="gl-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none"></canvas>
+<canvas id="gl-canvas" style="display:none;position:absolute;top:-9999px"></canvas>
 <div id="loading">
   <div id="loading-title">Homelab</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
@@ -1152,27 +1152,13 @@ var animMode = 'nebula';
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
-  if (useGL) {
-    // Hide 2D canvas with display:none AND zero its buffer
-    // so there is literally nothing to show through on any browser/OS
-    if (canvas.style.display !== 'none') {
-      ctx.clearRect(0, 0, W, H); // clear before hiding
-      canvas.style.display = 'none';
-      canvas.width = 1; canvas.height = 1; // zero buffer — no stale pixels
-    }
-    if (glCanvas) {
-      glCanvas.style.display = '';
-      if (glCanvas.width !== W || glCanvas.height !== H) {
-        glCanvas.width  = W; glCanvas.height = H;
-        if (gl) gl.viewport(0, 0, W, H);
-      }
-    }
-  } else {
-    if (canvas.style.display === 'none') {
-      canvas.width  = W; canvas.height = H; // restore buffer
-      canvas.style.display = '';
-    }
-    if (glCanvas) glCanvas.style.display = 'none';
+  // glCanvas is always offscreen — GL renders there then gets composited
+  // onto the single visible 2D canvas via ctx.drawImage() in glRenderFrame
+  // No canvas switching needed — eliminates all Windows bleed-through issues
+  if (useGL && glCanvas && (glCanvas.width !== W || glCanvas.height !== H)) {
+    glCanvas.width  = W;
+    glCanvas.height = H;
+    if (gl) gl.viewport(0, 0, W, H);
   }
   switch(animMode) {
     case 'galaxy':    drawGalaxy();                              break;
@@ -3600,6 +3586,10 @@ function glRenderFrame(prog, locs, useAccentForC0) {
   gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
   glSetUniforms(locs, useAccentForC0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+  // Composite GL output onto the single visible 2D canvas
+  // This eliminates all two-canvas bleed-through issues on Windows
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(glCanvas, 0, 0, W, H);
 }
 
 function renderGLAurora()  { if (glProgAurora)  glRenderFrame(glProgAurora,  glAuroraLocs);       else { glSupported = false; drawSolarWind(); } }
