@@ -3949,8 +3949,7 @@ document.addEventListener('keydown', function(e) {
 
 // ─── KEYBOARD ─────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (document.getElementById('prefs-overlay') &&
-      document.getElementById('prefs-overlay').classList.contains('open')) return;
+  if (_prefsOpen) return; // prefs panel is open — it handles keys
   const cats  = config?.categories;
   if (!cats) return;
 
@@ -4549,6 +4548,7 @@ function activateFocused() {
 
 // ─── OPEN / CLOSE ─────────────────────────────────────────────────────────────
 function openPrefs() {
+  _prefsOpen = true;
   document.getElementById('prefs-overlay').classList.add('open');
   // Set focus col to current active option in focus row
   prefFocusRow = 0;
@@ -4557,12 +4557,16 @@ function openPrefs() {
   setTimeout(applyKbFocus, 50);
 }
 function closePrefs() {
+  _prefsOpen = false;
   clearKbFocus();
   document.getElementById('prefs-overlay').classList.remove('open');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('prefs-close').addEventListener('click', closePrefs);
+  document.getElementById('prefs-nebula-randomize').addEventListener('click', function() {
+    glNebulaSeed = Math.random();
+  });
   document.getElementById('prefs-overlay').addEventListener('click', function(e){
     if (e.target === document.getElementById('prefs-overlay')) closePrefs();
   });
@@ -4586,7 +4590,7 @@ function getThemeGridCols() {
 
 // ─── KEYBOARD HANDLER (only active when prefs open) ───────────────────────────
 document.addEventListener('keydown', function(e) {
-  if (!document.getElementById('prefs-overlay').classList.contains('open')) return;
+  if (!_prefsOpen) return;
 
   switch (e.key) {
     case 'Escape':
@@ -6315,7 +6319,9 @@ document.addEventListener('keydown', function(e) {
 /* ── Toggle group ── */
 .p-toggle-group { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
 .p-toggle {
-  padding: 5px 14px;
+  padding: 0 14px;
+  height: 30px;
+  min-width: 64px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 4px;
@@ -6328,6 +6334,9 @@ document.addEventListener('keydown', function(e) {
   transition: all 0.15s;
   white-space: nowrap;
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .p-toggle:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); }
 .p-toggle.active {
@@ -6456,6 +6465,9 @@ document.addEventListener('keydown', function(e) {
       <div class="p-section">
         <div class="p-section-label">Nebula Theme</div>
         <div id="theme-swatches"></div>
+        <div style="margin-top:10px">
+          <button id="prefs-nebula-randomize" class="p-toggle" style="min-width:auto">&#x21BA; Randomize Nebula</button>
+        </div>
       </div>
 
       <div class="p-section">
@@ -6726,6 +6738,7 @@ var THEME_KEYS   = Object.keys(NEBULA_THEMES);
 var ROW_COLS     = [THEME_KEYS.length, 10, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
+var _prefsOpen   = false; // global flag checked by all key handlers
 
 
 // ─── PREFS STATE ──────────────────────────────────────────────────────────────
