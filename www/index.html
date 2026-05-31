@@ -112,6 +112,8 @@ body {
     transform var(--transition-speed) cubic-bezier(0.25, 0.46, 0.45, 0.94),
     opacity   var(--transition-speed) cubic-bezier(0.25, 0.46, 0.45, 0.94),
     left      var(--transition-speed) cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .cat-icon-wrap {
@@ -175,7 +177,10 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
   border-radius: 3px;
-  background: rgba(20,20,35,0.35);
+  /* Glassmorphism card */
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  background: rgba(255,255,255,0.05);
 }
 
 .xmb-item::before {
@@ -1167,7 +1172,7 @@ function animLoop() {
 }
 
 window.addEventListener('resize', resize);
-document.addEventListener('themechange', function(){ hexGridCanvas = null; galaxyClouds = null; galaxyStars = null; });
+document.addEventListener('themechange', function(){ hexGridCanvas = null; galaxyClouds = null; galaxyStars = null; galaxyCloudCanvas = null; });
 resize();
 // Defer animLoop start until all script blocks have executed
 // so initWebGL() has run and glSupported is set correctly
@@ -1590,13 +1595,15 @@ function drawBg(c0, c1, c2) {
 // ── 1. GALAXY SPIRAL ──────────────────────────────────────
 var galaxyStars = null;
 var galaxyClouds = null;
+var galaxyCloudCanvas = null; // offscreen cloud cache
+var galaxyCloudFrame  = 0;    // frame counter for cloud redraw
 
 function initGalaxyStars() {
   var arms = 3;
   galaxyStars = [];
 
   // ── Arm stars — denser, tighter spiral ───────────────────
-  for (var i = 0; i < 350; i++) {
+  for (var i = 0; i < 500; i++) {
     var arm = Math.floor(Math.random() * arms);
     var dist = Math.pow(Math.random(), 0.55) * 0.94;
     var curl = dist * 5.2;
@@ -1639,8 +1646,8 @@ function initGalaxyStars() {
   galaxyClouds = [];
 
   // Central nebula mass — large clouds near core
-  for (var k = 0; k < 3; k++) {
-    var cAngle = k * Math.PI * 0.667 + Math.random() * 0.8;
+  for (var k = 0; k < 4; k++) {
+    var cAngle = k * Math.PI * 0.5 + Math.random() * 0.8;
     galaxyClouds.push({
       dist: 0.05 + Math.random() * 0.25,
       baseAngle: cAngle,
@@ -1660,7 +1667,7 @@ function initGalaxyStars() {
   }
 
   // Arm nebulae — along spiral arms
-  for (var k = 0; k < 6; k++) {
+  for (var k = 0; k < 8; k++) {
     var arm2 = k % arms;
     var cDist = 0.15 + Math.random() * 0.65;
     var cCurl = cDist * 5.2;
@@ -1676,7 +1683,7 @@ function initGalaxyStars() {
   }
 
   // Edge-reaching clouds — high dist so lobes push to screen boundary
-  for (var k = 0; k < 3; k++) {
+  for (var k = 0; k < 4; k++) {
     galaxyClouds.push({
       dist: 0.55 + Math.random() * 0.30,  // far from center
       baseAngle: Math.random() * Math.PI * 2,
@@ -1690,7 +1697,7 @@ function initGalaxyStars() {
   // Background static stars — count scales with particle setting
   galaxyStars._bgStars = [];
   var mult = (window.particleMult !== undefined) ? window.particleMult : 1.0;
-  var numBgStars = Math.round(180 * mult);
+  var numBgStars = Math.round(240 * mult);
   for (var i = 0; i < numBgStars; i++) {
     galaxyStars._bgStars.push({
       x:       Math.random(),           // 0..1 screen fraction
@@ -1725,7 +1732,28 @@ function drawGalaxy() {
   bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = bgGrad; ctx.fillRect(0,0,W,H);
 
-  // ── Gas clouds — noisy, gaseous, large nebulae ──────────────
+  // ── Gas clouds — cached offscreen, redrawn every 3 frames ──
+  galaxyCloudFrame = (galaxyCloudFrame + 1) % 3;
+  var needsRedraw = galaxyCloudFrame === 0 || !galaxyCloudCanvas ||
+                    galaxyCloudCanvas.width !== W || galaxyCloudCanvas.height !== H;
+
+  if (needsRedraw) {
+    // Create/resize offscreen canvas
+    if (!galaxyCloudCanvas || galaxyCloudCanvas.width !== W || galaxyCloudCanvas.height !== H) {
+      galaxyCloudCanvas = (typeof OffscreenCanvas !== 'undefined')
+        ? new OffscreenCanvas(W, H)
+        : document.createElement('canvas');
+      galaxyCloudCanvas.width  = W;
+      galaxyCloudCanvas.height = H;
+    }
+    var octx = galaxyCloudCanvas.getContext('2d');
+    octx.clearRect(0, 0, W, H);
+
+    // Redirect ctx to offscreen for cloud rendering
+    var realCtx = ctx;
+    ctx = octx;
+
+  // Cloud render (offscreen)
   var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
   var sortedClouds = galaxyClouds.slice().sort(function(a,b){
     var order = {outer:0, fill:1, arm:2, inner:3};
@@ -1747,8 +1775,8 @@ function drawGalaxy() {
     var pCol2 = palette[pIdx2] || [ar,ag,ab];
     var pCol3 = palette[pIdx3] || [ar,ag,ab];
 
-    // ── Gaseous lobes: 3 ellipse fills, no clip/save overhead ──
-    var numLobes = 3;
+    // ── Gaseous lobes: 4 ellipse fills ──────────────────────
+    var numLobes = 4;
     for (var li = 0; li < numLobes; li++) {
       var lobeAngle = ang * 0.4 + (li / numLobes) * Math.PI * 2 + c.paletteIdx * 0.7;
       var rx = cr * (0.85 + li * 0.15) * (0.65 + Math.abs(Math.sin(li * 1.9 + c.paletteIdx)) * 0.4);
@@ -1772,6 +1800,25 @@ function drawGalaxy() {
       ctx.restore();
     }
 
+    // ── Wispy tendrils: 4 thin lobes (cached, so cost is amortized) ──
+    for (var ti = 0; ti < 4; ti++) {
+      var tendAngle = ang * 0.2 + (ti / 4) * Math.PI * 2 + c.paletteIdx * 1.3;
+      var tendX = cx2 + Math.cos(tendAngle) * cr * 0.55;
+      var tendY = cy2 + Math.sin(tendAngle) * cr * 0.55 * ellipse;
+      var tendRx = cr * (0.18 + Math.sin(ti * 2.1) * 0.08);
+      var tendRy = cr * (0.52 + Math.sin(ti * 2.1) * 0.18);
+      var tendCol = ti % 2 === 0 ? pCol2 : pCol3;
+      var tg = ctx.createRadialGradient(tendX, tendY, 0, tendX, tendY, tendRy);
+      tg.addColorStop(0,   'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.32*iMult)+')');
+      tg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(tendX, tendY, tendRx, tendRy, tendAngle, 0, Math.PI * 2);
+      ctx.fillStyle = tg;
+      ctx.fill();
+      ctx.restore();
+    }
+
     // ── Color intermingling bleed ─────────────────────────────
     var bleedAngle = ang + 1.1 + c.paletteIdx * 0.5;
     var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.5;
@@ -1785,6 +1832,14 @@ function drawGalaxy() {
     ctx.arc(bleedX, bleedY, bleedR, 0, Math.PI * 2);
     ctx.fill();
   });
+
+
+    // Restore real ctx
+    ctx = realCtx;
+  }
+
+  // Composite cached clouds onto main canvas
+  ctx.drawImage(galaxyCloudCanvas, 0, 0);
 
   // ── Bright core ───────────────────────────────────────────
   var core = ctx.createRadialGradient(cx,cy,0,cx,cy,maxR*0.18);
