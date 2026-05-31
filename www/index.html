@@ -573,6 +573,23 @@ body {
 
   /* ── Prefs panel ── */
   #theme-swatches { grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); }
+.theme-group-label {
+  width: 100%;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+  margin: 10px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.theme-group-label:first-child { margin-top: 2px; }
+.theme-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+  gap: 6px;
+  width: 100%;
+}
   .p-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .p-row-label { width: auto; }
   .p-toggle-group { flex-wrap: wrap; }
@@ -4609,22 +4626,37 @@ document.addEventListener('keydown', function(e) {
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
 function renderPrefsUI() {
-  // Theme swatches
+  // Theme swatches — two labeled groups
   var sc = document.getElementById('theme-swatches');
   sc.innerHTML = '';
-  THEME_KEYS.forEach(function(key, idx) {
-    var th = NEBULA_THEMES[key];
-    var el = document.createElement('div');
-    el.className = 'theme-swatch' + (userPrefs.theme===key ? ' active' : '');
-    el.style.setProperty('--swatch-grad', th.orb);
-    el.innerHTML = '<div class="theme-orb" style="background:'+th.orb+'"></div><div class="theme-name">'+th.name+'</div>';
-    el.addEventListener('click', function(){
-      userPrefs.theme = key;
-      prefFocusRow = 0; prefFocusCol = idx;
-      applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
+
+  function makeSwatchGroup(label, keys) {
+    var header = document.createElement('div');
+    header.className = 'theme-group-label';
+    header.textContent = label;
+    sc.appendChild(header);
+    var grid = document.createElement('div');
+    grid.className = 'theme-group-grid';
+    keys.forEach(function(key) {
+      var globalIdx = THEME_KEYS.indexOf(key);
+      var th = NEBULA_THEMES[key];
+      if (!th) return;
+      var el = document.createElement('div');
+      el.className = 'theme-swatch' + (userPrefs.theme===key ? ' active' : '');
+      el.style.setProperty('--swatch-grad', th.orb);
+      el.innerHTML = '<div class="theme-orb" style="background:'+th.orb+'"></div><div class="theme-name">'+th.name+'</div>';
+      el.addEventListener('click', function(){
+        userPrefs.theme = key;
+        prefFocusRow = 0; prefFocusCol = globalIdx;
+        applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
+      });
+      grid.appendChild(el);
     });
-    sc.appendChild(el);
-  });
+    sc.appendChild(grid);
+  }
+
+  makeSwatchGroup('Classic', THEME_KEYS_CLASSIC);
+  makeSwatchGroup('Vivid', THEME_KEYS_EXOTIC);
 
   // Toggle buttons
   document.querySelectorAll('.p-toggle').forEach(function(btn) {
@@ -6688,6 +6720,10 @@ var NEBULA_THEMES = {
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
 // Must be after NEBULA_THEMES so Object.keys() returns all themes
 var THEME_KEYS   = Object.keys(NEBULA_THEMES);
+var THEME_KEYS_CLASSIC = ['default','void','ocean','neon','arctic','obsidian','sakura','matrix',
+                          'copper','midnight','toxic','crimson','slate','amber','ultraviolet','rose','glacier'];
+var THEME_KEYS_EXOTIC  = ['phantom','inferno','bioluminescence','dusk','aurora','nebula',
+                          'abyss','volcano','prism','ember','solar'];
 var ROW_COLS     = [THEME_KEYS.length, 10, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
