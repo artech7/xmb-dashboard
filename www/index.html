@@ -1730,8 +1730,6 @@ function drawGalaxy() {
                     galaxyCloudCanvas.width !== W || galaxyCloudCanvas.height !== H;
 
   if (needsRedraw) {
-    // Create/resize offscreen canvas — use regular canvas, not OffscreenCanvas
-    // (OffscreenCanvas shared with GL can cause context conflicts)
     if (!galaxyCloudCanvas || galaxyCloudCanvas.width !== W || galaxyCloudCanvas.height !== H) {
       galaxyCloudCanvas = document.createElement('canvas');
       galaxyCloudCanvas.width  = W;
@@ -1740,93 +1738,81 @@ function drawGalaxy() {
     var octx = galaxyCloudCanvas.getContext('2d');
     octx.clearRect(0, 0, W, H);
 
-    // Redirect ctx to offscreen for cloud rendering
-    var realCtx = ctx;
-    ctx = octx;
+    var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
+    var sortedClouds = galaxyClouds.slice().sort(function(a,b){
+      var order = {outer:0, fill:1, arm:2, inner:3};
+      return (order[a.layer]||1) - (order[b.layer]||1);
+    });
 
-  // Cloud render (offscreen)
-  var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
-  var sortedClouds = galaxyClouds.slice().sort(function(a,b){
-    var order = {outer:0, fill:1, arm:2, inner:3};
-    return (order[a.layer]||1) - (order[b.layer]||1);
-  });
+    sortedClouds.forEach(function(c) {
+      var orbSpeed = c.layer === 'inner' ? 0.5 : (c.layer === 'fill' ? 0.25 : 0.4);
+      var ang = c.baseAngle + spinT * orbSpeed;
+      var cx2 = cx + Math.cos(ang) * c.dist * maxR;
+      var cy2 = cy + Math.sin(ang) * c.dist * maxR * ellipse;
+      var cr  = c.r * maxR;
 
+      var pIdx  = c.paletteIdx !== undefined ? c.paletteIdx : 0;
+      var pIdx2 = (pIdx + 1) % palette.length;
+      var pIdx3 = (pIdx + 3) % palette.length;
+      var pCol  = palette[pIdx]  || [ar,ag,ab];
+      var pCol2 = palette[pIdx2] || [ar,ag,ab];
+      var pCol3 = palette[pIdx3] || [ar,ag,ab];
 
-  sortedClouds.forEach(function(c) {
-    var orbSpeed = c.layer === 'inner' ? 0.5 : (c.layer === 'fill' ? 0.25 : 0.4);
-    var ang = c.baseAngle + spinT * orbSpeed;
-    var cx2 = cx + Math.cos(ang) * c.dist * maxR;
-    var cy2 = cy + Math.sin(ang) * c.dist * maxR * ellipse;
-    var cr  = c.r * maxR;
+      // ── Gaseous lobes ────────────────────────────────────────
+      var numLobes = 4;
+      for (var li = 0; li < numLobes; li++) {
+        var lobeAngle = ang * 0.4 + (li / numLobes) * Math.PI * 2 + c.paletteIdx * 0.7;
+        var rx = cr * (0.85 + li * 0.15) * (0.65 + Math.abs(Math.sin(li * 1.9 + c.paletteIdx)) * 0.4);
+        var ry = cr * (0.55 + li * 0.10) * (0.45 + Math.abs(Math.cos(li * 2.3 + c.paletteIdx)) * 0.3) * ellipse;
+        var offX = cx2 + Math.cos(lobeAngle) * cr * 0.25 * li;
+        var offY = cy2 + Math.sin(lobeAngle) * cr * 0.25 * li * ellipse;
+        var lobeCol = li % 3 === 0 ? pCol3 : (li % 2 === 0 ? pCol2 : pCol);
+        var lobeA   = c.alpha * (0.85 - li * 0.12) * iMult;
+        var lg = octx.createRadialGradient(offX, offY, 0, offX, offY, Math.max(rx, ry));
+        lg.addColorStop(0,   'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+lobeA+')');
+        lg.addColorStop(0.45,'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+(lobeA*0.45)+')');
+        lg.addColorStop(0.8, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(lobeA*0.12)+')');
+        lg.addColorStop(1,   'rgba(0,0,0,0)');
+        octx.save();
+        octx.beginPath();
+        octx.ellipse(offX, offY, rx, ry, lobeAngle, 0, Math.PI * 2);
+        octx.fillStyle = lg;
+        octx.fill();
+        octx.restore();
+      }
 
-    var pIdx  = c.paletteIdx !== undefined ? c.paletteIdx : 0;
-    var pIdx2 = (pIdx + 1) % palette.length;
-    var pIdx3 = (pIdx + 3) % palette.length;
-    var pCol  = palette[pIdx]  || [ar,ag,ab];
-    var pCol2 = palette[pIdx2] || [ar,ag,ab];
-    var pCol3 = palette[pIdx3] || [ar,ag,ab];
+      // ── Wispy tendrils ───────────────────────────────────────
+      for (var ti = 0; ti < 4; ti++) {
+        var tendAngle = ang * 0.2 + (ti / 4) * Math.PI * 2 + c.paletteIdx * 1.3;
+        var tendX = cx2 + Math.cos(tendAngle) * cr * 0.55;
+        var tendY = cy2 + Math.sin(tendAngle) * cr * 0.55 * ellipse;
+        var tendRx = cr * (0.18 + Math.sin(ti * 2.1) * 0.08);
+        var tendRy = cr * (0.52 + Math.sin(ti * 2.1) * 0.18);
+        var tendCol = ti % 2 === 0 ? pCol2 : pCol3;
+        var tg = octx.createRadialGradient(tendX, tendY, 0, tendX, tendY, tendRy);
+        tg.addColorStop(0, 'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.32*iMult)+')');
+        tg.addColorStop(1, 'rgba(0,0,0,0)');
+        octx.save();
+        octx.beginPath();
+        octx.ellipse(tendX, tendY, tendRx, tendRy, tendAngle, 0, Math.PI * 2);
+        octx.fillStyle = tg;
+        octx.fill();
+        octx.restore();
+      }
 
-    // ── Gaseous lobes: 4 ellipse fills ──────────────────────
-    var numLobes = 4;
-    for (var li = 0; li < numLobes; li++) {
-      var lobeAngle = ang * 0.4 + (li / numLobes) * Math.PI * 2 + c.paletteIdx * 0.7;
-      var rx = cr * (0.85 + li * 0.15) * (0.65 + Math.abs(Math.sin(li * 1.9 + c.paletteIdx)) * 0.4);
-      var ry = cr * (0.55 + li * 0.10) * (0.45 + Math.abs(Math.cos(li * 2.3 + c.paletteIdx)) * 0.3) * ellipse;
-      var offX = cx2 + Math.cos(lobeAngle) * cr * 0.25 * li;
-      var offY = cy2 + Math.sin(lobeAngle) * cr * 0.25 * li * ellipse;
-      var lobeCol = li % 3 === 0 ? pCol3 : (li % 2 === 0 ? pCol2 : pCol);
-      var lobeA   = c.alpha * (0.85 - li * 0.12) * iMult;
-
-      // Use ellipse path — soft radial gradient clipped naturally by path fill
-      var lg = ctx.createRadialGradient(offX, offY, 0, offX, offY, Math.max(rx, ry));
-      lg.addColorStop(0,   'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+lobeA+')');
-      lg.addColorStop(0.45,'rgba('+lobeCol[0]+','+lobeCol[1]+','+lobeCol[2]+','+(lobeA*0.45)+')');
-      lg.addColorStop(0.8, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(lobeA*0.12)+')');
-      lg.addColorStop(1,   'rgba(0,0,0,0)');
-      ctx.save();
-      ctx.beginPath();
-      ctx.ellipse(offX, offY, rx, ry, lobeAngle, 0, Math.PI * 2);
-      ctx.fillStyle = lg;
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // ── Wispy tendrils: 4 thin lobes (cached, so cost is amortized) ──
-    for (var ti = 0; ti < 4; ti++) {
-      var tendAngle = ang * 0.2 + (ti / 4) * Math.PI * 2 + c.paletteIdx * 1.3;
-      var tendX = cx2 + Math.cos(tendAngle) * cr * 0.55;
-      var tendY = cy2 + Math.sin(tendAngle) * cr * 0.55 * ellipse;
-      var tendRx = cr * (0.18 + Math.sin(ti * 2.1) * 0.08);
-      var tendRy = cr * (0.52 + Math.sin(ti * 2.1) * 0.18);
-      var tendCol = ti % 2 === 0 ? pCol2 : pCol3;
-      var tg = ctx.createRadialGradient(tendX, tendY, 0, tendX, tendY, tendRy);
-      tg.addColorStop(0,   'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.32*iMult)+')');
-      tg.addColorStop(1,   'rgba(0,0,0,0)');
-      ctx.save();
-      ctx.beginPath();
-      ctx.ellipse(tendX, tendY, tendRx, tendRy, tendAngle, 0, Math.PI * 2);
-      ctx.fillStyle = tg;
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // ── Color intermingling bleed ─────────────────────────────
-    var bleedAngle = ang + 1.1 + c.paletteIdx * 0.5;
-    var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.5;
-    var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.5 * ellipse;
-    var bleedR = cr * 0.85;
-    var bg2 = ctx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedR);
-    bg2.addColorStop(0,   'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.45*iMult)+')');
-    bg2.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = bg2;
-    ctx.beginPath();
-    ctx.arc(bleedX, bleedY, bleedR, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-
-    // Restore real ctx
-    ctx = realCtx;
+      // ── Color intermingling bleed ────────────────────────────
+      var bleedAngle = ang + 1.1 + c.paletteIdx * 0.5;
+      var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.5;
+      var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.5 * ellipse;
+      var bleedR = cr * 0.85;
+      var bg2 = octx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedR);
+      bg2.addColorStop(0, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.45*iMult)+')');
+      bg2.addColorStop(1, 'rgba(0,0,0,0)');
+      octx.fillStyle = bg2;
+      octx.beginPath();
+      octx.arc(bleedX, bleedY, bleedR, 0, Math.PI * 2);
+      octx.fill();
+    });
   }
 
   // Composite cached clouds onto main canvas
