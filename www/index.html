@@ -572,7 +572,8 @@ body {
   .s-items-col-headers { display: none; }
 
   /* ── Prefs panel ── */
-  #theme-swatches { grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); }
+  #theme-swatches { flex-direction: column; }
+  .theme-group-grid { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
 .theme-group-label {
   width: 100%;
   font-size: 9px;
@@ -6349,10 +6350,11 @@ document.addEventListener('keydown', function(e) {
 
 /* ── Theme swatches ── */
 #theme-swatches {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   margin-bottom: 4px;
+  width: 100%;
 }
 .theme-swatch {
   display: flex;
