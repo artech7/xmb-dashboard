@@ -4567,12 +4567,16 @@ document.addEventListener('keydown', function(e) {
         if (next < ROW_COLS[0]) {
           prefFocusCol = next;
         } else {
-          // Bottom of theme grid — go to row 1
-          prefFocusRow = 1;
-          prefFocusCol = clampCol(1, prefFocusCol % gridCols);
+          // Bottom of theme grid — go to next visible row
+          var nr = 1;
+          while (nr < ROW_COLS.length - 1 && ROW_COLS[nr] === 0) nr++;
+          prefFocusRow = nr;
+          prefFocusCol = clampCol(nr, prefFocusCol % gridCols);
         }
       } else {
-        prefFocusRow = Math.min(ROW_COLS.length - 1, prefFocusRow + 1);
+        var nr2 = prefFocusRow + 1;
+        while (nr2 < ROW_COLS.length - 1 && ROW_COLS[nr2] === 0) nr2++;
+        prefFocusRow = Math.min(ROW_COLS.length - 1, nr2);
         prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
       }
       applyKbFocus(); break;
@@ -4586,7 +4590,6 @@ document.addEventListener('keydown', function(e) {
         if (prev >= 0) {
           prefFocusCol = prev;
         }
-        // Already at top row of themes — stay put
       } else if (prefFocusRow === 1) {
         // Go back into theme grid — last visual row
         var gridCols = getThemeGridCols();
@@ -4594,7 +4597,9 @@ document.addEventListener('keydown', function(e) {
         prefFocusRow = 0;
         prefFocusCol = Math.min(lastRow + prefFocusCol, ROW_COLS[0] - 1);
       } else {
-        prefFocusRow = Math.max(0, prefFocusRow - 1);
+        var pr2 = prefFocusRow - 1;
+        while (pr2 > 0 && ROW_COLS[pr2] === 0) pr2--;
+        prefFocusRow = pr2;
         prefFocusCol = clampCol(prefFocusRow, prefFocusCol);
       }
       applyKbFocus(); break;
@@ -4618,6 +4623,22 @@ document.addEventListener('keydown', function(e) {
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
 function renderPrefsUI() {
+  var anim = userPrefs.animStyle || 'nebula';
+
+  // Settings that apply to each animation
+  var showIntensity  = ['nebula','galaxy','underwater','solarwind','bokeh','ink'].indexOf(anim) >= 0;
+  var showParticles  = anim === 'bokeh';
+  var showRandomize  = anim === 'nebula';
+
+  // Update ROW_COLS to reflect visible rows for keyboard nav
+  // Row 3 = intensity (may be hidden), Row 4 = particles (may be hidden)
+  ROW_COLS[3] = showIntensity ? 3 : 0;
+  ROW_COLS[4] = showParticles ? 3 : 0;
+  var particlesRow = document.querySelector('[data-pref-row="4"]');
+  var randomizeBtn = document.getElementById('prefs-nebula-randomize');
+  if (intensityRow) intensityRow.parentElement.style.display = showIntensity ? '' : 'none';
+  if (particlesRow) particlesRow.style.display = showParticles ? '' : 'none';
+  if (randomizeBtn) randomizeBtn.parentElement.style.display = showRandomize ? '' : 'none';
   // Theme swatches — two labeled groups in one grid
   var sc = document.getElementById('theme-swatches');
   sc.innerHTML = '';
