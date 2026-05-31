@@ -1198,7 +1198,7 @@ var pfParticles   = null;
 var pfObstacles   = [];   // cached UI element bounding boxes
 var pfObsTimer    = 0;    // refresh obstacles every N frames
 
-var PF_COUNT      = 680;  // total particles
+var PF_COUNT      = 1200;  // total particles
 var PF_SPEED      = 0.55; // base speed (px/frame)
 var PF_AVOID_R    = 72;   // avoidance radius around obstacles (px)
 var PF_NOISE_STR  = 0.18; // flow noise strength
@@ -1296,9 +1296,7 @@ function drawParticleFlow() {
 
   // On mobile: skip obstacle avoidance entirely — particles flow freely
   // (item panel fills the screen, obstacles would trap all particles)
-  pfObsTimer++;
-  if (!isMobile && pfObsTimer >= 30) { pfObstacles = pfGetObstacles(); pfObsTimer = 0; }
-  if (isMobile) pfObstacles = [];
+  pfObstacles = []; // no obstacle interaction — particles flow freely everywhere
 
   // Background — dark gradient base + slow drifting palette blobs
   var bg0 = nebulaBackground[0] || '#050508';
