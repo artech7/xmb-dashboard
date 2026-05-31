@@ -1762,10 +1762,10 @@ function drawGalaxy() {
       var numLobes = 4;
       for (var li = 0; li < numLobes; li++) {
         var lobeAngle = ang * 0.4 + (li / numLobes) * Math.PI * 2 + c.paletteIdx * 0.7;
-        var rx = cr * (0.85 + li * 0.15) * (0.65 + Math.abs(Math.sin(li * 1.9 + c.paletteIdx)) * 0.4);
-        var ry = cr * (0.55 + li * 0.10) * (0.45 + Math.abs(Math.cos(li * 2.3 + c.paletteIdx)) * 0.3) * ellipse;
-        var offX = cx2 + Math.cos(lobeAngle) * cr * 0.25 * li;
-        var offY = cy2 + Math.sin(lobeAngle) * cr * 0.25 * li * ellipse;
+        var rx = cr * (0.45 + li * 0.08) * (0.7 + Math.abs(Math.sin(li * 1.9 + c.paletteIdx)) * 0.3);
+        var ry = cr * (0.30 + li * 0.05) * (0.5 + Math.abs(Math.cos(li * 2.3 + c.paletteIdx)) * 0.2) * ellipse;
+        var offX = cx2 + Math.cos(lobeAngle) * cr * 0.22 * li;
+        var offY = cy2 + Math.sin(lobeAngle) * cr * 0.22 * li * ellipse;
         var lobeCol = li % 3 === 0 ? pCol3 : (li % 2 === 0 ? pCol2 : pCol);
         var lobeA   = c.alpha * (0.85 - li * 0.12) * iMult;
         var lg = octx.createRadialGradient(offX, offY, 0, offX, offY, Math.max(rx, ry));
@@ -1786,8 +1786,8 @@ function drawGalaxy() {
         var tendAngle = ang * 0.2 + (ti / 4) * Math.PI * 2 + c.paletteIdx * 1.3;
         var tendX = cx2 + Math.cos(tendAngle) * cr * 0.55;
         var tendY = cy2 + Math.sin(tendAngle) * cr * 0.55 * ellipse;
-        var tendRx = cr * (0.18 + Math.sin(ti * 2.1) * 0.08);
-        var tendRy = cr * (0.52 + Math.sin(ti * 2.1) * 0.18);
+        var tendRx = cr * (0.08 + Math.abs(Math.sin(ti * 2.1)) * 0.06);
+        var tendRy = cr * (0.28 + Math.abs(Math.sin(ti * 2.1)) * 0.12);
         var tendCol = ti % 2 === 0 ? pCol2 : pCol3;
         var tg = octx.createRadialGradient(tendX, tendY, 0, tendX, tendY, tendRy);
         tg.addColorStop(0, 'rgba('+tendCol[0]+','+tendCol[1]+','+tendCol[2]+','+(c.alpha*0.32*iMult)+')');
@@ -1804,7 +1804,7 @@ function drawGalaxy() {
       var bleedAngle = ang + 1.1 + c.paletteIdx * 0.5;
       var bleedX = cx2 + Math.cos(bleedAngle) * cr * 0.5;
       var bleedY = cy2 + Math.sin(bleedAngle) * cr * 0.5 * ellipse;
-      var bleedR = cr * 0.85;
+      var bleedR = cr * 0.45;
       var bg2 = octx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedR);
       bg2.addColorStop(0, 'rgba('+pCol2[0]+','+pCol2[1]+','+pCol2[2]+','+(c.alpha*0.45*iMult)+')');
       bg2.addColorStop(1, 'rgba(0,0,0,0)');
