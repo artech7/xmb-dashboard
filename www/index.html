@@ -573,6 +573,14 @@ body {
 
   /* ── Prefs panel ── */
   #theme-swatches { grid-template-columns: repeat(4, 1fr); }
+  /* AnimStyle rows: 3 cols on narrow screens so buttons aren't too small */
+  .p-toggle-group[style*="repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
+  /* Buttons: allow full width within their column */
+  .p-toggle { min-width: unset; width: 100%; }
+  .p-row-label { font-size: 9px; }
+  /* Stack label above buttons on mobile */
+  .p-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .p-toggle-group { justify-content: flex-start; }
 .theme-group-label {
   grid-column: 1 / -1;
   font-size: 9px;
