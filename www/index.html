@@ -1730,11 +1730,10 @@ function drawGalaxy() {
                     galaxyCloudCanvas.width !== W || galaxyCloudCanvas.height !== H;
 
   if (needsRedraw) {
-    // Create/resize offscreen canvas
+    // Create/resize offscreen canvas — use regular canvas, not OffscreenCanvas
+    // (OffscreenCanvas shared with GL can cause context conflicts)
     if (!galaxyCloudCanvas || galaxyCloudCanvas.width !== W || galaxyCloudCanvas.height !== H) {
-      galaxyCloudCanvas = (typeof OffscreenCanvas !== 'undefined')
-        ? new OffscreenCanvas(W, H)
-        : document.createElement('canvas');
+      galaxyCloudCanvas = document.createElement('canvas');
       galaxyCloudCanvas.width  = W;
       galaxyCloudCanvas.height = H;
     }
