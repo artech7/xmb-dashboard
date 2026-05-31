@@ -572,25 +572,18 @@ body {
   .s-items-col-headers { display: none; }
 
   /* ── Prefs panel ── */
-  #theme-swatches { flex-direction: column; }
-  .theme-group-grid { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
+  #theme-swatches { grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); }
 .theme-group-label {
-  width: 100%;
+  grid-column: 1 / -1;
   font-size: 9px;
   letter-spacing: 2px;
   color: rgba(255,255,255,0.3);
   text-transform: uppercase;
-  margin: 10px 0 6px;
+  margin: 8px 0 2px;
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
-.theme-group-label:first-child { margin-top: 2px; }
-.theme-group-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
-  gap: 6px;
-  width: 100%;
-}
+.theme-group-label:first-child { margin-top: 0; }
   .p-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .p-row-label { width: auto; }
   .p-toggle-group { flex-wrap: wrap; }
@@ -4627,7 +4620,7 @@ document.addEventListener('keydown', function(e) {
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
 function renderPrefsUI() {
-  // Theme swatches — two labeled groups
+  // Theme swatches — two labeled groups in one grid
   var sc = document.getElementById('theme-swatches');
   sc.innerHTML = '';
 
@@ -4636,8 +4629,6 @@ function renderPrefsUI() {
     header.className = 'theme-group-label';
     header.textContent = label;
     sc.appendChild(header);
-    var grid = document.createElement('div');
-    grid.className = 'theme-group-grid';
     keys.forEach(function(key) {
       var globalIdx = THEME_KEYS.indexOf(key);
       var th = NEBULA_THEMES[key];
@@ -4651,9 +4642,8 @@ function renderPrefsUI() {
         prefFocusRow = 0; prefFocusCol = globalIdx;
         applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
       });
-      grid.appendChild(el);
+      sc.appendChild(el);
     });
-    sc.appendChild(grid);
   }
 
   makeSwatchGroup('Classic', THEME_KEYS_CLASSIC);
@@ -6350,11 +6340,10 @@ document.addEventListener('keydown', function(e) {
 
 /* ── Theme swatches ── */
 #theme-swatches {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
   margin-bottom: 4px;
-  width: 100%;
 }
 .theme-swatch {
   display: flex;
