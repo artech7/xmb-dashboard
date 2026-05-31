@@ -4623,23 +4623,7 @@ document.addEventListener('keydown', function(e) {
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
 function renderPrefsUI() {
-  var anim = userPrefs.animStyle || 'nebula';
-
-  // Settings that apply to each animation
-  var showIntensity  = ['nebula','galaxy','underwater','solarwind','bokeh','ink'].indexOf(anim) >= 0;
-  var showParticles  = anim === 'bokeh';
-  var showRandomize  = anim === 'nebula';
-
-  // Update ROW_COLS to reflect visible rows for keyboard nav
-  // Row 3 = intensity (may be hidden), Row 4 = particles (may be hidden)
-  ROW_COLS[3] = showIntensity ? 3 : 0;
-  ROW_COLS[4] = showParticles ? 3 : 0;
-  var particlesRow = document.querySelector('[data-pref-row="4"]');
-  var randomizeBtn = document.getElementById('prefs-nebula-randomize');
-  if (intensityRow) intensityRow.parentElement.style.display = showIntensity ? '' : 'none';
-  if (particlesRow) particlesRow.style.display = showParticles ? '' : 'none';
-  if (randomizeBtn) randomizeBtn.parentElement.style.display = showRandomize ? '' : 'none';
-  // Theme swatches — two labeled groups in one grid
+  // ── Theme swatches — two labeled groups ───────────────────
   var sc = document.getElementById('theme-swatches');
   sc.innerHTML = '';
 
@@ -4668,7 +4652,7 @@ function renderPrefsUI() {
   makeSwatchGroup('Classic', THEME_KEYS_CLASSIC);
   makeSwatchGroup('Vivid', THEME_KEYS_EXOTIC);
 
-  // Toggle buttons
+  // ── Toggle buttons ─────────────────────────────────────────
   document.querySelectorAll('.p-toggle').forEach(function(btn) {
     var pref = btn.dataset.pref;
     btn.classList.toggle('active', btn.dataset.val === userPrefs[pref]);
@@ -4684,6 +4668,28 @@ function renderPrefsUI() {
       renderPrefsUI(); applyKbFocus();
     };
   });
+
+  // ── Show/hide settings based on current animation ─────────
+  var anim = userPrefs.animStyle || 'nebula';
+  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink'].indexOf(anim) >= 0;
+  var showParticles = anim === 'bokeh';
+  var showRandomize = anim === 'nebula';
+
+  // Hide entire Background section if neither row applies
+  var bgSection     = document.querySelector('[data-pref-row="3"]') && document.querySelector('[data-pref-row="3"]').closest('.p-section');
+  var intensityRow  = document.querySelector('[data-pref-row="3"]');
+  var particlesRow  = document.querySelector('[data-pref-row="4"]');
+  var randomizeWrap = document.getElementById('prefs-nebula-randomize') && document.getElementById('prefs-nebula-randomize').parentElement;
+
+  if (intensityRow)  intensityRow.style.display  = showIntensity ? '' : 'none';
+  if (particlesRow)  particlesRow.style.display  = showParticles ? '' : 'none';
+  if (randomizeWrap) randomizeWrap.style.display = showRandomize ? '' : 'none';
+  // Hide the whole Background section if nothing in it is visible
+  if (bgSection) bgSection.style.display = (showIntensity || showParticles) ? '' : 'none';
+
+  // Update ROW_COLS so keyboard nav skips hidden rows
+  ROW_COLS[3] = showIntensity ? 3 : 0;
+  ROW_COLS[4] = showParticles ? 3 : 0;
 
   // Re-apply kb focus ring after re-render
   applyKbFocus();
