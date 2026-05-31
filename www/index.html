@@ -4593,7 +4593,7 @@ document.addEventListener('keydown', function(e) {
       e.stopPropagation(); closePrefs(); break;
 
     case 'ArrowDown':
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       if (prefFocusRow === 0) {
         // Move down within theme grid
         var gridCols = getThemeGridCols();
@@ -4612,7 +4612,7 @@ document.addEventListener('keydown', function(e) {
       applyKbFocus(); break;
 
     case 'ArrowUp':
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       if (prefFocusRow === 0) {
         // Move up within theme grid
         var gridCols = getThemeGridCols();
@@ -4634,12 +4634,12 @@ document.addEventListener('keydown', function(e) {
       applyKbFocus(); break;
 
     case 'ArrowRight':
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       prefFocusCol = Math.min(ROW_COLS[prefFocusRow] - 1, prefFocusCol + 1);
       applyKbFocus(); break;
 
     case 'ArrowLeft':
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       prefFocusCol = Math.max(0, prefFocusCol - 1);
       applyKbFocus(); break;
 
