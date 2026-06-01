@@ -1158,7 +1158,9 @@ var animMode = 'nebula';
 
 function animLoop() {
   if (animSpeed > 0) t += animSpeed;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || animMode === 'nebula' || animMode === 'underwater');
+  // On mobile, use Canvas 2D nebula (real cloud structure) instead of flat GL gradient
+  var nebulaUsesGL = !isMobile;
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || (animMode === 'nebula' && nebulaUsesGL) || animMode === 'underwater');
   // glCanvas is always offscreen — GL renders there then gets composited
   // onto the single visible 2D canvas via ctx.drawImage() in glRenderFrame
   // No canvas switching needed — eliminates all Windows bleed-through issues
