@@ -574,7 +574,6 @@ body {
   .s-items-col-headers { display: none; }
 
   /* ── Prefs panel ── */
-  .theme-group-grid { grid-template-columns: repeat(4, 1fr); }
   /* AnimStyle rows: 3 cols on narrow screens so buttons aren't too small */
   .p-toggle-group[style*="repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
   /* Buttons: allow full width within their column */
@@ -4644,8 +4643,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Get number of visible columns in the theme swatch grid
 function getThemeGridCols() {
-  // Fixed to match CSS: repeat(5,1fr) desktop, repeat(4,1fr) mobile
-  return isMobile ? 4 : 5;
+  // Fixed to match CSS: repeat(4,1fr) on all screen sizes
+  return 4;
 }
 
 // ─── KEYBOARD HANDLER (only active when prefs open) ───────────────────────────
@@ -6483,7 +6482,7 @@ document.addEventListener('keydown', function(e) {
 }
 .theme-group-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
 .theme-swatch {
@@ -6917,9 +6916,9 @@ var NEBULA_THEMES = {
 // Must be after NEBULA_THEMES so Object.keys() returns all themes
 var THEME_KEYS   = Object.keys(NEBULA_THEMES);
 var THEME_KEYS_CLASSIC = ['default','void','ocean','neon','arctic','obsidian','sakura','matrix',
-                          'copper','midnight','toxic','crimson','slate','amber','ultraviolet','rose','glacier'];
+                          'copper','midnight','toxic','crimson','slate','amber','ultraviolet','rose','glacier','solar'];
 var THEME_KEYS_EXOTIC    = ['phantom','inferno','bioluminescence','dusk','aurora','nebula',
-                            'abyss','volcano','prism','ember','solar'];
+                            'abyss','volcano','prism','ember'];
 var THEME_KEYS_GRADIENT  = ['synthwave','tropical','citrus','arcticaurora','midnightglow',
                             'sunset','neonCity','forest','galaxy2','candy'];
 var ROW_COLS     = [THEME_KEYS.length, 5, 5, 3, 3, 3, 2, 3, 3, 1];
