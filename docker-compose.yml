@@ -18,8 +18,11 @@ services:
       - "8484:8484"
 
     environment:
-      - ADMIN_PASSWORD=admin          # ⚠ Change before deploying
-      - JWT_SECRET=change-me-please   # ⚠ Change before deploying
+      # ── Required: set these before deploying ──────────────────────────────────
+      # Copy .env.example to .env and fill in values, or set directly here.
+      # Leaving these unset will trigger a security warning in the container logs.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
       - PORT=8484
 
     volumes:
