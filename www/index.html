@@ -1730,9 +1730,12 @@ function drawGalaxy() {
   var palette = themeRgbPalette || [[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab],[ar,ag,ab]];
 
   // ── Background radial gradient ────────────────────────────
+  // Background: sweep all 6 palette colors radially outward
+  var p0=palette[0],p1=palette[1],p2=palette[2],p3=palette[3],p4=palette[4],p5=palette[5];
   var bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, maxR*1.2);
-  bgGrad.addColorStop(0,   'rgba('+Math.round(ar*0.3)+','+Math.round(ag*0.2)+','+Math.round(ab*0.4)+','+(0.18*iMult)+')');
-  bgGrad.addColorStop(0.5, 'rgba('+Math.round(ar*0.1)+','+Math.round(ag*0.06)+','+Math.round(ab*0.15)+','+(0.08*iMult)+')');
+  bgGrad.addColorStop(0,   'rgba('+Math.round(p0[0]*0.28)+','+Math.round(p0[1]*0.22)+','+Math.round(p0[2]*0.38)+','+(0.22*iMult)+')');
+  bgGrad.addColorStop(0.25,'rgba('+Math.round(p2[0]*0.18)+','+Math.round(p2[1]*0.14)+','+Math.round(p2[2]*0.24)+','+(0.14*iMult)+')');
+  bgGrad.addColorStop(0.55,'rgba('+Math.round(p4[0]*0.10)+','+Math.round(p4[1]*0.08)+','+Math.round(p4[2]*0.14)+','+(0.07*iMult)+')');
   bgGrad.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
 
@@ -1776,9 +1779,13 @@ function drawGalaxy() {
         oc.fillRect(x - r, y - r, r*2, r*2);
       }
 
-      // Main lobe
+      // Use all 6 palette colors across the cloud lobes
+      var pCol4 = palette[(c.paletteIdx+4) % palette.length] || [ar,ag,ab];
+      var pCol5 = palette[(c.paletteIdx+5) % palette.length] || [ar,ag,ab];
+
+      // Main lobe — primary color
       softBlob(cx2, cy2, cr * 1.1, pCol, alpha * 0.55);
-      // Offset secondary lobes for wispy irregular shape
+      // Secondary lobes — cycle through palette
       var off1x = cx2 + Math.cos(ang + 1.2) * cr * 0.5;
       var off1y = cy2 + Math.sin(ang + 1.2) * cr * 0.5 * ellipse;
       softBlob(off1x, off1y, cr * 0.8, pCol2, alpha * 0.38);
@@ -1789,25 +1796,32 @@ function drawGalaxy() {
 
       var off3x = cx2 + Math.cos(ang - 0.7) * cr * 0.6;
       var off3y = cy2 + Math.sin(ang - 0.7) * cr * 0.6 * ellipse;
-      softBlob(off3x, off3y, cr * 0.55, pCol2, alpha * 0.22);
+      softBlob(off3x, off3y, cr * 0.55, pCol4, alpha * 0.22);
 
-      // Wispy tendrils — thin elongated blobs radiating outward
-      for (var ti = 0; ti < 3; ti++) {
-        var ta   = ang * 0.2 + (ti / 3) * Math.PI * 2 + c.paletteIdx * 1.3;
+      var off4x = cx2 + Math.cos(ang + 0.4) * cr * 0.45;
+      var off4y = cy2 + Math.sin(ang + 0.4) * cr * 0.45 * ellipse;
+      softBlob(off4x, off4y, cr * 0.48, pCol5, alpha * 0.16);
+
+      // Wispy tendrils — all 6 colors cycling
+      for (var ti = 0; ti < 6; ti++) {
+        var ta   = ang * 0.2 + (ti / 6) * Math.PI * 2 + c.paletteIdx * 1.3;
         var tx   = cx2 + Math.cos(ta) * cr * 0.65;
         var ty   = cy2 + Math.sin(ta) * cr * 0.65 * ellipse;
-        softBlob(tx, ty, cr * 0.4, ti%2===0 ? pCol2 : pCol3, alpha * 0.18);
+        var tCol = palette[(c.paletteIdx + ti) % palette.length] || [ar,ag,ab];
+        softBlob(tx, ty, cr * 0.35, tCol, alpha * 0.14);
       }
     });
   }
   ctx.drawImage(galaxyCloudCanvas, 0, 0);
 
   // ── Bright core ───────────────────────────────────────────
-  var core = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR*0.18);
-  core.addColorStop(0,   'rgba(255,255,255,'+(0.55*iMult)+')');
-  core.addColorStop(0.15,'rgba('+ar+','+ag+','+ab+','+(0.28*iMult)+')');
-  core.addColorStop(0.5, 'rgba('+Math.round(ar*0.5)+','+Math.round(ag*0.5)+','+Math.round(ab*0.5)+',0.10)');
-  core.addColorStop(1,   'rgba(0,0,0,0)');
+  // Core: white center bleeding into palette colors outward
+  var core = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR*0.22);
+  core.addColorStop(0,    'rgba(255,255,255,'+(0.60*iMult)+')');
+  core.addColorStop(0.08, 'rgba('+p0[0]+','+p0[1]+','+p0[2]+','+(0.38*iMult)+')');
+  core.addColorStop(0.20, 'rgba('+p2[0]+','+p2[1]+','+p2[2]+','+(0.20*iMult)+')');
+  core.addColorStop(0.40, 'rgba('+p4[0]+','+p4[1]+','+p4[2]+',0.08)');
+  core.addColorStop(1,    'rgba(0,0,0,0)');
   ctx.fillStyle = core; ctx.fillRect(0, 0, W, H);
 
   // ── Background static stars ────────────────────────────────
@@ -1820,7 +1834,12 @@ function drawGalaxy() {
     var sx = s.x * W, sy = s.y * H;
     ctx.beginPath();
     ctx.arc(sx, sy, s.size * tw * 0.8 + 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = s.blueish ? 'rgba(180,210,255,'+a+')' : 'rgba(255,255,255,'+a+')';
+    // Occasional palette-tinted stars for color variety
+    var starTint;
+    if (s.blueish) starTint = 'rgba(180,210,255,'+a+')';
+    else if (s.phase > 5.5) { var pS2=palette[Math.floor(s.phase*2)%palette.length]||[255,255,255]; starTint='rgba('+pS2[0]+','+pS2[1]+','+pS2[2]+','+(a*0.7)+')'; }
+    else starTint = 'rgba(255,255,255,'+a+')';
+    ctx.fillStyle = starTint;
     ctx.fill();
   });
   ctx.restore();
@@ -1837,7 +1856,7 @@ function drawGalaxy() {
       var ax    = cx + Math.cos(ang2) * r2b;
       var ay    = cy + Math.sin(ang2) * r2b * ellipse;
       var gRad  = maxR * (0.04 + frac * 0.05);
-      var pArm  = palette[(arm * 2) % palette.length] || [ar,ag,ab];
+      var pArm  = palette[arm % palette.length] || [ar,ag,ab];
       var glow  = ctx.createRadialGradient(ax, ay, 0, ax, ay, gRad);
       var a2    = (1-frac) * (1-frac) * 0.05;
       glow.addColorStop(0, 'rgba('+pArm[0]+','+pArm[1]+','+pArm[2]+','+a2+')');
