@@ -6829,6 +6829,68 @@ var NEBULA_THEMES = {
     orb:'radial-gradient(circle, #ffcc00 0%, #ff8800 60%, #cc3300 100%)',
     blobs:[[255,200,0],[255,140,0],[255,220,60],[240,100,0],[220,80,0],[255,180,30]],
     bg:['#120800','#0d0600','#080400']
+  },
+
+  // ── Multi-color gradient palettes ─────────────────────────
+  synthwave: {
+    name:'Synthwave',
+    orb:'radial-gradient(circle, #ff71ce 0%, #b967ff 40%, #01cdfe 100%)',
+    blobs:[[255,113,206],[185,103,255],[1,205,254],[5,255,161],[255,113,206],[100,50,200]],
+    bg:['#0d0020','#08001a','#040010']
+  },
+  tropical: {
+    name:'Tropical',
+    orb:'radial-gradient(circle, #f9ca24 0%, #f0932b 35%, #6ab04c 70%, #22a6b3 100%)',
+    blobs:[[249,202,36],[240,147,43],[106,176,76],[34,166,179],[248,239,186],[72,219,138]],
+    bg:['#001a14','#00120e','#000c08']
+  },
+  citrus: {
+    name:'Citrus',
+    orb:'radial-gradient(circle, #fddb3a 0%, #f97b22 40%, #ee4540 100%)',
+    blobs:[[253,219,58],[249,123,34],[238,69,64],[192,36,122],[100,200,80],[255,180,0]],
+    bg:['#150800','#100600','#0a0400']
+  },
+  arctic: {
+    name:'Arctic Aurora',
+    orb:'radial-gradient(circle, #00f5d4 0%, #00bbf9 40%, #9b5de5 100%)',
+    blobs:[[0,245,212],[0,187,249],[155,93,229],[248,93,62],[254,228,64],[0,210,180]],
+    bg:['#00060f','#00040c','#000208']
+  },
+  midnight: {
+    name:'Midnight',
+    orb:'radial-gradient(circle, #7400b8 0%, #5e60ce 40%, #48cae4 100%)',
+    blobs:[[116,0,184],[94,96,206],[72,202,228],[80,200,120],[144,0,220],[60,100,240]],
+    bg:['#000614','#00040f','#00020a']
+  },
+  sunset: {
+    name:'Sunset',
+    orb:'radial-gradient(circle, #ff9a3c 0%, #ff4d7e 45%, #9b2fae 100%)',
+    blobs:[[255,154,60],[255,77,126],[155,47,174],[255,200,80],[220,50,100],[180,30,160]],
+    bg:['#0f0008','#0a0006','#060004']
+  },
+  neonCity: {
+    name:'Neon City',
+    orb:'radial-gradient(circle, #00ffcc 0%, #ff00aa 50%, #3300ff 100%)',
+    blobs:[[0,255,204],[255,0,170],[51,0,255],[255,220,0],[0,200,255],[200,0,200]],
+    bg:['#000a14','#000710','#00040c']
+  },
+  forest: {
+    name:'Forest',
+    orb:'radial-gradient(circle, #52b788 0%, #2d6a4f 50%, #1b4332 100%)',
+    blobs:[[82,183,136],[45,106,79],[95,220,150],[180,220,80],[30,140,80],[120,200,100]],
+    bg:['#00080a','#000608','#000406']
+  },
+  galaxy2: {
+    name:'Galaxy',
+    orb:'radial-gradient(circle, #e0aaff 0%, #7b2d8b 40%, #00206e 100%)',
+    blobs:[[224,170,255],[123,45,139],[0,32,110],[255,140,200],[80,0,180],[140,180,255]],
+    bg:['#00000f','#00000c','#000008']
+  },
+  candy: {
+    name:'Candy',
+    orb:'radial-gradient(circle, #ff85a1 0%, #ffc2d1 35%, #a8dadc 70%, #cdb4db 100%)',
+    blobs:[[255,133,161],[255,194,209],[168,218,220],[205,180,219],[255,210,140],[180,230,200]],
+    bg:['#0a000f','#08000c','#060008']
   }
 };
 // ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
@@ -6837,7 +6899,9 @@ var THEME_KEYS   = Object.keys(NEBULA_THEMES);
 var THEME_KEYS_CLASSIC = ['default','void','ocean','neon','arctic','obsidian','sakura','matrix',
                           'copper','midnight','toxic','crimson','slate','amber','ultraviolet','rose','glacier'];
 var THEME_KEYS_EXOTIC  = ['phantom','inferno','bioluminescence','dusk','aurora','nebula',
-                          'abyss','volcano','prism','ember','solar'];
+                          'abyss','volcano','prism','ember','solar',
+                          'synthwave','tropical','citrus','arctic','midnight',
+                          'sunset','neonCity','forest','galaxy2','candy'];
 var ROW_COLS     = [THEME_KEYS.length, 5, 5, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
