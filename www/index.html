@@ -883,7 +883,7 @@ body {
 <div id="cat-row"></div>
 <div id="item-panel">
   <div id="item-search-wrap" style="display:none;padding:0 0 8px">
-    <input id="item-search" type="text" placeholder="Search…" autocomplete="off"
+    <input id="item-search" type="text" placeholder="Search…" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" autocorrect="off" autocapitalize="off" spellcheck="false"
       style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;letter-spacing:0.04em;outline:none">
   </div>
   <div class="item-list"></div>
@@ -7260,7 +7260,7 @@ function injectSubsonicItems() {
     var sw = document.createElement('div');
     sw.setAttribute('data-sub', 'search');
     sw.style.cssText = 'padding:4px 16px 8px';
-    sw.innerHTML = '<input id="sub-search" type="text" placeholder="Search music…" autocomplete="off" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;outline:none">';
+    sw.innerHTML = '<input id="sub-search" type="text" placeholder="Search music…" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="off" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;outline:none">';
     listEl.appendChild(sw);
     var si = document.getElementById('sub-search');
     si.addEventListener('input', function() { subSearch(this.value); });
