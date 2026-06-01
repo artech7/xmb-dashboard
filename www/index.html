@@ -574,7 +574,7 @@ body {
   .s-items-col-headers { display: none; }
 
   /* ── Prefs panel ── */
-  #theme-swatches { grid-template-columns: repeat(4, 1fr); }
+  .theme-group-grid { grid-template-columns: repeat(4, 1fr); }
   /* AnimStyle rows: 3 cols on narrow screens so buttons aren't too small */
   .p-toggle-group[style*="repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
   /* Buttons: allow full width within their column */
@@ -584,7 +584,6 @@ body {
   .p-row { flex-direction: column; align-items: flex-start; gap: 6px; }
   .p-toggle-group { justify-content: flex-start; }
 .theme-group-label {
-  grid-column: 1 / -1;
   font-size: 9px;
   letter-spacing: 2px;
   color: rgba(255,255,255,0.3);
@@ -595,6 +594,11 @@ body {
   overflow: visible;
 }
 .theme-group-label:first-child { margin-top: 4px; }
+.theme-group-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
   .p-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .p-row-label { width: auto; }
   .p-toggle-group { flex-wrap: wrap; }
@@ -4729,6 +4733,8 @@ function renderPrefsUI() {
     header.className = 'theme-group-label';
     header.textContent = label;
     sc.appendChild(header);
+    var grid = document.createElement('div');
+    grid.className = 'theme-group-grid';
     keys.forEach(function(key) {
       var globalIdx = THEME_KEYS.indexOf(key);
       var th = NEBULA_THEMES[key];
@@ -4742,8 +4748,9 @@ function renderPrefsUI() {
         prefFocusRow = 0; prefFocusCol = globalIdx;
         applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
       });
-      sc.appendChild(el);
+      grid.appendChild(el);
     });
+    sc.appendChild(grid);
   }
 
   makeSwatchGroup('Classic', THEME_KEYS_CLASSIC);
@@ -6463,9 +6470,9 @@ document.addEventListener('keydown', function(e) {
 
 /* ── Theme swatches ── */
 #theme-swatches {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   margin-bottom: 4px;
 }
 .theme-swatch {
