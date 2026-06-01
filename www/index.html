@@ -890,9 +890,13 @@ body {
 </div>
 
 <div id="hints">
-  <div class="hint"><div class="hint-key">←</div><div class="hint-key">→</div> Category</div>
-  <div class="hint"><div class="hint-key">↑</div><div class="hint-key">↓</div> Select</div>
-  <div class="hint"><div class="hint-key">↵</div> Open</div>
+  <div class="hint" id="hint-cat"><div class="hint-key">←</div><div class="hint-key">→</div> Category</div>
+  <div class="hint" id="hint-select"><div class="hint-key">↑</div><div class="hint-key">↓</div> Select</div>
+  <div class="hint" id="hint-open"><div class="hint-key">↵</div> Open</div>
+  <div class="hint" id="hint-back" style="display:none"><div class="hint-key">Backspace</div> Back</div>
+  <div class="hint" id="hint-search" style="display:none"><div class="hint-key">/</div> Search</div>
+  <div class="hint" id="hint-play" style="display:none"><div class="hint-key">Space</div> Play/Pause</div>
+  <div class="hint" id="hint-skip" style="display:none"><div class="hint-key">[</div><div class="hint-key">]</div> Skip</div>
 </div>
 
 <script>
@@ -3696,6 +3700,13 @@ function updateCategoryUI() {
 
 // ─── RENDER ITEMS ─────────────────────────────────────────────────────────────
 function renderItems() {
+  updateHints();
+  // Hide search when not in music/subsonic category
+  var sw = document.getElementById('item-search-wrap');
+  var sub = config && config.subsonic;
+  var isMusicCat = sub && sub.categoryId && config.categories &&
+                   config.categories[catIdx] && config.categories[catIdx].id === sub.categoryId;
+  if (sw) sw.style.display = isMusicCat ? '' : 'none';
   const cat      = config.categories[catIdx];
   const listEl   = document.querySelector('.item-list');
   listEl.innerHTML = '';
@@ -3920,6 +3931,92 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── KEYBOARD ─────────────────────────────────────────────────────────────────
+// ─── HINTS UPDATER ───────────────────────────────────────────────────────────
+function updateHints() {
+  var inMusic   = inMusicDrill || (config && config.subsonic && config.categories &&
+                  config.categories[catIdx] && config.subsonic.categoryId &&
+                  config.categories[catIdx].id === config.subsonic.categoryId);
+  var isPlaying = musicPlayer && musicPlayer.audio && !musicPlayer.audio.paused;
+  var hasQueue  = musicPlayer && musicPlayer.queue && musicPlayer.queue.length > 0;
+
+  var show = function(id, vis) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = vis ? '' : 'none';
+  };
+
+  show('hint-cat',    !inMusic);
+  show('hint-select', true);
+  show('hint-open',   true);
+  show('hint-back',   inMusicDrill);
+  show('hint-search', inMusic && !inMusicDrill);
+  show('hint-play',   hasQueue);
+  show('hint-skip',   hasQueue);
+}
+
+// ─── MUSIC KEYBOARD HANDLER ──────────────────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+  if (_prefsOpen) return;
+  var searchEl = document.getElementById('item-search');
+  var searchActive = searchEl && document.activeElement === searchEl;
+
+  // Space = play/pause when not in search
+  if (e.key === ' ' && !searchActive && musicPlayer && musicPlayer.queue && musicPlayer.queue.length > 0) {
+    e.preventDefault();
+    var audio = musicPlayer.audio;
+    if (audio) { audio.paused ? audio.play() : audio.pause(); }
+    var btn = document.getElementById('np-play');
+    if (btn) btn.textContent = (audio && !audio.paused) ? '⏸' : '▶';
+    return;
+  }
+
+  // [ = prev track, ] = next track
+  if (e.key === '[' && !searchActive && musicPlayer && musicPlayer.queue && musicPlayer.queue.length > 0) {
+    e.preventDefault();
+    document.getElementById('np-prev') && document.getElementById('np-prev').click();
+    return;
+  }
+  if (e.key === ']' && !searchActive && musicPlayer && musicPlayer.queue && musicPlayer.queue.length > 0) {
+    e.preventDefault();
+    document.getElementById('np-next') && document.getElementById('np-next').click();
+    return;
+  }
+
+  // Backspace = back in music drill
+  if (e.key === 'Backspace' && !searchActive && inMusicDrill) {
+    e.preventDefault();
+    musicPopLevel();
+    updateHints();
+    return;
+  }
+
+  // Escape = close search or exit music
+  if (e.key === 'Escape' && !searchActive && inMusicDrill) {
+    e.preventDefault();
+    musicPopLevel();
+    updateHints();
+    return;
+  }
+
+  // / = open search when in music root
+  if (e.key === '/' && !searchActive) {
+    var searchWrap = document.getElementById('item-search-wrap');
+    if (searchWrap && searchWrap.style.display !== 'none') {
+      e.preventDefault();
+      searchEl.focus();
+      searchEl.select();
+      return;
+    }
+  }
+
+  // Escape = clear search if active
+  if (e.key === 'Escape' && searchActive) {
+    searchEl.value = '';
+    searchEl.blur();
+    searchEl.dispatchEvent(new Event('input'));
+    return;
+  }
+}, true); // useCapture=true so this fires before XMB handler
+
 document.addEventListener('keydown', e => {
   if (_prefsOpen) return; // prefs panel is open — it handles keys
   const cats  = config?.categories;
@@ -6962,7 +7059,7 @@ function musicPopLevel() {
     if (backBtn) backBtn.classList.remove('visible');
     if (titleEl) titleEl.classList.remove('visible');
     var cat = config.categories[catIdx];
-    if (cat) { renderItems(); injectSubsonicItems(); }
+    if (cat) { renderItems(); injectSubsonicItems(); updateHints(); }
     return;
   }
   musicStack.pop();
@@ -6970,6 +7067,7 @@ function musicPopLevel() {
 }
 
 function musicRenderLevel() {
+  setTimeout(updateHints, 50);
   var level = musicStack[musicStack.length - 1];
   if (!level) return;
 
@@ -7134,6 +7232,9 @@ function loadSubsonicItems(sub) {
 
 function injectSubsonicItems() {
   if (!config || !config.subsonic) return;
+  // Show search box for music browsing
+  var sw = document.getElementById('item-search-wrap');
+  if (sw) sw.style.display = '';
   var sub = config.subsonic;
   if (!sub.url || !sub.username || !sub.categoryId || sub.categoryId==='undefined') return;
   var cat = config.categories && config.categories[catIdx];
@@ -7309,6 +7410,7 @@ function musicPlay(queue, idx) {
   art.style.display = song.coverArt ? '' : 'none';
   document.getElementById('now-playing').classList.add('visible');
   document.getElementById('np-play').textContent = '⏸';
+  updateHints();
 
   function startPlay(streamUrl) {
     var a = musicPlayer.audio;
