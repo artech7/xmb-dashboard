@@ -10,6 +10,14 @@ const PORT   = process.env.PORT           || 8484;
 const PASS   = process.env.ADMIN_PASSWORD || 'admin';
 const SECRET = process.env.JWT_SECRET     || 'xmb-change-this-secret';
 
+// Warn on startup if defaults are in use
+if (!process.env.ADMIN_PASSWORD) {
+  console.warn('[SECURITY] ADMIN_PASSWORD not set — using default "admin". Set this in your environment.');
+}
+if (!process.env.JWT_SECRET) {
+  console.warn('[SECURITY] JWT_SECRET not set — using default signing key. Set this in your environment.');
+}
+
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_CFG = path.join(DATA_DIR,  'config.json');
 const SEED_CFG = path.join(__dirname, 'www', 'config.json');
