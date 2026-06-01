@@ -589,11 +589,12 @@ body {
   letter-spacing: 2px;
   color: rgba(255,255,255,0.3);
   text-transform: uppercase;
-  margin: 8px 0 2px;
+  margin: 12px 0 4px;
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
+  overflow: visible;
 }
-.theme-group-label:first-child { margin-top: 0; }
+.theme-group-label:first-child { margin-top: 4px; }
   .p-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .p-row-label { width: auto; }
   .p-toggle-group { flex-wrap: wrap; }
@@ -4747,6 +4748,7 @@ function renderPrefsUI() {
 
   makeSwatchGroup('Classic', THEME_KEYS_CLASSIC);
   makeSwatchGroup('Vivid', THEME_KEYS_EXOTIC);
+  makeSwatchGroup('Gradient', THEME_KEYS_GRADIENT);
 
   // ── Toggle buttons ─────────────────────────────────────────
   document.querySelectorAll('.p-toggle').forEach(function(btn) {
@@ -6716,7 +6718,7 @@ var NEBULA_THEMES = {
     blobs:[[255,170,68],[220,130,30],[255,190,100],[200,120,20],[180,100,10],[240,160,60]],
     bg:['#120900','#0d0700','#080500']
   },
-  midnight: {
+  midnightglow: {
     name:'Midnight',
     orb:'radial-gradient(circle, #4466ff 0%, #2233cc 60%, #0a1155 100%)',
     blobs:[[68,102,255],[40,70,220],[100,130,255],[50,80,200],[30,60,180],[80,110,240]],
@@ -6850,13 +6852,13 @@ var NEBULA_THEMES = {
     blobs:[[253,219,58],[249,123,34],[238,69,64],[192,36,122],[100,200,80],[255,180,0]],
     bg:['#150800','#100600','#0a0400']
   },
-  arctic: {
+  arcticaurora: {
     name:'Arctic Aurora',
     orb:'radial-gradient(circle, #00f5d4 0%, #00bbf9 40%, #9b5de5 100%)',
     blobs:[[0,245,212],[0,187,249],[155,93,229],[248,93,62],[254,228,64],[0,210,180]],
     bg:['#00060f','#00040c','#000208']
   },
-  midnight: {
+  midnightglow: {
     name:'Midnight',
     orb:'radial-gradient(circle, #7400b8 0%, #5e60ce 40%, #48cae4 100%)',
     blobs:[[116,0,184],[94,96,206],[72,202,228],[80,200,120],[144,0,220],[60,100,240]],
@@ -6898,10 +6900,10 @@ var NEBULA_THEMES = {
 var THEME_KEYS   = Object.keys(NEBULA_THEMES);
 var THEME_KEYS_CLASSIC = ['default','void','ocean','neon','arctic','obsidian','sakura','matrix',
                           'copper','midnight','toxic','crimson','slate','amber','ultraviolet','rose','glacier'];
-var THEME_KEYS_EXOTIC  = ['phantom','inferno','bioluminescence','dusk','aurora','nebula',
-                          'abyss','volcano','prism','ember','solar',
-                          'synthwave','tropical','citrus','arctic','midnight',
-                          'sunset','neonCity','forest','galaxy2','candy'];
+var THEME_KEYS_EXOTIC    = ['phantom','inferno','bioluminescence','dusk','aurora','nebula',
+                            'abyss','volcano','prism','ember','solar'];
+var THEME_KEYS_GRADIENT  = ['synthwave','tropical','citrus','arcticaurora','midnightglow',
+                            'sunset','neonCity','forest','galaxy2','candy'];
 var ROW_COLS     = [THEME_KEYS.length, 5, 5, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
