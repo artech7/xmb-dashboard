@@ -2957,11 +2957,11 @@ var GL_AURORA_FRAG = [
   '  float sh1=0.65+0.35*sin(t*18.0+uv.y*28.0+uv.x*9.0);',
   '  float sh2=0.70+0.30*sin(t*14.0+uv.y*22.0+uv.x*6.0+2.1);',
   // Vertical mask with animated edge noise — top/bottom breathe and bleed unevenly
-  '  float edgeNoise=vnoise(vec2(uv.x*2.8+t*0.40, t*0.25))*0.10',
-  '                 +vnoise(vec2(uv.x*5.5+t*0.65, t*0.18+1.3))*0.04;',
-  '  float topEdge=0.28+edgeNoise;',
-  '  float botEdge=0.73-edgeNoise*0.6;',
-  '  float vMask=smoothstep(0.06,topEdge,uv.y)*smoothstep(1.0,botEdge,uv.y);',
+  '  float edgeNoise=vnoise(vec2(uv.x*2.8+t*0.40, t*0.25))*0.18',
+  '                 +vnoise(vec2(uv.x*5.5+t*0.65, t*0.18+1.3))*0.08;',
+  '  float topEdge=0.32+edgeNoise;',
+  '  float botEdge=0.70-edgeNoise*0.7;',
+  '  float vMask=smoothstep(0.02,topEdge,uv.y)*smoothstep(1.0,botEdge,uv.y);',
   '  float d1=rays*sh1*u_intensity*vMask;',
   '  float d2=rays2*sh2*u_intensity*vMask;',
 
