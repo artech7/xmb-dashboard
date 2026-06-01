@@ -144,9 +144,23 @@ app.get('/api/config', (req, res) => {
   if (header.startsWith('Bearer ')) {
     try { jwt.verify(header.slice(7), SECRET); isAdmin = true; } catch {}
   }
-  // Strip subsonic password from non-admin response
-  const out = isAdmin ? cfg : filterForNonAdmin(cfg);
-  if (!isAdmin && out.subsonic) { delete out.subsonic.password; }
+
+  if (isAdmin) {
+    return res.json(cfg);
+  }
+
+  // Non-admin: strip all integration credentials
+  const out = filterForNonAdmin(cfg);
+
+  // Remove subsonic credentials entirely — client uses /api/subsonic/* proxy
+  if (out.subsonic) {
+    out.subsonic = { categoryId: out.subsonic.categoryId };
+  }
+  // Remove ABS credentials entirely — client uses /api/abs/* proxy
+  if (out.abs) {
+    out.abs = { categoryId: out.abs.categoryId };
+  }
+
   res.json(out);
 });
 
