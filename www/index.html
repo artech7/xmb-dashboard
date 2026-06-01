@@ -574,7 +574,11 @@ body {
   .s-items-col-headers { display: none; }
 
   /* ── Prefs panel ── */
-  .theme-group-grid { grid-template-columns: repeat(4, 1fr); }
+  .theme-group-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
   /* AnimStyle rows: 3 cols on narrow screens so buttons aren't too small */
   .p-toggle-group[style*="repeat(5"] { grid-template-columns: repeat(3, 1fr) !important; }
   /* Buttons: allow full width within their column */
