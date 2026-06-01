@@ -1138,6 +1138,7 @@ function drawNebula() {
     }
     var oc = nebulaCloudCanvas.getContext('2d');
     oc.clearRect(0, 0, W, H);
+    oc.globalCompositeOperation = 'lighter'; // additive — clouds blend smoothly
 
     function softCloud(x, y, r, rgb, a) {
       var g = oc.createRadialGradient(x, y, 0, x, y, r);
@@ -1153,19 +1154,20 @@ function drawNebula() {
       var cx = (blob.x + Math.sin(d + i * 1.37) * 0.055) * W;
       var cy = (blob.y + Math.cos(d * 0.72 + i * 1.09) * 0.048) * H;
       var br = blob.r * Math.min(W, H);
-      var a  = blob.a * blobOpacityMult;
+      var a  = blob.a * blobOpacityMult * 1.8; // boosted for visibility
 
       // Main lobe
-      softCloud(cx, cy, br, blob.rgb, a * 0.6);
+      softCloud(cx, cy, br, blob.rgb, a * 0.7);
       // Wispy offset sub-lobes for irregular cloud shape
       for (var k = 0; k < 4; k++) {
         var ang = d * 0.5 + (k / 4) * Math.PI * 2 + i * 1.3;
         var ox  = cx + Math.cos(ang) * br * 0.45;
         var oy  = cy + Math.sin(ang) * br * 0.45;
         var sub = activeBlobs[(i + k + 1) % activeBlobs.length];
-        softCloud(ox, oy, br * 0.55, sub ? sub.rgb : blob.rgb, a * 0.28);
+        softCloud(ox, oy, br * 0.6, sub ? sub.rgb : blob.rgb, a * 0.38);
       }
     });
+    oc.globalCompositeOperation = 'source-over';
   }
   ctx.drawImage(nebulaCloudCanvas, 0, 0);
 
@@ -4880,6 +4882,7 @@ function renderPrefsUI() {
 
   // ── Toggle buttons ─────────────────────────────────────────
   document.querySelectorAll('.p-toggle').forEach(function(btn) {
+    if (btn.id === 'prefs-nebula-randomize') return; // has its own handler
     var pref = btn.dataset.pref;
     btn.classList.toggle('active', btn.dataset.val === userPrefs[pref]);
     btn.onclick = function() {
