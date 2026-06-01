@@ -882,10 +882,7 @@ body {
 <div id="cat-name-banner"></div>
 <div id="cat-row"></div>
 <div id="item-panel">
-  <div id="item-search-wrap" style="display:none;padding:0 0 8px">
-    <input id="item-search" type="text" placeholder="Search…" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" autocorrect="off" autocapitalize="off" spellcheck="false"
-      style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:7px 12px;color:#fff;font-size:13px;letter-spacing:0.04em;outline:none">
-  </div>
+  
   <div class="item-list"></div>
 </div>
 
@@ -3701,12 +3698,6 @@ function updateCategoryUI() {
 // ─── RENDER ITEMS ─────────────────────────────────────────────────────────────
 function renderItems() {
   updateHints();
-  // Hide search when not in music/subsonic category
-  var sw = document.getElementById('item-search-wrap');
-  var sub = config && config.subsonic;
-  var isMusicCat = sub && sub.categoryId && config.categories &&
-                   config.categories[catIdx] && config.categories[catIdx].id === sub.categoryId;
-  if (sw) sw.style.display = isMusicCat ? '' : 'none';
   const cat      = config.categories[catIdx];
   const listEl   = document.querySelector('.item-list');
   listEl.innerHTML = '';
@@ -3997,18 +3988,7 @@ document.addEventListener('keydown', function(e) {
     return;
   }
 
-  // / = open search when in music root
-  if (e.key === '/' && !searchActive) {
-    var searchWrap = document.getElementById('item-search-wrap');
-    if (searchWrap && searchWrap.style.display !== 'none') {
-      e.preventDefault();
-      searchEl.focus();
-      searchEl.select();
-      return;
-    }
-  }
-
-  // Escape = clear search if active
+// Escape = clear search if active
   if (e.key === 'Escape' && searchActive) {
     searchEl.value = '';
     searchEl.blur();
@@ -7232,9 +7212,7 @@ function loadSubsonicItems(sub) {
 
 function injectSubsonicItems() {
   if (!config || !config.subsonic) return;
-  // Show search box for music browsing
-  var sw = document.getElementById('item-search-wrap');
-  if (sw) sw.style.display = '';
+
   var sub = config.subsonic;
   if (!sub.url || !sub.username || !sub.categoryId || sub.categoryId==='undefined') return;
   var cat = config.categories && config.categories[catIdx];
