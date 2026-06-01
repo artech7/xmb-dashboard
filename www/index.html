@@ -1096,6 +1096,25 @@ function resize() {
   hexGridCanvas = null; hexCells = null; pfParticles = null;
 }
 
+function randomizeNebulaBlobs() {
+  // Reposition and resize nebula blobs randomly, keeping theme colors
+  if (!activeBlobs) return;
+  activeBlobs = activeBlobs.map(function(b) {
+    return {
+      x:   0.15 + Math.random() * 0.70,
+      y:   0.20 + Math.random() * 0.55,
+      r:   0.40 + Math.random() * 0.40,
+      rgb: b.rgb,
+      a:   0.30 + Math.random() * 0.22,
+      spd: 0.5  + Math.random() * 0.9
+    };
+  });
+  nebulaCloudCacheFrame = 999; // force cloud cache redraw
+}
+
+var nebulaCloudCanvas = null;
+var nebulaCloudCacheFrame = 0;
+
 function drawNebula() {
   ctx.clearRect(0, 0, W, H);
 
@@ -1107,20 +1126,55 @@ function drawNebula() {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Nebula blobs — drift slowly
-  activeBlobs.forEach((blob, i) => {
-    const d  = t * 0.00004 * blob.spd;
-    const cx = (blob.x + Math.sin(d + i * 1.37) * 0.055) * W;
-    const cy = (blob.y + Math.cos(d * 0.72 + i * 1.09) * 0.048) * H;
-    const pulse = 0.88 + Math.sin(t * 0.00018 * blob.spd + i * 0.8) * 0.12;
-    drawBlob(cx, cy, blob.r * Math.min(W, H), blob.rgb, blob.a * pulse * blobOpacityMult);
-  });
+  // ── Cloud texture layer — soft overlapping wisps per blob ──
+  // Cached to offscreen canvas, redrawn every 4 frames (clouds drift slowly)
+  nebulaCloudCacheFrame++;
+  if (nebulaCloudCacheFrame >= 4 || !nebulaCloudCanvas ||
+      nebulaCloudCanvas.width !== W || nebulaCloudCanvas.height !== H) {
+    nebulaCloudCacheFrame = 0;
+    if (!nebulaCloudCanvas || nebulaCloudCanvas.width !== W || nebulaCloudCanvas.height !== H) {
+      nebulaCloudCanvas = document.createElement('canvas');
+      nebulaCloudCanvas.width = W; nebulaCloudCanvas.height = H;
+    }
+    var oc = nebulaCloudCanvas.getContext('2d');
+    oc.clearRect(0, 0, W, H);
+
+    function softCloud(x, y, r, rgb, a) {
+      var g = oc.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0,    'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')');
+      g.addColorStop(0.35, 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+(a*0.5)+')');
+      g.addColorStop(1,    'rgba(0,0,0,0)');
+      oc.fillStyle = g;
+      oc.fillRect(x - r, y - r, r*2, r*2);
+    }
+
+    activeBlobs.forEach(function(blob, i) {
+      var d  = t * 0.00004 * blob.spd;
+      var cx = (blob.x + Math.sin(d + i * 1.37) * 0.055) * W;
+      var cy = (blob.y + Math.cos(d * 0.72 + i * 1.09) * 0.048) * H;
+      var br = blob.r * Math.min(W, H);
+      var a  = blob.a * blobOpacityMult;
+
+      // Main lobe
+      softCloud(cx, cy, br, blob.rgb, a * 0.6);
+      // Wispy offset sub-lobes for irregular cloud shape
+      for (var k = 0; k < 4; k++) {
+        var ang = d * 0.5 + (k / 4) * Math.PI * 2 + i * 1.3;
+        var ox  = cx + Math.cos(ang) * br * 0.45;
+        var oy  = cy + Math.sin(ang) * br * 0.45;
+        var sub = activeBlobs[(i + k + 1) % activeBlobs.length];
+        softCloud(ox, oy, br * 0.55, sub ? sub.rgb : blob.rgb, a * 0.28);
+      }
+    });
+  }
+  ctx.drawImage(nebulaCloudCanvas, 0, 0);
 
   // Subtle accent-color central glow (shifts with category)
   const [ar, ag, ab] = accentRgb;
   drawBlob(W * 0.5, H * 0.44, Math.min(W, H) * 0.72, [ar, ag, ab], 0.07);
 
   // Stars
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   stars.forEach(star => {
     const tw    = Math.sin(t * star.twinkleSpeed + star.phase);
     const alpha = star.baseAlpha * (0.55 + tw * 0.45);
@@ -4694,6 +4748,8 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('prefs-close').addEventListener('click', closePrefs);
   document.getElementById('prefs-nebula-randomize').addEventListener('click', function() {
     glNebulaSeed = Math.random();
+    // Also randomize Canvas 2D nebula blob positions (mobile / fallback)
+    if (typeof randomizeNebulaBlobs === 'function') randomizeNebulaBlobs();
   });
   document.getElementById('prefs-overlay').addEventListener('click', function(e){
     if (e.target === document.getElementById('prefs-overlay')) closePrefs();
