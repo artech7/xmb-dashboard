@@ -3811,6 +3811,40 @@ function scrollItemList() {
 
 var _frameLoadHandler = null; // track active listener so we can remove it
 
+// ─── MOUSE WHEEL SCROLL FOR ITEM LIST ────────────────────────────────────────
+(function() {
+  var wheelTimeout = null;
+  var wheelAccum   = 0;
+
+  document.addEventListener('wheel', function(e) {
+    if (_prefsOpen) return;
+
+    // Only handle wheel over the item panel
+    var panel = document.getElementById('item-panel');
+    if (!panel || !panel.contains(e.target)) return;
+
+    e.preventDefault();
+
+    // Accumulate delta and fire when it crosses a threshold
+    wheelAccum += e.deltaY;
+    var threshold = 40;
+
+    if (Math.abs(wheelAccum) < threshold) return;
+
+    var direction = wheelAccum > 0 ? 1 : -1;
+    wheelAccum = 0;
+
+    var domItems = document.querySelectorAll('.item-list .xmb-item');
+    var maxIdx   = Math.max(allItems.length, domItems.length) - 1;
+
+    var newIdx = itemIdx + direction;
+    if (newIdx >= 0 && newIdx <= maxIdx) {
+      itemIdx = newIdx;
+      updateItemSelection();
+    }
+  }, { passive: false });
+})();
+
 function openItem(item) {
   if (item.url === '#admin') { openSettings(); return; }
   if (item.url === '#prefs') { openPrefs(); return; }
