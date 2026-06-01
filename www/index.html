@@ -4574,6 +4574,10 @@ function clearKbFocus() {
   document.querySelectorAll('.kb-focus').forEach(function(el){ el.classList.remove('kb-focus'); });
 }
 
+function getRenderedThemeOrder() {
+  return THEME_KEYS_CLASSIC.concat(THEME_KEYS_EXOTIC).concat(THEME_KEYS_GRADIENT);
+}
+
 function applyKbFocus() {
   clearKbFocus();
   var el;
@@ -4619,9 +4623,9 @@ function activateFocused() {
 function openPrefs() {
   _prefsOpen = true;
   document.getElementById('prefs-overlay').classList.add('open');
-  // Set focus col to current active option in focus row
   prefFocusRow = 0;
-  prefFocusCol = Math.max(0, THEME_KEYS.indexOf(userPrefs.theme));
+  // Use rendered order (Classic+Vivid+Gradient) not THEME_KEYS order
+  prefFocusCol = Math.max(0, getRenderedThemeOrder().indexOf(userPrefs.theme));
   renderPrefsUI();
   setTimeout(applyKbFocus, 50);
 }
@@ -4741,7 +4745,8 @@ function renderPrefsUI() {
       el.innerHTML = '<div class="theme-orb" style="background:'+th.orb+'"></div><div class="theme-name">'+th.name+'</div>';
       el.addEventListener('click', function(){
         userPrefs.theme = key;
-        prefFocusRow = 0; prefFocusCol = globalIdx;
+        prefFocusRow = 0;
+        prefFocusCol = getRenderedThemeOrder().indexOf(key);
         applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
       });
       grid.appendChild(el);
