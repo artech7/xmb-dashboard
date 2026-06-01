@@ -1149,22 +1149,41 @@ function drawNebula() {
       oc.fillRect(x - r, y - r, r*2, r*2);
     }
 
+    // Deterministic pseudo-random for stable wisp positions per blob
+    function rand(seed) { var x = Math.sin(seed * 12.9898) * 43758.5453; return x - Math.floor(x); }
+
     activeBlobs.forEach(function(blob, i) {
       var d  = t * 0.00004 * blob.spd;
       var cx = (blob.x + Math.sin(d + i * 1.37) * 0.055) * W;
       var cy = (blob.y + Math.cos(d * 0.72 + i * 1.09) * 0.048) * H;
       var br = blob.r * Math.min(W, H);
-      var a  = blob.a * blobOpacityMult * 1.8; // boosted for visibility
+      var a  = blob.a * blobOpacityMult * 1.25; // lowered to reduce hot spots
 
-      // Main lobe
-      softCloud(cx, cy, br, blob.rgb, a * 0.7);
-      // Wispy offset sub-lobes for irregular cloud shape
+      // Main lobe — softer
+      softCloud(cx, cy, br, blob.rgb, a * 0.5);
+
+      // Big offset sub-lobes for overall irregular shape
       for (var k = 0; k < 4; k++) {
         var ang = d * 0.5 + (k / 4) * Math.PI * 2 + i * 1.3;
         var ox  = cx + Math.cos(ang) * br * 0.45;
         var oy  = cy + Math.sin(ang) * br * 0.45;
         var sub = activeBlobs[(i + k + 1) % activeBlobs.length];
-        softCloud(ox, oy, br * 0.6, sub ? sub.rgb : blob.rgb, a * 0.38);
+        softCloud(ox, oy, br * 0.6, sub ? sub.rgb : blob.rgb, a * 0.26);
+      }
+
+      // ── Wispy noise detail — many small scattered puffs ──
+      // Drift slowly over time, scattered in a noise pattern around the blob
+      for (var w = 0; w < 14; w++) {
+        var seed = i * 100 + w;
+        var wAng = rand(seed) * Math.PI * 2 + d * (0.3 + rand(seed+1) * 0.5);
+        var wDist = (0.2 + rand(seed+2) * 0.85) * br;
+        var drift = Math.sin(d * 2 + w * 1.7 + i) * br * 0.08;
+        var wx = cx + Math.cos(wAng) * wDist + drift;
+        var wy = cy + Math.sin(wAng) * wDist + Math.cos(d * 1.5 + w) * br * 0.06;
+        var wr = (0.10 + rand(seed+3) * 0.22) * br;
+        var wCol = (w % 3 === 0 && activeBlobs[(i+2) % activeBlobs.length])
+                   ? activeBlobs[(i+2) % activeBlobs.length].rgb : blob.rgb;
+        softCloud(wx, wy, wr, wCol, a * (0.06 + rand(seed+4) * 0.10));
       }
     });
     oc.globalCompositeOperation = 'source-over';
@@ -1173,7 +1192,7 @@ function drawNebula() {
 
   // Subtle accent-color central glow (shifts with category)
   const [ar, ag, ab] = accentRgb;
-  drawBlob(W * 0.5, H * 0.44, Math.min(W, H) * 0.72, [ar, ag, ab], 0.07);
+  drawBlob(W * 0.5, H * 0.44, Math.min(W, H) * 0.72, [ar, ag, ab], 0.04);
 
   // Stars
   ctx.setTransform(1, 0, 0, 1, 0, 0);
