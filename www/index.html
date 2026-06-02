@@ -4741,6 +4741,12 @@ var DEFAULT_PREFS = {
 };
 var userPrefs = Object.assign({}, DEFAULT_PREFS);
 
+// Keyboard nav state for prefs panel
+// Row 0 = theme grid (count set after themes load), rows 1-8 = settings, 9 = reset
+var ROW_COLS     = [40, 5, 5, 3, 3, 3, 2, 3, 3, 1];
+var prefFocusRow = 0;
+var prefFocusCol = 0;
+
 function loadPrefs() {
   try {
     var saved = JSON.parse(localStorage.getItem('xmb-prefs') || '{}');
@@ -4814,6 +4820,8 @@ function activateFocused() {
 function openPrefs() {
   _prefsOpen = true;
   document.getElementById('prefs-overlay').classList.add('open');
+  // Keep theme grid row count in sync with actual rendered theme count
+  ROW_COLS[0] = getRenderedThemeOrder().length;
   prefFocusRow = 0;
   // Use rendered order (Classic+Vivid+Gradient) not THEME_KEYS order
   prefFocusCol = Math.max(0, getRenderedThemeOrder().indexOf(userPrefs.theme));
@@ -7138,6 +7146,12 @@ var NEBULA_THEMES = {
     bg:['#0a000f','#08000c','#060008']
   }
 }
+
+var THEME_KEYS = Object.keys(NEBULA_THEMES);
+var THEME_KEYS_CLASSIC  = ['garnet','amethyst','aquamarine','diamond','emerald','pearl','ruby','peridot','sapphire','opal','citrine','turquoise','rose','sakura','arctic'];
+var THEME_KEYS_EXOTIC   = ['garnetBlend','amethystBlend','aquaBlend','rubyBlend','emeraldBlend','sapphireBlend','peridotBlend','citrineBlend','turquoiseBlend','pearlBlend','opalBlend','diamondBlend','inferno','abyss','aurora'];
+var THEME_KEYS_GRADIENT = ['earlySpring','lateSpring','earlySummer','lateSummer','earlyAutumn','lateAutumn','earlyWinter','lateWinter','galaxy2','candy'];
+
 function savePrefs() {
   try { localStorage.setItem('xmb-prefs', JSON.stringify(userPrefs)); } catch(e) {}
 }
