@@ -1287,7 +1287,7 @@ var pfParticles   = null;
 var pfObstacles   = [];   // cached UI element bounding boxes
 var pfObsTimer    = 0;    // refresh obstacles every N frames
 
-var PF_COUNT      = 1200;  // total particles
+var PF_COUNT      = 1500;  // total particles
 var PF_SPEED      = 0.55; // base speed (px/frame)
 var PF_AVOID_R    = 72;   // avoidance radius around obstacles (px)
 var PF_NOISE_STR  = 0.18; // flow noise strength
@@ -1296,15 +1296,24 @@ var PF_TRAIL      = 0;    // no trails — tiny dots only
 function pfRand(min, max) { return min + Math.random() * (max - min); }
 
 function pfNewParticle() {
+  // Depth layer: 0=far background (small, dim, slow), 1=mid, 2=foreground (big, bright, fast)
+  var depthRoll = Math.random();
+  var depth = depthRoll < 0.45 ? 0 : (depthRoll < 0.80 ? 1 : 2);
+  var depthScale = depth === 0 ? 0.45 : (depth === 1 ? 0.85 : 1.4);
+  // ~22% of particles are streaks (elongated motion trails)
+  var isStreak = Math.random() < 0.22;
   return {
     x:     Math.random() * W,
     y:     Math.random() * H,
     vx:    pfRand(-PF_SPEED, PF_SPEED),
     vy:    pfRand(-PF_SPEED, PF_SPEED),
-    size:  pfRand(2.0, 4.2),
-    alpha: pfRand(0.4, 1.0),
+    size:  pfRand(2.0, 4.2) * depthScale,
+    alpha: pfRand(0.4, 1.0) * (depth === 0 ? 0.45 : (depth === 1 ? 0.75 : 1.0)),
     phase: Math.random() * Math.PI * 2, // for twinkle
-    speed: pfRand(0.35, 0.80),
+    speed: pfRand(0.35, 0.80) * (depth === 0 ? 0.55 : (depth === 1 ? 0.85 : 1.25)),
+    depth: depth,
+    isStreak: isStreak,
+    streakLen: isStreak ? pfRand(8, 26) * depthScale : 0,
   };
 }
 
@@ -1347,6 +1356,8 @@ function initParticleFlow() {
   var base  = isMobile ? Math.floor(PF_COUNT * 0.45) : PF_COUNT;
   var count = Math.round(base * mult);
   for (var i = 0; i < count; i++) pfParticles.push(pfNewParticle());
+  // Sort by depth so far-background particles draw first (behind foreground)
+  pfParticles.sort(function(a, b) { return a.depth - b.depth; });
   pfObstacles = [];
   pfObsTimer  = 0;
 }
@@ -1469,7 +1480,7 @@ function drawParticleFlow() {
     if (p.y < -4)  p.y = H + 4;
     if (p.y > H+4) p.y = -4;
 
-    // ── Draw tiny dot ────────────────────────────────────────────────────
+    // ── Draw particle — streak or dot, depth-aware ──────────────────────
     // Gentle twinkle
     var twinkle = 0.65 + 0.35 * Math.sin(t * 0.018 + p.phase);
     var alpha   = p.alpha * twinkle * blobOpacityMult;
@@ -1477,10 +1488,35 @@ function drawParticleFlow() {
     // Color from theme palette, varied by particle index
     var ci  = i % palette.length;
     var col = palette[ci];
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + alpha.toFixed(2) + ')';
-    ctx.fill();
+    var colStr = col[0] + ',' + col[1] + ',' + col[2];
+
+    if (p.isStreak) {
+      // Streak: line trailing behind the particle along its velocity
+      var spd2 = Math.sqrt(p.vx*p.vx + p.vy*p.vy) || 1;
+      var nx = p.vx / spd2, ny = p.vy / spd2;
+      var tailX = p.x - nx * p.streakLen;
+      var tailY = p.y - ny * p.streakLen;
+      var grad = ctx.createLinearGradient(p.x, p.y, tailX, tailY);
+      grad.addColorStop(0, 'rgba('+colStr+','+alpha.toFixed(2)+')');
+      grad.addColorStop(1, 'rgba('+colStr+',0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = p.size * 0.9;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(tailX, tailY);
+      ctx.stroke();
+      // Bright head
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba('+colStr+','+alpha.toFixed(2)+')';
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba('+colStr+','+alpha.toFixed(2)+')';
+      ctx.fill();
+    }
   }
 
   drawVignette();
