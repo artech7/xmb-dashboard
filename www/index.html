@@ -4728,6 +4728,31 @@ var settingsToken  = sessionStorage.getItem('xmb-token') || null;
 var settingsConfig = null;
 var activeCatIdx   = null;
 
+// ─── PREFERENCES STATE ────────────────────────────────────────────────────────
+var DEFAULT_PREFS = {
+  theme:     'garnet',
+  animStyle: 'nebula',
+  intensity: 'normal',
+  particles: 'normal',
+  fontSize:  'normal',
+  showDesc:  'show',
+  clockFmt:  'default',
+  motion:    'normal'
+};
+var userPrefs = Object.assign({}, DEFAULT_PREFS);
+
+function loadPrefs() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('xmb-prefs') || '{}');
+    userPrefs = Object.assign({}, DEFAULT_PREFS, saved);
+  } catch (e) {
+    userPrefs = Object.assign({}, DEFAULT_PREFS);
+  }
+  // Guard: if saved theme no longer exists, fall back to default
+  if (!NEBULA_THEMES[userPrefs.theme]) userPrefs.theme = DEFAULT_PREFS.theme;
+  if (typeof applyPrefs === 'function') applyPrefs(userPrefs);
+}
+
 
 
 
@@ -4763,7 +4788,7 @@ function applyKbFocus() {
 
 function activateFocused() {
   if (prefFocusRow === 0) {
-    var key = THEME_KEYS[prefFocusCol];
+    var key = getRenderedThemeOrder()[prefFocusCol];
     if (key) { userPrefs.theme = key; applyPrefs(userPrefs); savePrefs(); renderPrefsUI(); }
   } else if (prefFocusRow === 8) {
     userPrefs = Object.assign({}, DEFAULT_PREFS);
@@ -6866,95 +6891,79 @@ document.addEventListener('keydown', function(e) {
 <script>
 // ─── NEBULA THEMES ────────────────────────────────────────────────────────────
 var NEBULA_THEMES = {
-  default: {
-    name:'Default',
-    orb:'radial-gradient(circle, #a0c4ff 0%, #4a90e2 60%, #1a3a6e 100%)',
-    blobs:[[0,120,255],[0,80,200],[100,180,255],[50,150,255],[0,60,180],[80,160,240]],
-    bg:['#050a1a','#030814','#020610']
+
+  // ══ CLASSIC — Birthstones + kept themes ══
+  garnet: {
+    name:'Garnet',
+    orb:'radial-gradient(circle, #b3122c 0%, #7a0a1e 60%, #2a0008 100%)',
+    blobs:[[179,18,44],[140,12,32],[210,40,60],[120,8,24],[160,20,40],[195,30,52]],
+    bg:['#100204','#0b0103','#070002']
   },
-  void: {
-    name:'Void',
-    orb:'radial-gradient(circle, #8844ff 0%, #4400cc 60%, #1a0044 100%)',
-    blobs:[[120,0,255],[80,0,200],[160,80,255],[100,20,220],[60,0,180],[140,60,240]],
-    bg:['#08000f','#05000a','#030008']
+  amethyst: {
+    name:'Amethyst',
+    orb:'radial-gradient(circle, #9966cc 0%, #6a3aa0 60%, #2a1145 100%)',
+    blobs:[[153,102,204],[106,58,160],[180,130,225],[125,75,180],[90,45,140],[165,115,215]],
+    bg:['#0c0616','#080410','#05020a']
   },
-  ocean: {
-    name:'Ocean',
-    orb:'radial-gradient(circle, #00e5ff 0%, #0088cc 60%, #003366 100%)',
-    blobs:[[0,180,220],[0,140,200],[0,220,255],[0,100,180],[20,160,210],[0,200,240]],
-    bg:['#020d1a','#010a14','#01070f']
+  aquamarine: {
+    name:'Aquamarine',
+    orb:'radial-gradient(circle, #7fffd4 0%, #3bb0c4 60%, #0d4a5a 100%)',
+    blobs:[[127,255,212],[59,176,196],[160,255,230],[90,210,210],[40,150,170],[110,240,220]],
+    bg:['#02100f','#010b0c','#010708']
   },
-  neon: {
-    name:'Neon',
-    orb:'radial-gradient(circle, #ff00ff 0%, #cc00cc 60%, #440044 100%)',
-    blobs:[[255,0,255],[200,0,200],[255,80,255],[220,0,220],[180,0,180],[255,40,200]],
-    bg:['#100010','#0a000a','#060006']
+  diamond: {
+    name:'Diamond',
+    orb:'radial-gradient(circle, #ffffff 0%, #cfe4f0 55%, #6b8294 100%)',
+    blobs:[[255,255,255],[207,228,240],[230,240,250],[190,215,235],[225,235,248],[210,225,242]],
+    bg:['#0a0e12','#07090d','#050709']
   },
-  arctic: {
-    name:'Arctic',
-    orb:'radial-gradient(circle, #e0f4ff 0%, #90cdf4 60%, #2c5282 100%)',
-    blobs:[[200,235,255],[160,210,240],[220,245,255],[180,220,245],[140,195,230],[210,238,255]],
-    bg:['#0a1520','#071018','#050c14']
+  emerald: {
+    name:'Emerald',
+    orb:'radial-gradient(circle, #2ecc71 0%, #169456 60%, #053820 100%)',
+    blobs:[[46,204,113],[22,148,86],[80,225,140],[30,170,95],[15,120,70],[60,215,125]],
+    bg:['#02100a','#010b07','#010704']
   },
-  obsidian: {
-    name:'Obsidian',
-    orb:'radial-gradient(circle, #ff6600 0%, #cc4400 60%, #441100 100%)',
-    blobs:[[255,100,0],[220,70,0],[255,140,40],[200,60,0],[180,50,0],[240,110,20]],
-    bg:['#120600','#0d0400','#080300']
+  pearl: {
+    name:'Pearl',
+    orb:'radial-gradient(circle, #fdf0e6 0%, #d9b8c8 50%, #6a8a7a 100%)',
+    blobs:[[253,240,230],[217,184,200],[200,225,205],[235,210,220],[180,200,210],[245,225,225]],
+    bg:['#0c0a0c','#08070a','#050407']
   },
-  sakura: {
-    name:'Sakura',
-    orb:'radial-gradient(circle, #ffb7c5 0%, #e8789a 60%, #8b3a5a 100%)',
-    blobs:[[255,180,200],[230,140,170],[255,200,215],[210,120,155],[240,160,185],[255,190,210]],
-    bg:['#120608','#0e0506','#0a0304']
+  ruby: {
+    name:'Ruby',
+    orb:'radial-gradient(circle, #e0115f 0%, #a00838 60%, #3a0014 100%)',
+    blobs:[[224,17,95],[160,8,56],[245,60,120],[185,12,70],[130,5,45],[210,30,90]],
+    bg:['#120208','#0c0105','#070003']
   },
-  matrix: {
-    name:'Matrix',
-    orb:'radial-gradient(circle, #00ff41 0%, #00cc33 60%, #003311 100%)',
-    blobs:[[0,255,65],[0,200,50],[40,255,100],[0,180,45],[0,160,40],[20,240,80]],
-    bg:['#000f05','#000b04','#000803']
+  peridot: {
+    name:'Peridot',
+    orb:'radial-gradient(circle, #b4d100 0%, #7e9400 60%, #2e3700 100%)',
+    blobs:[[180,209,0],[126,148,0],[205,235,60],[150,180,0],[100,120,0],[195,222,30]],
+    bg:['#0a0e00','#070a00','#040600']
   },
-  copper: {
-    name:'Copper',
-    orb:'radial-gradient(circle, #ffaa44 0%, #cc7700 60%, #442200 100%)',
-    blobs:[[255,170,68],[220,130,30],[255,190,100],[200,120,20],[180,100,10],[240,160,60]],
-    bg:['#120900','#0d0700','#080500']
+  sapphire: {
+    name:'Sapphire',
+    orb:'radial-gradient(circle, #0f52ba 0%, #0a3580 60%, #03102e 100%)',
+    blobs:[[15,82,186],[10,53,128],[60,120,220],[30,90,190],[8,40,110],[45,105,205]],
+    bg:['#02060f','#01040b','#010207']
   },
-  midnight: {
-    name:'Midnight',
-    orb:'radial-gradient(circle, #4466ff 0%, #2233cc 60%, #0a1155 100%)',
-    blobs:[[68,102,255],[40,70,220],[100,130,255],[50,80,200],[30,60,180],[80,110,240]],
-    bg:['#02040f','#01030a','#010207']
+  opal: {
+    name:'Opal',
+    orb:'radial-gradient(circle, #a8e6cf 0%, #ff8ba7 45%, #6ec6ff 100%)',
+    blobs:[[168,230,207],[255,139,167],[110,198,255],[255,200,120],[180,150,255],[140,240,200]],
+    bg:['#0a0c10','#07080c','#050608']
   },
-  toxic: {
-    name:'Toxic',
-    orb:'radial-gradient(circle, #aaff00 0%, #77cc00 60%, #224400 100%)',
-    blobs:[[170,255,0],[140,220,0],[200,255,40],[120,200,0],[100,180,0],[180,240,20]],
-    bg:['#080f00','#060a00','#040700']
+  citrine: {
+    name:'Citrine',
+    orb:'radial-gradient(circle, #f0a500 0%, #c47a00 60%, #4a2c00 100%)',
+    blobs:[[240,165,0],[196,122,0],[255,200,60],[220,140,0],[160,95,0],[245,180,30]],
+    bg:['#100a00','#0b0700','#070400']
   },
-  crimson: {
-    name:'Crimson',
-    orb:'radial-gradient(circle, #ff2244 0%, #cc0022 60%, #440011 100%)',
-    blobs:[[255,34,68],[220,0,40],[255,80,100],[200,0,30],[180,0,25],[240,40,80]],
-    bg:['#120005','#0d0004','#080003']
-  },
-  slate: {
-    name:'Slate',
-    orb:'radial-gradient(circle, #94a3b8 0%, #64748b 60%, #1e293b 100%)',
-    blobs:[[148,163,184],[100,116,139],[180,194,210],[80,100,120],[60,80,100],[160,175,195]],
-    bg:['#0a0d12','#07090e','#05060a']
-  },
-  amber: {
-    name:'Amber',
-    orb:'radial-gradient(circle, #ffd700 0%, #ffaa00 60%, #664400 100%)',
-    blobs:[[255,215,0],[230,180,0],[255,230,60],[210,160,0],[190,140,0],[245,210,30]],
-    bg:['#120c00','#0d0900','#080600']
-  },
-  ultraviolet: {
-    name:'Ultraviolet',
-    orb:'radial-gradient(circle, #9900ff 0%, #6600cc 60%, #220044 100%)',
-    blobs:[[153,0,255],[120,0,220],[190,60,255],[100,0,200],[80,0,180],[170,40,240]],
-    bg:['#09000f','#06000a','#040008']
+  turquoise: {
+    name:'Turquoise',
+    orb:'radial-gradient(circle, #30d5c8 0%, #1a8f9e 60%, #06343c 100%)',
+    blobs:[[48,213,200],[26,143,158],[90,230,220],[40,180,180],[20,110,125],[70,220,210]],
+    bg:['#021010','#010b0c','#010708']
   },
   rose: {
     name:'Rose',
@@ -6962,25 +6971,91 @@ var NEBULA_THEMES = {
     blobs:[[255,107,107],[230,70,70],[255,150,150],[210,50,50],[190,40,40],[245,120,120]],
     bg:['#120404','#0d0303','#080202']
   },
-  glacier: {
-    name:'Glacier',
-    orb:'radial-gradient(circle, #a8edea 0%, #5bc8c0 60%, #1a5c58 100%)',
-    blobs:[[168,237,234],[120,200,196],[200,245,242],[100,180,176],[80,160,156],[180,228,225]],
-    bg:['#021210','#010e0c','#010a08']
+  sakura: {
+    name:'Sakura',
+    orb:'radial-gradient(circle, #ffb7c5 0%, #e8789a 60%, #8b3a5a 100%)',
+    blobs:[[255,180,200],[230,140,170],[255,200,215],[210,120,155],[240,160,185],[255,190,210]],
+    bg:['#120608','#0e0506','#0a0304']
   },
-  solar: {
-    name:'Solar',
-    orb:'radial-gradient(circle, #ffcc00 0%, #ff8800 60%, #cc3300 100%)',
-    blobs:[[255,200,0],[255,140,0],[255,220,60],[240,100,0],[220,80,0],[255,180,30]],
-    bg:['#120800','#0d0600','#080400']
+  arctic: {
+    name:'Arctic',
+    orb:'radial-gradient(circle, #e0f4ff 0%, #90cdf4 60%, #2c5282 100%)',
+    blobs:[[200,235,255],[160,210,240],[220,245,255],[180,220,245],[140,195,230],[210,238,255]],
+    bg:['#0a1520','#071018','#050c14']
   },
 
-  // ── Multi-color gradient palettes ─────────────────────────
-  phantom: {
-    name:'Phantom',
-    orb:'radial-gradient(circle, #e040fb 0%, #7b1fa2 60%, #1a0033 100%)',
-    blobs:[[224,64,251],[123,31,162],[0,230,118],[200,40,230],[0,200,100],[180,30,200]],
-    bg:['#0d0014','#09000f','#06000a']
+  // ══ VIVID — Birthstone + complementary color blends + kept themes ══
+  garnetBlend: {
+    name:'Garnet Glow',
+    orb:'radial-gradient(circle, #b3122c 0%, #12b39a 60%, #06231f 100%)',
+    blobs:[[179,18,44],[18,179,154],[230,50,80],[20,200,170],[140,10,34],[60,220,195]],
+    bg:['#0a0608','#070406','#050304']
+  },
+  amethystBlend: {
+    name:'Amethyst Flare',
+    orb:'radial-gradient(circle, #9966cc 0%, #99cc66 60%, #2a3815 100%)',
+    blobs:[[153,102,204],[153,204,102],[185,135,230],[170,225,110],[110,70,165],[130,200,70]],
+    bg:['#0a0810','#07060b','#050407']
+  },
+  aquaBlend: {
+    name:'Aqua Spark',
+    orb:'radial-gradient(circle, #7fffd4 0%, #ff7faa 60%, #5a1f33 100%)',
+    blobs:[[127,255,212],[255,127,170],[160,255,230],[255,150,190],[60,200,170],[230,90,140]],
+    bg:['#0a0c0c','#070909','#050606']
+  },
+  rubyBlend: {
+    name:'Ruby Fire',
+    orb:'radial-gradient(circle, #e0115f 0%, #11e092 60%, #042a1c 100%)',
+    blobs:[[224,17,95],[17,224,146],[245,60,130],[40,230,160],[160,10,68],[70,235,180]],
+    bg:['#0c0407','#080305','#050203']
+  },
+  emeraldBlend: {
+    name:'Emerald Pulse',
+    orb:'radial-gradient(circle, #2ecc71 0%, #cc2e89 60%, #38112a 100%)',
+    blobs:[[46,204,113],[204,46,137],[80,225,140],[230,70,160],[30,160,90],[210,50,130]],
+    bg:['#0a0c0a','#070907','#050605']
+  },
+  sapphireBlend: {
+    name:'Sapphire Ember',
+    orb:'radial-gradient(circle, #0f52ba 0%, #ba770f 60%, #2e1d03 100%)',
+    blobs:[[15,82,186],[186,119,15],[60,120,220],[220,160,40],[10,55,130],[205,140,25]],
+    bg:['#06080f','#04050b','#030307']
+  },
+  peridotBlend: {
+    name:'Peridot Bloom',
+    orb:'radial-gradient(circle, #b4d100 0%, #5000d1 60%, #16003a 100%)',
+    blobs:[[180,209,0],[80,0,209],[205,235,60],[110,30,225],[130,150,0],[95,10,200]],
+    bg:['#08090c','#060608','#040406']
+  },
+  citrineBlend: {
+    name:'Citrine Surge',
+    orb:'radial-gradient(circle, #f0a500 0%, #0050f0 60%, #001838 100%)',
+    blobs:[[240,165,0],[0,80,240],[255,200,60],[40,120,255],[160,95,0],[20,90,225]],
+    bg:['#0c0a06','#080704','#050403']
+  },
+  turquoiseBlend: {
+    name:'Turquoise Heat',
+    orb:'radial-gradient(circle, #30d5c8 0%, #d53040 60%, #3a0c10 100%)',
+    blobs:[[48,213,200],[213,48,64],[90,230,220],[235,70,90],[20,150,140],[220,40,55]],
+    bg:['#0a0c0c','#070909','#050606']
+  },
+  pearlBlend: {
+    name:'Pearl Prism',
+    orb:'radial-gradient(circle, #fdf0e6 0%, #6ad1ff 55%, #1a4a66 100%)',
+    blobs:[[253,240,230],[106,209,255],[255,200,210],[120,225,255],[200,180,220],[90,190,250]],
+    bg:['#080a0c','#060709','#040506']
+  },
+  opalBlend: {
+    name:'Opal Aura',
+    orb:'radial-gradient(circle, #a8e6cf 0%, #e6a8bf 45%, #a8bfe6 100%)',
+    blobs:[[168,230,207],[230,168,191],[168,191,230],[255,220,150],[200,160,240],[150,240,210]],
+    bg:['#0a0b0d','#07080a','#050608']
+  },
+  diamondBlend: {
+    name:'Diamond Spectrum',
+    orb:'radial-gradient(circle, #ffffff 0%, #ffaad4 40%, #aad4ff 100%)',
+    blobs:[[255,255,255],[255,170,212],[170,212,255],[212,255,200],[255,220,170],[200,180,255]],
+    bg:['#0b0c0e','#08090b','#060708']
   },
   inferno: {
     name:'Inferno',
@@ -6988,17 +7063,11 @@ var NEBULA_THEMES = {
     blobs:[[255,109,0],[221,44,0],[0,176,255],[255,80,0],[0,150,220],[200,40,0]],
     bg:['#130400','#0e0300','#090200']
   },
-  bioluminescence: {
-    name:'Bioluminescent',
-    orb:'radial-gradient(circle, #00e5ff 0%, #00838f 60%, #001f24 100%)',
-    blobs:[[0,229,255],[0,131,143],[255,23,68],[0,200,230],[255,0,50],[0,180,200]],
-    bg:['#00080a','#000608','#000405']
-  },
-  dusk: {
-    name:'Dusk',
-    orb:'radial-gradient(circle, #ff6f61 0%, #c2185b 60%, #3d0026 100%)',
-    blobs:[[255,111,97],[194,24,91],[100,181,246],[220,60,100],[80,160,240],[180,20,80]],
-    bg:['#130009','#0e0007','#090005']
+  abyss: {
+    name:'Abyss',
+    orb:'radial-gradient(circle, #1de9b6 0%, #1565c0 60%, #000d1f 100%)',
+    blobs:[[29,233,182],[21,101,192],[255,171,0],[20,200,160],[200,130,0],[15,80,160]],
+    bg:['#000510','#00040c','#000308']
   },
   aurora: {
     name:'Aurora',
@@ -7006,83 +7075,55 @@ var NEBULA_THEMES = {
     blobs:[[105,255,71],[0,229,204],[0,229,204],[80,240,60],[0,200,180],[50,230,40]],
     bg:['#000d08','#000a06','#000704']
   },
-  nebula: {
-    name:'Nebula',
-    orb:'radial-gradient(circle, #ff4081 0%, #651fff 60%, #1a0040 100%)',
-    blobs:[[255,64,129],[101,31,255],[255,64,129],[200,40,220],[80,20,240],[255,40,100]],
-    bg:['#0a0014','#07000f','#05000a']
+
+  // ══ GRADIENT — Seasons (early/late) + kept themes ══
+  earlySpring: {
+    name:'Early Spring',
+    orb:'radial-gradient(circle, #c8e89a 0%, #88c0a0 50%, #f7c8d8 100%)',
+    blobs:[[200,232,154],[136,192,160],[247,200,216],[180,220,140],[160,210,180],[230,180,200]],
+    bg:['#080c08','#060906','#040604']
   },
-  abyss: {
-    name:'Abyss',
-    orb:'radial-gradient(circle, #1de9b6 0%, #1565c0 60%, #000d1f 100%)',
-    blobs:[[29,233,182],[21,101,192],[255,171,0],[20,200,160],[200,130,0],[15,80,160]],
-    bg:['#000510','#00040c','#000308']
+  lateSpring: {
+    name:'Late Spring',
+    orb:'radial-gradient(circle, #7ec850 0%, #f0a0c0 45%, #a0d8e8 100%)',
+    blobs:[[126,200,80],[240,160,192],[160,216,232],[200,230,120],[230,140,180],[120,200,220]],
+    bg:['#070c07','#050905','#040604']
   },
-  volcano: {
-    name:'Volcano',
-    orb:'radial-gradient(circle, #ffeb3b 0%, #e53935 60%, #1a0000 100%)',
-    blobs:[[255,235,59],[229,57,53],[255,235,59],[240,200,40],[220,50,50],[255,220,30]],
-    bg:['#120000','#0d0000','#080000']
+  earlySummer: {
+    name:'Early Summer',
+    orb:'radial-gradient(circle, #ffd24a 0%, #4ac8d8 50%, #50c878 100%)',
+    blobs:[[255,210,74],[74,200,216],[80,200,120],[255,180,60],[100,220,200],[120,210,90]],
+    bg:['#0c0a04','#090703','#060402']
   },
-  prism: {
-    name:'Prism',
-    orb:'radial-gradient(circle, #00b0ff 0%, #aa00ff 60%, #0d001a 100%)',
-    blobs:[[0,176,255],[170,0,255],[0,230,118],[0,150,230],[150,0,230],[0,200,100]],
-    bg:['#04000d','#030009','#020006']
+  lateSummer: {
+    name:'Late Summer',
+    orb:'radial-gradient(circle, #ff9a3c 0%, #ffd24a 45%, #e85c5c 100%)',
+    blobs:[[255,154,60],[255,210,74],[232,92,92],[255,180,50],[240,120,80],[255,200,100]],
+    bg:['#0e0804','#0a0603','#070402']
   },
-  ember: {
-    name:'Ember',
-    orb:'radial-gradient(circle, #ffd740 0%, #ff6d00 60%, #1a0800 100%)',
-    blobs:[[255,215,64],[255,109,0],[0,229,204],[240,190,40],[0,200,180],[220,90,0]],
-    bg:['#0d0600','#090400','#060300']
+  earlyAutumn: {
+    name:'Early Autumn',
+    orb:'radial-gradient(circle, #e8902c 0%, #c0502a 50%, #8a6a3a 100%)',
+    blobs:[[232,144,44],[192,80,42],[180,130,70],[230,120,50],[200,100,40],[210,150,80]],
+    bg:['#0e0904','#0a0603','#070402']
   },
-  synthwave: {
-    name:'Synthwave',
-    orb:'radial-gradient(circle, #ff71ce 0%, #b967ff 40%, #01cdfe 100%)',
-    blobs:[[255,113,206],[185,103,255],[1,205,254],[5,255,161],[255,113,206],[100,50,200]],
-    bg:['#0d0020','#08001a','#040010']
+  lateAutumn: {
+    name:'Late Autumn',
+    orb:'radial-gradient(circle, #b5402a 0%, #7a3520 50%, #4a2818 100%)',
+    blobs:[[181,64,42],[122,53,32],[160,90,50],[200,80,40],[140,60,35],[180,100,60]],
+    bg:['#0c0604','#080403','#050302']
   },
-  tropical: {
-    name:'Tropical',
-    orb:'radial-gradient(circle, #f9ca24 0%, #f0932b 35%, #6ab04c 70%, #22a6b3 100%)',
-    blobs:[[249,202,36],[240,147,43],[106,176,76],[34,166,179],[248,239,186],[72,219,138]],
-    bg:['#001a14','#00120e','#000c08']
+  earlyWinter: {
+    name:'Early Winter',
+    orb:'radial-gradient(circle, #b8d0e0 0%, #7090b0 50%, #c0c8d8 100%)',
+    blobs:[[184,208,224],[112,144,176],[192,200,216],[160,190,215],[130,160,195],[200,215,230]],
+    bg:['#080a0e','#06080b','#040608']
   },
-  citrus: {
-    name:'Citrus',
-    orb:'radial-gradient(circle, #fddb3a 0%, #f97b22 40%, #ee4540 100%)',
-    blobs:[[253,219,58],[249,123,34],[238,69,64],[192,36,122],[100,200,80],[255,180,0]],
-    bg:['#150800','#100600','#0a0400']
-  },
-  arcticaurora: {
-    name:'Arctic Aurora',
-    orb:'radial-gradient(circle, #00f5d4 0%, #00bbf9 40%, #9b5de5 100%)',
-    blobs:[[0,245,212],[0,187,249],[155,93,229],[248,93,62],[254,228,64],[0,210,180]],
-    bg:['#00060f','#00040c','#000208']
-  },
-  midnightglow: {
-    name:'Midnight',
-    orb:'radial-gradient(circle, #7400b8 0%, #5e60ce 40%, #48cae4 100%)',
-    blobs:[[116,0,184],[94,96,206],[72,202,228],[80,200,120],[144,0,220],[60,100,240]],
-    bg:['#000614','#00040f','#00020a']
-  },
-  sunset: {
-    name:'Sunset',
-    orb:'radial-gradient(circle, #ff9a3c 0%, #ff4d7e 45%, #9b2fae 100%)',
-    blobs:[[255,154,60],[255,77,126],[155,47,174],[255,200,80],[220,50,100],[180,30,160]],
-    bg:['#0f0008','#0a0006','#060004']
-  },
-  neonCity: {
-    name:'Neon City',
-    orb:'radial-gradient(circle, #00ffcc 0%, #ff00aa 50%, #3300ff 100%)',
-    blobs:[[0,255,204],[255,0,170],[51,0,255],[255,220,0],[0,200,255],[200,0,200]],
-    bg:['#000a14','#000710','#00040c']
-  },
-  forest: {
-    name:'Forest',
-    orb:'radial-gradient(circle, #52b788 0%, #2d6a4f 50%, #1b4332 100%)',
-    blobs:[[82,183,136],[45,106,79],[95,220,150],[180,220,80],[30,140,80],[120,200,100]],
-    bg:['#00080a','#000608','#000406']
+  lateWinter: {
+    name:'Late Winter',
+    orb:'radial-gradient(circle, #d8e8f0 0%, #9ab8d0 50%, #5a7a98 100%)',
+    blobs:[[216,232,240],[154,184,208],[200,222,238],[170,200,225],[120,155,185],[210,228,242]],
+    bg:['#070a0c','#050709','#040506']
   },
   galaxy2: {
     name:'Galaxy',
@@ -7096,29 +7137,6 @@ var NEBULA_THEMES = {
     blobs:[[255,133,161],[255,194,209],[168,218,220],[205,180,219],[255,210,140],[180,230,200]],
     bg:['#0a000f','#08000c','#060008']
   }
-};
-// ─── KEYBOARD FOCUS STATE ─────────────────────────────────────────────────────
-// Must be after NEBULA_THEMES so Object.keys() returns all themes
-var THEME_KEYS   = Object.keys(NEBULA_THEMES);
-var THEME_KEYS_CLASSIC = ['default','void','ocean','neon','arctic','obsidian','sakura','matrix',
-                          'copper','midnight','toxic','crimson','slate','amber','ultraviolet','rose','glacier','solar'];
-var THEME_KEYS_EXOTIC    = ['phantom','inferno','bioluminescence','dusk','aurora','nebula',
-                            'abyss','volcano','prism','ember'];
-var THEME_KEYS_GRADIENT  = ['synthwave','tropical','citrus','arcticaurora','midnightglow',
-                            'sunset','neonCity','forest','galaxy2','candy'];
-var ROW_COLS     = [THEME_KEYS_CLASSIC.length + THEME_KEYS_EXOTIC.length + THEME_KEYS_GRADIENT.length, 5, 5, 3, 3, 3, 2, 3, 3, 1];
-var prefFocusRow = 0;
-var prefFocusCol = 0;
-var _prefsOpen   = false; // global flag checked by all key handlers
-
-
-// ─── PREFS STATE ──────────────────────────────────────────────────────────────
-var DEFAULT_PREFS = { theme:'default', intensity:'normal', particles:'normal', fontSize:'normal', showDesc:'show', clockFmt:'default', motion:'normal', animStyle:'nebula' };
-var userPrefs = Object.assign({}, DEFAULT_PREFS);
-
-function loadPrefs() {
-  try { var s = JSON.parse(localStorage.getItem('xmb-prefs') || 'null'); if (s) userPrefs = Object.assign({}, DEFAULT_PREFS, s); } catch(e) {}
-  applyPrefs(userPrefs);
 }
 function savePrefs() {
   try { localStorage.setItem('xmb-prefs', JSON.stringify(userPrefs)); } catch(e) {}
@@ -7131,7 +7149,7 @@ var prefClockOverride = null;
 window.addEventListener('load', function() { loadPrefs(); });
 
 function applyPrefs(prefs) {
-  var theme = NEBULA_THEMES[prefs.theme] || NEBULA_THEMES.default;
+  var theme = NEBULA_THEMES[prefs.theme] || NEBULA_THEMES.garnet;
   activeBlobs = BLOBS.map(function(b,i){ return {x:b.x,y:b.y,r:b.r,rgb:theme.blobs[i]||b.rgb,a:b.a,spd:b.spd}; });
   nebulaBackground = theme.bg;
   document.documentElement.style.setProperty('--bg-deep', theme.bg[0] || '#050508');
