@@ -1235,7 +1235,7 @@ function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   // On mobile, use Canvas 2D nebula (real cloud structure) instead of flat GL gradient
   var nebulaUsesGL = !isMobile;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || (animMode === 'nebula' && nebulaUsesGL) || animMode === 'underwater');
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || (animMode === 'nebula' && nebulaUsesGL) || animMode === 'underwater' || (animMode === 'wave2' && !isMobile));
   // glCanvas is always offscreen — GL renders there then gets composited
   // onto the single visible 2D canvas via ctx.drawImage() in glRenderFrame
   // No canvas switching needed — eliminates all Windows bleed-through issues
@@ -1251,7 +1251,7 @@ function animLoop() {
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
-    case 'wave2':     drawWavePS3v2();                           break;
+    case 'wave2':     useGL ? renderGLWave() : drawWavePS3v2();   break;
     case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
@@ -3102,6 +3102,8 @@ var glDeepSeaLocs    = {};
 var glProgCrystals   = null;
 var glProgGalaxy     = null;
 var glGalaxyLocs     = {};
+var glProgWave       = null;
+var glWaveLocs       = {};
 var glCrystalLocs    = {};
 var glNebLocs     = {};
 var glNebulaSeed  = Math.random(); // randomizes blob positions on each load
@@ -3705,6 +3707,97 @@ var GL_GALAXY_FRAG = [
 ].join('\n');
 
 
+var GL_WAVE_FRAG = [
+  'precision highp float;',
+  'uniform float u_time;',
+  'uniform vec2  u_res;',
+  'uniform float u_intensity;',
+  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
+  'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  '',
+  '// Height field of the flowing wave surface at world xz',
+  'float waveH(vec2 p, float t){',
+  '  float h = 0.0;',
+  '  h += sin(p.x*0.9 + t*1.1) * 0.55;',
+  '  h += sin(p.x*1.7 - t*0.7 + p.y*0.6) * 0.28;',
+  '  h += sin((p.x*0.5 + p.y*1.3) + t*0.9) * 0.35;',
+  '  h += sin(p.y*0.8 - t*0.5) * 0.30;',
+  '  h += sin((p.x*2.3 - p.y*0.4) + t*1.4) * 0.12;',
+  '  // Ribbon envelope — concentrate height near z=0 band',
+  '  float env = exp(-p.y*p.y*0.10);',
+  '  return h * env;',
+  '}',
+  '',
+  '// Surface normal via finite differences',
+  'vec3 waveN(vec2 p, float t){',
+  '  float e = 0.06;',
+  '  float hL = waveH(p - vec2(e,0.0), t);',
+  '  float hR = waveH(p + vec2(e,0.0), t);',
+  '  float hD = waveH(p - vec2(0.0,e), t);',
+  '  float hU = waveH(p + vec2(0.0,e), t);',
+  '  return normalize(vec3(hL-hR, 2.0*e, hD-hU));',
+  '}',
+  '',
+  'void main(){',
+  '  vec2 uv = gl_FragCoord.xy / u_res;',
+  '  vec2 sc = uv*2.0-1.0;',
+  '  sc.x *= u_res.x/u_res.y;',
+  '  float t = u_time * 0.0012;',
+  '',
+  '  // Camera: looking across the wave at a low angle (PS3 perspective)',
+  '  vec3 ro = vec3(0.0, 1.6, 5.0);',
+  '  vec3 rd = normalize(vec3(sc.x, sc.y*0.7 - 0.18, -1.0));',
+  '',
+  '  // Ray-march the height field (surface at y = waveH)',
+  '  vec3 col = mix(u_bg0, u_bg1, uv.y);',
+  '  float tHit = -1.0;',
+  '  vec3 hitP;',
+  '  float tCur = 0.1;',
+  '  for(int i=0;i<60;i++){',
+  '    vec3 pos = ro + rd*tCur;',
+  '    float surf = waveH(pos.xz, t) * 1.1;',
+  '    float diff = pos.y - surf;',
+  '    if(diff < 0.02){ tHit = tCur; hitP = pos; break; }',
+  '    tCur += max(0.04, diff*0.45);',
+  '    if(tCur > 18.0) break;',
+  '  }',
+  '',
+  '  if(tHit > 0.0){',
+  '    vec3 n = waveN(hitP.xz, t);',
+  '    // Lighting — key light from upper front, rim light from behind',
+  '    vec3 L1 = normalize(vec3(0.3, 0.8, 0.5));',
+  '    vec3 L2 = normalize(vec3(-0.4, 0.3, -0.6));',
+  '    float d1 = max(dot(n, L1), 0.0);',
+  '    float d2 = max(dot(n, L2), 0.0);',
+  '    vec3 V = normalize(ro - hitP);',
+  '    vec3 H = normalize(L1 + V);',
+  '    float spec = pow(max(dot(n,H),0.0), 42.0);',
+  '',
+  '    // Color across the ribbon width + by height (crest vs trough)',
+  '    float widthF = clamp(hitP.x*0.12+0.5, 0.0, 1.0);',
+  '    float heightF = clamp(waveH(hitP.xz,t)*0.5+0.5, 0.0, 1.0);',
+  '    vec3 base = mix(u_c0, u_c1, widthF);',
+  '    base = mix(base, u_c2, heightF*0.6);',
+  '    vec3 trough = mix(u_c3, u_c4, widthF);',
+  '    vec3 surfCol = mix(trough, base, heightF);',
+  '',
+  '    vec3 lit = surfCol * (0.25 + d1*0.85) + u_c5 * d2 * 0.35;',
+  '    lit += vec3(1.0) * spec * 0.9;',
+  '    // Distance fade',
+  '    float fog = exp(-tHit*0.10);',
+  '    col = mix(col, lit, fog);',
+  '    // Crest glow — bright where height is high',
+  '    col += base * pow(heightF,3.0) * 0.4 * u_intensity;',
+  '  }',
+  '',
+  '  // Apply intensity and a soft vignette',
+  '  col *= 0.6 + 0.4*u_intensity;',
+  '  col *= 1.0 - 0.35*smoothstep(0.6,1.5,length(sc));',
+  '  gl_FragColor = vec4(col, 1.0);',
+  '}'
+].join('\n');
+
+
 function initWebGL() {
   try {
     // OffscreenCanvas lives completely outside the DOM — no display/positioning issues
@@ -3739,6 +3832,7 @@ function initWebGL() {
     glProgDeepSea   = glCompileProgram(GL_VERT, GL_DEEPSEA_FRAG);
     glProgCrystals  = glCompileProgram(GL_VERT, GL_CRYSTALS_FRAG);
     glProgGalaxy    = glCompileProgram(GL_VERT, GL_GALAXY_FRAG);
+    glProgWave      = glCompileProgram(GL_VERT, GL_WAVE_FRAG);
 
     // Independent failures — one bad shader doesn't kill the rest
     if (!glProgAurora && !glProgInk && !glProgNebula && !glProgDeepSea) { gl = null; return false; }
@@ -3751,6 +3845,7 @@ function initWebGL() {
     if (glProgDeepSea)   glDeepSeaLocs   = glCacheUniforms(glProgDeepSea);
     if (glProgCrystals) glCrystalLocs   = glCacheUniforms(glProgCrystals);
     if (glProgGalaxy)   glGalaxyLocs    = glCacheUniforms(glProgGalaxy);
+    if (glProgWave)     glWaveLocs      = glCacheUniforms(glProgWave);
 
     // Handle context loss gracefully
     glCanvas.addEventListener('webglcontextlost', function(e) {
@@ -3835,6 +3930,7 @@ function renderGLCrystals(){ if (glProgCrystals)glRenderFrame(glProgCrystals,glC
 function renderGLGalaxy()  { if (glProgGalaxy)  glRenderFrame(glProgGalaxy,  glGalaxyLocs);       else drawGalaxy(); }
 function renderGLInk()     { if (glProgInk)     glRenderFrame(glProgInk,     glInkLocs);          else { glSupported = false; drawInkWater(); } }
 function renderGLNebula()  { if (glProgNebula)  glRenderFrame(glProgNebula,  glNebLocs, true);    else { glSupported = false; drawNebula(); } }
+function renderGLWave()    { if (glProgWave)    glRenderFrame(glProgWave,    glWaveLocs, true);   else { glSupported = false; drawWavePS3v2(); } }
 
 // ── Init on load ──────────────────────────────────────────────────────────
 // initWebGL() is now called from window.load handler above
