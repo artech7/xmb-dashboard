@@ -1251,6 +1251,7 @@ function animLoop() {
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
+    case 'wave2':     drawWavePS3v2();                           break;
     case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
@@ -2716,6 +2717,106 @@ function drawWavePS3() {
 
 // ── 7. BOKEH ──────────────────────────────────────────────────────────────────
 var bokehCircles = null;
+
+
+// ── XMB Wave 2.0 — authentic PS3 flowing ribbon ──────────────────────────────
+function drawWavePS3v2() {
+  ctx.clearRect(0, 0, W, H);
+  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
+
+  var spd  = animSpeed > 0 ? animSpeed : 0;
+  var T    = t * spd * 0.0009;
+  var pal  = themeRgbPalette || [[120,180,255]];
+  var iMult = blobOpacityMult || 1.0;
+
+  function palAt(f) {
+    // f in 0..1 → interpolated palette color
+    var n = pal.length;
+    var x = f * (n - 1);
+    var lo = Math.floor(x), hi = Math.min(lo + 1, n - 1);
+    var fr = x - lo;
+    var a = pal[lo], b = pal[hi];
+    return [Math.round(a[0]+(b[0]-a[0])*fr),
+            Math.round(a[1]+(b[1]-a[1])*fr),
+            Math.round(a[2]+(b[2]-a[2])*fr)];
+  }
+
+  // The PS3 wave is a broad luminous ribbon crossing the screen on a gentle
+  // diagonal, made of many thin horizontal filaments that undulate. Each
+  // filament is a sine curve; together they form a flowing translucent sheet.
+
+  var bandCenter = H * 0.52;          // vertical center of the ribbon
+  var bandSpread = H * 0.34;          // how tall the ribbon spreads
+  var FILAMENTS  = isMobile ? 26 : 46;
+  var segs       = isMobile ? 36 : 64;
+
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (var fi = 0; fi < FILAMENTS; fi++) {
+    var ft = fi / (FILAMENTS - 1);          // 0..1 across ribbon thickness
+    // Each filament sits at a slightly different base height, drifting
+    var baseY = bandCenter + (ft - 0.5) * bandSpread;
+    // Filaments near the center are brightest (core of the ribbon)
+    var coreDist = Math.abs(ft - 0.5) * 2;  // 0 center → 1 edge
+    var coreGlow = Math.pow(1 - coreDist, 1.6);
+    var alpha = (0.015 + coreGlow * 0.05) * iMult;
+    if (alpha < 0.004) continue;
+
+    var col = palAt(ft * 0.85 + Math.sin(T + fi * 0.1) * 0.07);
+    ctx.beginPath();
+
+    for (var s = 0; s <= segs; s++) {
+      var px = (s / segs) * W;
+      var u  = s / segs;
+      // Primary travelling wave + secondary ripple + slow diagonal tilt
+      var wave = Math.sin(u * 6.0 + T * 2.2 + fi * 0.18) * 1.0
+               + Math.sin(u * 11.0 - T * 1.5 + fi * 0.10) * 0.4
+               + Math.sin(u * 2.3 + T * 0.8) * 0.6;
+      var amp  = (28 + coreGlow * 46) * (H / 900);
+      var tilt = (u - 0.5) * bandSpread * 0.5;  // gentle diagonal sweep
+      var py   = baseY + wave * amp * 0.5 + tilt * Math.sin(T * 0.5);
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+
+    ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+alpha.toFixed(3)+')';
+    ctx.lineWidth = 1.0 + coreGlow * 1.4;
+    ctx.stroke();
+  }
+
+  // Bright specular crest — a few extra-luminous filaments along the core
+  for (var ci = 0; ci < 3; ci++) {
+    var cf = 0.5 + (ci - 1) * 0.04;
+    var ccol = palAt(0.15 + ci * 0.25);
+    ctx.beginPath();
+    for (var s2 = 0; s2 <= segs; s2++) {
+      var px2 = (s2 / segs) * W;
+      var u2  = s2 / segs;
+      var wave2 = Math.sin(u2 * 6.0 + T * 2.2) * 1.0
+                + Math.sin(u2 * 11.0 - T * 1.5) * 0.4
+                + Math.sin(u2 * 2.3 + T * 0.8) * 0.6;
+      var amp2  = 70 * (H / 900);
+      var py2   = bandCenter + (cf - 0.5) * bandSpread + wave2 * amp2 * 0.5;
+      if (s2 === 0) ctx.moveTo(px2, py2);
+      else ctx.lineTo(px2, py2);
+    }
+    ctx.strokeStyle = 'rgba('+ccol[0]+','+ccol[1]+','+ccol[2]+','+(0.10*iMult).toFixed(3)+')';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+  }
+
+  // Soft volumetric glow behind the ribbon
+  var glowCol = palAt(0.4);
+  var rg = ctx.createLinearGradient(0, bandCenter - bandSpread*0.6, 0, bandCenter + bandSpread*0.6);
+  rg.addColorStop(0,   'rgba('+glowCol[0]+','+glowCol[1]+','+glowCol[2]+',0)');
+  rg.addColorStop(0.5, 'rgba('+glowCol[0]+','+glowCol[1]+','+glowCol[2]+','+(0.05*iMult).toFixed(3)+')');
+  rg.addColorStop(1,   'rgba('+glowCol[0]+','+glowCol[1]+','+glowCol[2]+',0)');
+  ctx.fillStyle = rg;
+  ctx.fillRect(0, bandCenter - bandSpread*0.6, W, bandSpread*1.2);
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.lineWidth = 1;
+}
 
 function initBokeh() {
   var count = Math.max(40, Math.floor(W * H / 18000));
@@ -4749,7 +4850,7 @@ var _prefsOpen = false; // global flag checked by all key handlers
 
 // Keyboard nav state for prefs panel
 // Row 0 = theme grid (count set after themes load), rows 1-8 = settings, 9 = reset
-var ROW_COLS     = [40, 5, 5, 3, 3, 3, 2, 3, 3, 1];
+var ROW_COLS     = [40, 5, 3, 3, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
@@ -4787,7 +4888,7 @@ function applyKbFocus() {
   if (prefFocusRow === 0) {
     var swatches = document.querySelectorAll('.theme-swatch');
     el = swatches[prefFocusCol];
-  } else if (prefFocusRow === 8) {
+  } else if (prefFocusRow === 10) {
     el = document.getElementById('prefs-reset-btn');
   } else {
     el = document.querySelector('[data-pref-row="'+prefFocusRow+'"][data-pref-col="'+prefFocusCol+'"]');
@@ -4802,7 +4903,7 @@ function activateFocused() {
   if (prefFocusRow === 0) {
     var key = getRenderedThemeOrder()[prefFocusCol];
     if (key) { userPrefs.theme = key; applyPrefs(userPrefs); savePrefs(); renderPrefsUI(); }
-  } else if (prefFocusRow === 8) {
+  } else if (prefFocusRow === 10) {
     userPrefs = Object.assign({}, DEFAULT_PREFS);
     prefFocusRow = 0; prefFocusCol = 0;
     applyPrefs(userPrefs); savePrefs(); renderPrefsUI();
@@ -4994,14 +5095,14 @@ function renderPrefsUI() {
 
   // ── Show/hide settings based on current animation ─────────
   var anim = userPrefs.animStyle || 'nebula';
-  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink'].indexOf(anim) >= 0;
+  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','wave2'].indexOf(anim) >= 0;
   var showParticles = anim === 'bokeh';
   var showRandomize = anim === 'nebula';
 
   // Hide entire Background section if neither row applies
-  var bgSection     = document.querySelector('[data-pref-row="3"]') && document.querySelector('[data-pref-row="3"]').closest('.p-section');
-  var intensityRow  = document.querySelector('[data-pref-row="3"]');
-  var particlesRow  = document.querySelector('[data-pref-row="4"]');
+  var bgSection     = document.querySelector('[data-pref-row="4"]') && document.querySelector('[data-pref-row="4"]').closest('.p-section');
+  var intensityRow  = document.querySelector('[data-pref-row="4"]');
+  var particlesRow  = document.querySelector('[data-pref-row="5"]');
   var randomizeWrap = document.getElementById('prefs-nebula-randomize') && document.getElementById('prefs-nebula-randomize').parentElement;
 
   if (intensityRow)  intensityRow.style.display  = showIntensity ? '' : 'none';
@@ -5011,8 +5112,8 @@ function renderPrefsUI() {
   if (bgSection) bgSection.style.display = (showIntensity || showParticles) ? '' : 'none';
 
   // Update ROW_COLS so keyboard nav skips hidden rows
-  ROW_COLS[3] = showIntensity ? 3 : 0;
-  ROW_COLS[4] = showParticles ? 3 : 0;
+  ROW_COLS[4] = showIntensity ? 3 : 0;
+  ROW_COLS[5] = showParticles ? 3 : 0;
 
   // Re-apply kb focus ring after re-render
   applyKbFocus();
@@ -6825,80 +6926,85 @@ document.addEventListener('keydown', function(e) {
           </div>
         </div>
         <div class="p-row" data-pref-row="2">
-          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:100%">
+          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:100%">
             <button class="p-toggle" data-pref="animStyle" data-val="warp"  data-pref-row="2" data-pref-col="0">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"  data-pref-row="2" data-pref-col="1">XMB Wave</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="2" data-pref-col="2">Particles</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="2" data-pref-col="3">Smoke</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="hex"   data-pref-row="2" data-pref-col="4">Hex Grid</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="wave2" data-pref-row="2" data-pref-col="2">XMB Wave 2</button>
+          </div>
+        </div>
+        <div class="p-row" data-pref-row="3">
+          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:100%">
+            <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="3" data-pref-col="0">Particles</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="3" data-pref-col="1">Smoke</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="hex"   data-pref-row="3" data-pref-col="2">Hex Grid</button>
           </div>
         </div>
       </div>
 
       <div class="p-section">
         <div class="p-section-label">Background</div>
-        <div class="p-row" data-pref-row="3">
+        <div class="p-row" data-pref-row="4">
           <div class="p-row-label">Intensity</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="intensity" data-val="dim"    data-pref-row="3" data-pref-col="0">Dim</button>
-            <button class="p-toggle" data-pref="intensity" data-val="normal" data-pref-row="3" data-pref-col="1">Normal</button>
-            <button class="p-toggle" data-pref="intensity" data-val="vivid"  data-pref-row="3" data-pref-col="2">Vivid</button>
+            <button class="p-toggle" data-pref="intensity" data-val="dim"    data-pref-row="4" data-pref-col="0">Dim</button>
+            <button class="p-toggle" data-pref="intensity" data-val="normal" data-pref-row="4" data-pref-col="1">Normal</button>
+            <button class="p-toggle" data-pref="intensity" data-val="vivid"  data-pref-row="4" data-pref-col="2">Vivid</button>
           </div>
         </div>
-        <div class="p-row" data-pref-row="4">
+        <div class="p-row" data-pref-row="5">
           <div class="p-row-label">Particles</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="particles" data-val="off"    data-pref-row="4" data-pref-col="0">Off</button>
-            <button class="p-toggle" data-pref="particles" data-val="normal" data-pref-row="4" data-pref-col="1">Normal</button>
-            <button class="p-toggle" data-pref="particles" data-val="dense"  data-pref-row="4" data-pref-col="2">Dense</button>
+            <button class="p-toggle" data-pref="particles" data-val="off"    data-pref-row="5" data-pref-col="0">Off</button>
+            <button class="p-toggle" data-pref="particles" data-val="normal" data-pref-row="5" data-pref-col="1">Normal</button>
+            <button class="p-toggle" data-pref="particles" data-val="dense"  data-pref-row="5" data-pref-col="2">Dense</button>
           </div>
         </div>
       </div>
 
       <div class="p-section">
         <div class="p-section-label">Display</div>
-        <div class="p-row" data-pref-row="5">
+        <div class="p-row" data-pref-row="6">
           <div class="p-row-label">Font Size</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="fontSize" data-val="small"  data-pref-row="5" data-pref-col="0">S</button>
-            <button class="p-toggle" data-pref="fontSize" data-val="normal" data-pref-row="5" data-pref-col="1">M</button>
-            <button class="p-toggle" data-pref="fontSize" data-val="large"  data-pref-row="5" data-pref-col="2">L</button>
+            <button class="p-toggle" data-pref="fontSize" data-val="small"  data-pref-row="6" data-pref-col="0">S</button>
+            <button class="p-toggle" data-pref="fontSize" data-val="normal" data-pref-row="6" data-pref-col="1">M</button>
+            <button class="p-toggle" data-pref="fontSize" data-val="large"  data-pref-row="6" data-pref-col="2">L</button>
           </div>
         </div>
-        <div class="p-row" data-pref-row="6">
+        <div class="p-row" data-pref-row="7">
           <div class="p-row-label">Descriptions</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="showDesc" data-val="show" data-pref-row="6" data-pref-col="0">Show</button>
-            <button class="p-toggle" data-pref="showDesc" data-val="hide" data-pref-row="6" data-pref-col="1">Hide</button>
+            <button class="p-toggle" data-pref="showDesc" data-val="show" data-pref-row="7" data-pref-col="0">Show</button>
+            <button class="p-toggle" data-pref="showDesc" data-val="hide" data-pref-row="7" data-pref-col="1">Hide</button>
           </div>
         </div>
       </div>
 
       <div class="p-section">
         <div class="p-section-label">Clock</div>
-        <div class="p-row" data-pref-row="7">
+        <div class="p-row" data-pref-row="8">
           <div class="p-row-label">Format</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="clockFmt" data-val="default" data-pref-row="7" data-pref-col="0">Auto</button>
-            <button class="p-toggle" data-pref="clockFmt" data-val="12h"     data-pref-row="7" data-pref-col="1">12h</button>
-            <button class="p-toggle" data-pref="clockFmt" data-val="24h"     data-pref-row="7" data-pref-col="2">24h</button>
+            <button class="p-toggle" data-pref="clockFmt" data-val="default" data-pref-row="8" data-pref-col="0">Auto</button>
+            <button class="p-toggle" data-pref="clockFmt" data-val="12h"     data-pref-row="8" data-pref-col="1">12h</button>
+            <button class="p-toggle" data-pref="clockFmt" data-val="24h"     data-pref-row="8" data-pref-col="2">24h</button>
           </div>
         </div>
       </div>
 
       <div class="p-section">
         <div class="p-section-label">Motion</div>
-        <div class="p-row" data-pref-row="8">
+        <div class="p-row" data-pref-row="9">
           <div class="p-row-label">Animation</div>
           <div class="p-toggle-group">
-            <button class="p-toggle" data-pref="motion" data-val="normal"  data-pref-row="8" data-pref-col="0">Normal</button>
-            <button class="p-toggle" data-pref="motion" data-val="reduced" data-pref-row="8" data-pref-col="1">Slow</button>
-            <button class="p-toggle" data-pref="motion" data-val="off"     data-pref-row="8" data-pref-col="2">Off</button>
+            <button class="p-toggle" data-pref="motion" data-val="normal"  data-pref-row="9" data-pref-col="0">Normal</button>
+            <button class="p-toggle" data-pref="motion" data-val="reduced" data-pref-row="9" data-pref-col="1">Slow</button>
+            <button class="p-toggle" data-pref="motion" data-val="off"     data-pref-row="9" data-pref-col="2">Off</button>
           </div>
         </div>
       </div>
 
-      <button id="prefs-reset-btn" data-pref-row="9" data-pref-col="0">Reset to Defaults</button>
+      <button id="prefs-reset-btn" data-pref-row="10" data-pref-col="0">Reset to Defaults</button>
 
     </div>
 
