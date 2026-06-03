@@ -4245,8 +4245,13 @@ async function init() {
   renderItems();
 
   if (config.favicon) {
-    var fl = document.querySelector('link[rel="icon"]');
-    if (fl) fl.href = config.favicon;
+    var favLinks = document.querySelectorAll('link[rel="icon"]');
+    favLinks.forEach(function(fl) { fl.href = config.favicon; });
+    // If the data URL is an SVG/PNG, also drop the conflicting type/sizes hints
+    // by removing extra icon links so the browser uses our single source
+    if (favLinks.length > 1) {
+      for (var fi = favLinks.length - 1; fi >= 1; fi--) favLinks[fi].remove();
+    }
   }
 
   bar.style.width = '100%';
@@ -4740,6 +4745,7 @@ var DEFAULT_PREFS = {
   motion:    'normal'
 };
 var userPrefs = Object.assign({}, DEFAULT_PREFS);
+var _prefsOpen = false; // global flag checked by all key handlers
 
 // Keyboard nav state for prefs panel
 // Row 0 = theme grid (count set after themes load), rows 1-8 = settings, 9 = reset
@@ -5397,8 +5403,11 @@ async function saveConfig() {
     updateCategoryUI();
     renderItems();
     var savedFav = config.favicon || '';
-    var fl = document.querySelector('link[rel="icon"]');
-    if (fl) fl.href = savedFav || '/favicon.svg';
+    var favLinks = document.querySelectorAll('link[rel="icon"]');
+    favLinks.forEach(function(fl, i) {
+      if (i === 0) fl.href = savedFav || '/favicon.svg';
+      else fl.remove();
+    });
     status.textContent = '\u2713 Saved';
     status.className = 'ok';
     setTimeout(function() { status.textContent = ''; status.className = ''; }, 2500);
