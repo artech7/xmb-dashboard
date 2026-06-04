@@ -2739,6 +2739,30 @@ function drawWavePS3v2() {
     return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
   }
 
+  // ── Moving blurred background glow that complements the ribbon ──
+  // A few large soft palette blobs drifting slowly behind everything.
+  ctx.globalCompositeOperation = 'lighter';
+  var bgBlobs = [
+    { x:0.25, y:0.40, r:0.55, sx:0.13, sy:0.09, hue:0.0 },
+    { x:0.70, y:0.55, r:0.62, sx:0.10, sy:0.12, hue:0.35 },
+    { x:0.50, y:0.62, r:0.48, sx:0.16, sy:0.07, hue:0.6 },
+    { x:0.85, y:0.35, r:0.45, sx:0.09, sy:0.10, hue:0.85 }
+  ];
+  for (var bi = 0; bi < bgBlobs.length; bi++) {
+    var bb = bgBlobs[bi];
+    var cx = (bb.x + Math.sin(T * 0.6 + bi * 1.7) * bb.sx) * W;
+    var cy = (bb.y + Math.cos(T * 0.5 + bi * 2.1) * bb.sy) * H;
+    var rad = bb.r * Math.min(W, H);
+    var c = palAt(bb.hue + T * 0.04);
+    var op = 0.07 * iMult;
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0,   'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
+    g.addColorStop(0.5, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (op*0.4).toFixed(3) + ')');
+    g.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - rad, cy - rad, rad*2, rad*2);
+  }
+
   // Ribbon centerline at horizontal fraction u (extends past both edges)
   function ribbonY(u) {
     var x = u * Math.PI * 2.0;
@@ -2747,28 +2771,22 @@ function drawWavePS3v2() {
       + Math.sin(x * 1.5  - T * 0.7)        * H * 0.07
       + Math.sin(x * 0.45 + T * 0.5)        * H * 0.05;
   }
-  // Half-thickness — no end pinch (continues past screen), gentle breathing
+  // Half-thickness — wider now, no end pinch, gentle breathing
   function ribbonHalf(u) {
     var breathe = 0.85 + 0.15 * Math.sin(u * 4.0 + T * 1.2);
-    return H * 0.10 * breathe;
+    return H * 0.165 * breathe;   // wider (was 0.10)
   }
 
-  // Draw slightly past the left/right edges so the ribbon runs off-screen
   var SEG  = isMobile ? 56 : 100;
   var uMin = -0.05, uMax = 1.05;
   function uAt(s) { return uMin + (uMax - uMin) * (s / SEG); }
 
-  // ── Single translucent ribbon with soft blurred top/bottom falloff ──
-  // Build the soft edges by stacking several concentric translucent bands:
-  // wide+faint on the outside fading to denser in the core. No hard outline.
+  // ── Single translucent ribbon, brighter, soft blurred top/bottom falloff ──
   var BANDS = isMobile ? 5 : 8;
-  ctx.globalCompositeOperation = 'lighter';
-
   for (var b = BANDS - 1; b >= 0; b--) {
     var bf = b / (BANDS - 1);              // 0 = core, 1 = outermost
-    // Outer bands are wider and fainter -> soft blurred falloff at edges
-    var widthMul = 0.35 + bf * 1.0;        // 0.35 (core) .. 1.35 (outer)
-    var op = (0.030 * (1.0 - bf * 0.78)) * iMult;  // core densest, edges faint
+    var widthMul = 0.30 + bf * 1.05;
+    var op2 = (0.060 * (1.0 - bf * 0.74)) * iMult;  // brighter (was 0.030)
 
     ctx.beginPath();
     for (var s = 0; s <= SEG; s++) {
@@ -2788,25 +2806,29 @@ function drawWavePS3v2() {
     var grad = ctx.createLinearGradient(0, 0, W, 0);
     for (var gi = 0; gi <= 5; gi++) {
       var gf = gi / 5;
-      var c = palAt(gf * 0.85 + T * 0.05);
-      grad.addColorStop(gf, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
+      var c2 = palAt(gf * 0.85 + T * 0.05);
+      grad.addColorStop(gf, 'rgba(' + (c2[0]|0) + ',' + (c2[1]|0) + ',' + (c2[2]|0) + ',' + op2.toFixed(3) + ')');
     }
     ctx.fillStyle = grad;
     ctx.fill();
   }
 
-  // ── Particles flowing along the ribbon ──
-  if (!window._wp || window._wp.length === 0) {
+  // ── Tiny star-like particles that ride along the ribbon ──
+  if (!window._wp || window._wp.length === 0 || window._wp[0].tiny === undefined) {
     window._wp = [];
-    var PC = isMobile ? 40 : 90;
+    var PC = isMobile ? 90 : 220;
     for (var i = 0; i < PC; i++) {
+      // ~75% tiny stars, ~25% larger glowing motes
+      var tiny = Math.random() < 0.75;
       window._wp.push({
         u: Math.random(),
-        band: (Math.random() - 0.5),
+        band: (Math.random() - 0.5) * 1.4,    // spread across (and a bit beyond) thickness
         spd: 0.02 + Math.random() * 0.05,
-        size: 0.6 + Math.random() * 2.2,
-        a: 0.3 + Math.random() * 0.7,
-        ph: Math.random() * Math.PI * 2
+        size: tiny ? (0.4 + Math.random() * 0.9) : (1.4 + Math.random() * 2.2),
+        a: tiny ? (0.4 + Math.random() * 0.6) : (0.3 + Math.random() * 0.6),
+        ph: Math.random() * Math.PI * 2,
+        tiny: tiny,
+        tspd: 1.5 + Math.random() * 4.0       // twinkle speed
       });
     }
   }
@@ -2814,20 +2836,31 @@ function drawWavePS3v2() {
   for (var p = 0; p < wp.length; p++) {
     var pt = wp[p];
     pt.u += pt.spd * 0.01 * (spd > 0 ? 1 : 0);
-    if (pt.u > 1.05) { pt.u = -0.05; pt.band = (Math.random() - 0.5); }
-    var py = ribbonY(pt.u) + pt.band * ribbonHalf(pt.u) * 1.6;
+    if (pt.u > 1.05) { pt.u = -0.05; pt.band = (Math.random() - 0.5) * 1.4; }
+    var py = ribbonY(pt.u) + pt.band * ribbonHalf(pt.u);
     var px = pt.u * W;
-    var tw = 0.6 + 0.4 * Math.sin(T * 5.0 + pt.ph);
+    var tw = 0.55 + 0.45 * Math.sin(T * pt.tspd + pt.ph);
     var pcol = palAt(pt.u + T * 0.05);
-    var pa = pt.a * tw * iMult * 0.8;
+    var pa = pt.a * tw * iMult;
     if (pa <= 0.01) continue;
-    var rad = pt.size * (isMobile ? 1.0 : 1.4);
-    var g2 = ctx.createRadialGradient(px, py, 0, px, py, rad * 3);
-    g2.addColorStop(0, 'rgba(255,255,255,' + pa.toFixed(3) + ')');
-    g2.addColorStop(0.4, 'rgba(' + (pcol[0]|0) + ',' + (pcol[1]|0) + ',' + (pcol[2]|0) + ',' + (pa*0.6).toFixed(3) + ')');
-    g2.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g2;
-    ctx.fillRect(px - rad*3, py - rad*3, rad*6, rad*6);
+
+    if (pt.tiny) {
+      // Crisp little star dot with a faint halo
+      var rad = pt.size * (isMobile ? 1.0 : 1.3);
+      ctx.beginPath();
+      ctx.arc(px, py, rad, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,' + Math.min(1, pa).toFixed(3) + ')';
+      ctx.fill();
+    } else {
+      // Soft glowing mote
+      var rad2 = pt.size * (isMobile ? 1.0 : 1.4);
+      var g2 = ctx.createRadialGradient(px, py, 0, px, py, rad2 * 3);
+      g2.addColorStop(0, 'rgba(255,255,255,' + (pa*0.9).toFixed(3) + ')');
+      g2.addColorStop(0.4, 'rgba(' + (pcol[0]|0) + ',' + (pcol[1]|0) + ',' + (pcol[2]|0) + ',' + (pa*0.55).toFixed(3) + ')');
+      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g2;
+      ctx.fillRect(px - rad2*3, py - rad2*3, rad2*6, rad2*6);
+    }
   }
 
   ctx.globalCompositeOperation = 'source-over';
