@@ -2743,10 +2743,10 @@ function drawWavePS3v2() {
   // A few large soft palette blobs drifting slowly behind everything.
   ctx.globalCompositeOperation = 'lighter';
   var bgBlobs = [
-    { x:0.25, y:0.40, r:0.55, sx:0.13, sy:0.09, hue:0.0 },
-    { x:0.70, y:0.55, r:0.62, sx:0.10, sy:0.12, hue:0.35 },
-    { x:0.50, y:0.62, r:0.48, sx:0.16, sy:0.07, hue:0.6 },
-    { x:0.85, y:0.35, r:0.45, sx:0.09, sy:0.10, hue:0.85 }
+    { x:0.22, y:0.38, r:0.75, sx:0.14, sy:0.10, hue:0.0 },
+    { x:0.72, y:0.58, r:0.82, sx:0.11, sy:0.13, hue:0.35 },
+    { x:0.48, y:0.65, r:0.68, sx:0.17, sy:0.08, hue:0.6 },
+    { x:0.86, y:0.32, r:0.62, sx:0.10, sy:0.11, hue:0.85 }
   ];
   for (var bi = 0; bi < bgBlobs.length; bi++) {
     var bb = bgBlobs[bi];
@@ -2754,11 +2754,11 @@ function drawWavePS3v2() {
     var cy = (bb.y + Math.cos(T * 0.5 + bi * 2.1) * bb.sy) * H;
     var rad = bb.r * Math.min(W, H);
     var c = palAt(bb.hue + T * 0.04);
-    var op = 0.07 * iMult;
+    var op = 0.28 * iMult;   // much more visible (was 0.07)
     var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-    g.addColorStop(0,   'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
-    g.addColorStop(0.5, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (op*0.4).toFixed(3) + ')');
-    g.addColorStop(1,   'rgba(0,0,0,0)');
+    g.addColorStop(0,    'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
+    g.addColorStop(0.45, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (op*0.45).toFixed(3) + ')');
+    g.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fillRect(cx - rad, cy - rad, rad*2, rad*2);
   }
