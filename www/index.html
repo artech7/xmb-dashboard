@@ -2803,12 +2803,13 @@ function drawWavePS3v2() {
   var uMin = -0.05, uMax = 1.05;
   function uAt(s) { return uMin + (uMax - uMin) * (s / SEG); }
 
-  // ── Single translucent ribbon with a SMOOTH (non-banded) soft falloff ──
-  // Render the ribbon to a low-res offscreen canvas, then upscale it. The
-  // bilinear interpolation on the upscale turns the soft edges into a genuine
-  // smooth blur with no visible bands, and low-res keeps it cheap.
-  var rw = Math.max(80, Math.floor(W / 4));
-  var rh = Math.max(60, Math.floor(H / 4));
+  // ── Single translucent ribbon with a SMOOTH soft falloff ──
+  // Draw the ribbon as ONE continuous filled shape onto a low-res offscreen
+  // canvas, blur that small canvas once (cheap at low res), then upscale to
+  // full size. The blur softens the top/bottom edges into a smooth falloff
+  // and the upscale interpolation keeps it band-free — no slices, no stripes.
+  var rw = Math.max(120, Math.floor(W / 3));
+  var rh = Math.max(90,  Math.floor(H / 3));
   if (!window._rib || window._rib.width !== rw || window._rib.height !== rh) {
     window._rib = document.createElement('canvas');
     window._rib.width = rw; window._rib.height = rh;
@@ -2816,34 +2817,44 @@ function drawWavePS3v2() {
   var rc = window._rib;
   var rx = rc.getContext('2d');
   rx.clearRect(0, 0, rw, rh);
-  rx.globalCompositeOperation = 'lighter';
+  rx.filter = 'none';
 
-  // Fill the ribbon as ONE shape, but use a vertical gradient that fades from
-  // a bright core at the centerline to transparent at the edges. Drawn in
-  // vertical slices so the gradient follows the wavy centerline.
-  var SLICES = isMobile ? 48 : 90;
-  for (var sl = 0; sl < SLICES; sl++) {
-    var u = uMin + (uMax - uMin) * (sl / (SLICES - 1));
-    var cyN = ribbonY(u) / H * rh;          // centerline in offscreen space
-    var halfN = ribbonHalf(u) * 1.35 / H * rh;
-    var xPx = u * rw;
-    var sliceW = (uMax - uMin) * rw / (SLICES - 1) + 1;
-    var c2 = palAt(u * 0.85 + T * 0.05);
-    var colStr = (c2[0]|0) + ',' + (c2[1]|0) + ',' + (c2[2]|0);
-    var coreOp = 0.42 * iMult;
-    var vg = rx.createLinearGradient(0, cyN - halfN, 0, cyN + halfN);
-    vg.addColorStop(0.0,  'rgba(' + colStr + ',0)');
-    vg.addColorStop(0.5,  'rgba(' + colStr + ',' + coreOp.toFixed(3) + ')');
-    vg.addColorStop(1.0,  'rgba(' + colStr + ',0)');
-    rx.fillStyle = vg;
-    rx.fillRect(xPx, cyN - halfN, sliceW, halfN * 2);
+  // One closed ribbon shape: top edge L->R, bottom edge R->L
+  var RSEG = isMobile ? 40 : 70;
+  rx.beginPath();
+  for (var s = 0; s <= RSEG; s++) {
+    var u = uMin + (uMax - uMin) * (s / RSEG);
+    var yT = (ribbonY(u) - ribbonHalf(u)) / H * rh;
+    if (s === 0) rx.moveTo(u * rw, yT);
+    else rx.lineTo(u * rw, yT);
   }
+  for (var s2 = RSEG; s2 >= 0; s2--) {
+    var u2 = uMin + (uMax - uMin) * (s2 / RSEG);
+    var yB = (ribbonY(u2) + ribbonHalf(u2)) / H * rh;
+    rx.lineTo(u2 * rw, yB);
+  }
+  rx.closePath();
 
-  // Upscale to full size — interpolation smooths everything into a soft blur
+  // Horizontal palette gradient fill (colour flows along the length)
+  var rgrad = rx.createLinearGradient(0, 0, rw, 0);
+  for (var gi = 0; gi <= 5; gi++) {
+    var gf = gi / 5;
+    var c2 = palAt(gf * 0.85 + T * 0.05);
+    rgrad.addColorStop(gf, 'rgba(' + (c2[0]|0) + ',' + (c2[1]|0) + ',' + (c2[2]|0) + ',' + (0.55 * iMult).toFixed(3) + ')');
+  }
+  rx.fillStyle = rgrad;
+  rx.fill();
+
+  // Upscale to full size, blurring during the blit so edges fall off softly.
+  // One filter pass over a single image (not per-slice) — cheap.
   ctx.globalCompositeOperation = 'lighter';
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  if (ctx.filter !== undefined && !isMobile) {
+    ctx.filter = 'blur(' + Math.max(6, Math.round(H * 0.022)) + 'px)';
+  }
   ctx.drawImage(rc, 0, 0, rw, rh, 0, 0, W, H);
+  ctx.filter = 'none';
 
   // ── Tiny star-like particles that ride along the ribbon ──
   if (!window._wp || window._wp.length === 0 || window._wp[0].tiny === undefined) {
