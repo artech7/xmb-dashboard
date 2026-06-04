@@ -2758,6 +2758,9 @@ function drawWavePS3v2() {
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  // ONE cheap GPU blur pass over all the ribbons (vs per-stroke shadowBlur).
+  // Desktop only; mobile relies on the layered passes alone for perf.
+  if (!isMobile) ctx.filter = 'blur(3px)';
 
   // ── Silky ribbons: many thin translucent filaments braiding over/under ──
   var RIBBONS = isMobile ? 22 : 40;
@@ -2795,26 +2798,24 @@ function drawWavePS3v2() {
     }
 
     var baseW = (0.8 + coreGlow * 2.2) * (isMobile ? 1.0 : 1.3);
-    // Soft blur halo so ribbons are hazy, not crisp lines (skip on mobile for perf)
-    if (!isMobile) {
-      ctx.shadowColor = 'rgba(' + colStr + ',' + alpha.toFixed(3) + ')';
-      ctx.shadowBlur  = 14 + coreGlow * 16;
-    }
-    // Pass 1 — wide, faint underlay (the soft silky body)
-    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.45).toFixed(3) + ')';
+    // Soft silky body via layered translucent passes (cheap — no shadowBlur).
+    // Pass 1 — very wide, very faint halo
+    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.22).toFixed(3) + ')';
+    ctx.lineWidth = baseW * 9.0;
+    ctx.stroke();
+    // Pass 2 — wide, faint underlay
+    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.4).toFixed(3) + ')';
     ctx.lineWidth = baseW * 4.5;
     ctx.stroke();
-    // Pass 2 — medium
+    // Pass 3 — medium
     ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.7).toFixed(3) + ')';
     ctx.lineWidth = baseW * 2.2;
     ctx.stroke();
-    // Pass 3 — thin bright core
-    ctx.shadowBlur = 0;
+    // Pass 4 — thin bright core
     ctx.strokeStyle = 'rgba(' + colStr + ',' + alpha.toFixed(3) + ')';
     ctx.lineWidth = baseW;
     ctx.stroke();
   }
-  ctx.shadowBlur = 0;
 
   // ── A few bright specular highlight ribbons along the core ──
   for (var h = 0; h < 3; h++) {
@@ -2831,14 +2832,13 @@ function drawWavePS3v2() {
       else ctx.lineTo(px2, y2);
     }
     ctx.strokeStyle = 'rgba(255,255,255,' + (0.04 * iMult).toFixed(3) + ')';
-    if (!isMobile) { ctx.shadowColor = 'rgba(255,255,255,' + (0.04*iMult).toFixed(3) + ')'; ctx.shadowBlur = 12; }
     ctx.lineWidth = 5.0;
     ctx.stroke();
-    ctx.shadowBlur = 0;
     ctx.strokeStyle = 'rgba(255,255,255,' + (0.06 * iMult).toFixed(3) + ')';
     ctx.lineWidth = 1.4;
     ctx.stroke();
   }
+  if (!isMobile) ctx.filter = 'none';  // particles stay crisp
 
   // ── Particles flowing along the wave ──
   if (!window._wp || window._wp.length === 0) {
