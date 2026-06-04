@@ -2767,7 +2767,7 @@ function drawWavePS3v2() {
     var cy = (bb.y + Math.cos(T * 0.5 + bi * 2.1) * bb.sy) * bh;
     var rad = bb.r * Math.min(bw, bh);
     var c = palAt(bb.hue + T * 0.04);
-    var op = 0.55 * iMult;
+    var op = 0.32 * iMult;
     var g = bx.createRadialGradient(cx, cy, 0, cx, cy, rad);
     g.addColorStop(0,   'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
     g.addColorStop(0.5, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (op*0.4).toFixed(3) + ')');
@@ -2789,8 +2789,10 @@ function drawWavePS3v2() {
   function ribbonY(u) {
     var x = u * Math.PI * 2.0;
     return H * 0.52
-      + Math.sin(x * 0.85 + T * 1.0)        * H * 0.16
-      + Math.sin(x * 1.5  - T * 0.7)        * H * 0.07
+      + Math.sin(x * 0.85 + T * 1.0)        * H * 0.17
+      + Math.sin(x * 1.5  - T * 0.7)        * H * 0.10
+      + Math.sin(x * 2.6  + T * 1.6)        * H * 0.06
+      + Math.sin(x * 3.9  - T * 2.1)        * H * 0.035
       + Math.sin(x * 0.45 + T * 0.5)        * H * 0.05;
   }
   // Half-thickness — wider now, no end pinch, gentle breathing
