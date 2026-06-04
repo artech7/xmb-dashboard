@@ -1235,7 +1235,7 @@ function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   // On mobile, use Canvas 2D nebula (real cloud structure) instead of flat GL gradient
   var nebulaUsesGL = !isMobile;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || (animMode === 'nebula' && nebulaUsesGL) || animMode === 'underwater' || (animMode === 'wave2' && !isMobile));
+  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || (animMode === 'nebula' && nebulaUsesGL) || animMode === 'underwater');
   // glCanvas is always offscreen — GL renders there then gets composited
   // onto the single visible 2D canvas via ctx.drawImage() in glRenderFrame
   // No canvas switching needed — eliminates all Windows bleed-through issues
@@ -1251,7 +1251,7 @@ function animLoop() {
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
-    case 'wave2':     useGL ? renderGLWave() : drawWavePS3v2();   break;
+    case 'wave2':     drawWavePS3v2();                           break;
     case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
@@ -2722,102 +2722,138 @@ var bokehCircles = null;
 // ── XMB Wave 2.0 — authentic PS3 flowing ribbon ──────────────────────────────
 function drawWavePS3v2() {
   ctx.clearRect(0, 0, W, H);
+  // Smooth vertical gradient background from the theme bg colors
   drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
 
-  var spd  = animSpeed > 0 ? animSpeed : 0;
-  var T    = t * spd * 0.0009;
-  var pal  = themeRgbPalette || [[120,180,255]];
+  var spd   = animSpeed > 0 ? animSpeed : 0;
+  var T     = t * spd * 0.00045;
+  var pal   = themeRgbPalette || [[120,180,255]];
   var iMult = blobOpacityMult || 1.0;
 
   function palAt(f) {
-    // f in 0..1 → interpolated palette color
     var n = pal.length;
+    f = f - Math.floor(f);
     var x = f * (n - 1);
     var lo = Math.floor(x), hi = Math.min(lo + 1, n - 1);
     var fr = x - lo;
     var a = pal[lo], b = pal[hi];
-    return [Math.round(a[0]+(b[0]-a[0])*fr),
-            Math.round(a[1]+(b[1]-a[1])*fr),
-            Math.round(a[2]+(b[2]-a[2])*fr)];
+    return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
   }
 
-  // The PS3 wave is a broad luminous ribbon crossing the screen on a gentle
-  // diagonal, made of many thin horizontal filaments that undulate. Each
-  // filament is a sine curve; together they form a flowing translucent sheet.
-
-  var bandCenter = H * 0.52;          // vertical center of the ribbon
-  var bandSpread = H * 0.34;          // how tall the ribbon spreads
-  var FILAMENTS  = isMobile ? 26 : 46;
-  var segs       = isMobile ? 36 : 64;
+  // ── The wave's centerline: a long flowing S-curve across the screen ──
+  // Returns the y position of the wave band center at horizontal fraction u (0..1)
+  function waveCenter(u, phase) {
+    var x = u * Math.PI * 2.0;
+    return H * 0.55
+      + Math.sin(x * 0.8 + T * 1.3 + phase) * H * 0.16
+      + Math.sin(x * 1.7 - T * 0.9 + phase * 1.7) * H * 0.06
+      + Math.sin(x * 0.45 + T * 0.6) * H * 0.05;
+  }
+  // Slope of the centerline (for particle flow direction + ribbon shading)
+  function waveSlope(u, phase) {
+    var e = 0.004;
+    return (waveCenter(u + e, phase) - waveCenter(u - e, phase)) / (e * 2);
+  }
 
   ctx.globalCompositeOperation = 'lighter';
 
-  for (var fi = 0; fi < FILAMENTS; fi++) {
-    var ft = fi / (FILAMENTS - 1);          // 0..1 across ribbon thickness
-    // Each filament sits at a slightly different base height, drifting
-    var baseY = bandCenter + (ft - 0.5) * bandSpread;
-    // Filaments near the center are brightest (core of the ribbon)
-    var coreDist = Math.abs(ft - 0.5) * 2;  // 0 center → 1 edge
-    var coreGlow = Math.pow(1 - coreDist, 1.6);
-    var alpha = (0.015 + coreGlow * 0.05) * iMult;
-    if (alpha < 0.004) continue;
+  // ── Silky ribbons: many thin translucent filaments braiding over/under ──
+  var RIBBONS = isMobile ? 22 : 40;
+  var SEG     = isMobile ? 40 : 80;
 
-    var col = palAt(ft * 0.85 + Math.sin(T + fi * 0.1) * 0.07);
+  for (var r = 0; r < RIBBONS; r++) {
+    var rf = r / (RIBBONS - 1);            // 0..1 across the band thickness
+    // Each ribbon is offset from the centerline; offset weaves over time
+    var weave = Math.sin(T * 1.1 + rf * 6.2831) * 0.5 + 0.5;
+    var bandPos = (rf - 0.5);              // -0.5..0.5
+    // Thickness of the whole band, pinched at the ends like the reference
+    var coreGlow = Math.pow(1.0 - Math.abs(bandPos) * 2.0, 1.3);
+    if (coreGlow < 0.001) continue;
+
+    var col = palAt(rf * 0.7 + T * 0.05);
+    // Brightness: brightest in the core of the band, soft at edges
+    var alpha = (0.012 + coreGlow * 0.06) * iMult;
+
     ctx.beginPath();
-
-    for (var s = 0; s <= segs; s++) {
-      var px = (s / segs) * W;
-      var u  = s / segs;
-      // Primary travelling wave + secondary ripple + slow diagonal tilt
-      var wave = Math.sin(u * 6.0 + T * 2.2 + fi * 0.18) * 1.0
-               + Math.sin(u * 11.0 - T * 1.5 + fi * 0.10) * 0.4
-               + Math.sin(u * 2.3 + T * 0.8) * 0.6;
-      var amp  = (28 + coreGlow * 46) * (H / 900);
-      var tilt = (u - 0.5) * bandSpread * 0.5;  // gentle diagonal sweep
-      var py   = baseY + wave * amp * 0.5 + tilt * Math.sin(T * 0.5);
-      if (s === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+    for (var s = 0; s <= SEG; s++) {
+      var u = s / SEG;
+      // Horizontal ends taper the band so it pinches to nothing at L/R edges
+      var endTaper = Math.sin(u * Math.PI);
+      var phase = rf * 2.5;
+      var cy = waveCenter(u, phase);
+      // Ribbon's own offset from centerline, modulated so ribbons braid
+      var off = bandPos * H * 0.13 * endTaper
+              + Math.sin(u * 6.0 + T * 1.6 + rf * 5.0) * H * 0.025 * endTaper;
+      var y = cy + off;
+      var px = u * W;
+      if (s === 0) ctx.moveTo(px, y);
+      else ctx.lineTo(px, y);
     }
-
-    ctx.strokeStyle = 'rgba('+col[0]+','+col[1]+','+col[2]+','+alpha.toFixed(3)+')';
-    ctx.lineWidth = 1.0 + coreGlow * 1.4;
+    ctx.strokeStyle = 'rgba(' + (col[0]|0) + ',' + (col[1]|0) + ',' + (col[2]|0) + ',' + alpha.toFixed(3) + ')';
+    ctx.lineWidth = (0.8 + coreGlow * 2.2) * (isMobile ? 1.0 : 1.3);
     ctx.stroke();
   }
 
-  // Bright specular crest — a few extra-luminous filaments along the core
-  for (var ci = 0; ci < 3; ci++) {
-    var cf = 0.5 + (ci - 1) * 0.04;
-    var ccol = palAt(0.15 + ci * 0.25);
+  // ── A few bright specular highlight ribbons along the core ──
+  for (var h = 0; h < 3; h++) {
+    var hf = (h - 1) * 0.05;
+    var hcol = palAt(0.1 + h * 0.3 + T * 0.05);
     ctx.beginPath();
-    for (var s2 = 0; s2 <= segs; s2++) {
-      var px2 = (s2 / segs) * W;
-      var u2  = s2 / segs;
-      var wave2 = Math.sin(u2 * 6.0 + T * 2.2) * 1.0
-                + Math.sin(u2 * 11.0 - T * 1.5) * 0.4
-                + Math.sin(u2 * 2.3 + T * 0.8) * 0.6;
-      var amp2  = 70 * (H / 900);
-      var py2   = bandCenter + (cf - 0.5) * bandSpread + wave2 * amp2 * 0.5;
-      if (s2 === 0) ctx.moveTo(px2, py2);
-      else ctx.lineTo(px2, py2);
+    for (var s2 = 0; s2 <= SEG; s2++) {
+      var u2 = s2 / SEG;
+      var endT2 = Math.sin(u2 * Math.PI);
+      var y2 = waveCenter(u2, 0) + hf * H * 0.13 * endT2
+             + Math.sin(u2 * 6.0 + T * 1.6) * H * 0.02 * endT2;
+      var px2 = u2 * W;
+      if (s2 === 0) ctx.moveTo(px2, y2);
+      else ctx.lineTo(px2, y2);
     }
-    ctx.strokeStyle = 'rgba('+ccol[0]+','+ccol[1]+','+ccol[2]+','+(0.10*iMult).toFixed(3)+')';
-    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.05 * iMult).toFixed(3) + ')';
+    ctx.lineWidth = 1.6;
     ctx.stroke();
   }
 
-  // Soft volumetric glow behind the ribbon
-  var glowCol = palAt(0.4);
-  var rg = ctx.createLinearGradient(0, bandCenter - bandSpread*0.6, 0, bandCenter + bandSpread*0.6);
-  rg.addColorStop(0,   'rgba('+glowCol[0]+','+glowCol[1]+','+glowCol[2]+',0)');
-  rg.addColorStop(0.5, 'rgba('+glowCol[0]+','+glowCol[1]+','+glowCol[2]+','+(0.05*iMult).toFixed(3)+')');
-  rg.addColorStop(1,   'rgba('+glowCol[0]+','+glowCol[1]+','+glowCol[2]+',0)');
-  ctx.fillStyle = rg;
-  ctx.fillRect(0, bandCenter - bandSpread*0.6, W, bandSpread*1.2);
+  // ── Particles flowing along the wave ──
+  if (!window._wp || window._wp.length === 0) {
+    window._wp = [];
+    var PC = isMobile ? 40 : 90;
+    for (var i = 0; i < PC; i++) {
+      window._wp.push({
+        u: Math.random(),                 // horizontal position 0..1
+        band: (Math.random() - 0.5),      // offset within band
+        spd: 0.02 + Math.random() * 0.05, // flow speed
+        size: 0.6 + Math.random() * 2.2,
+        a: 0.3 + Math.random() * 0.7,
+        ph: Math.random() * Math.PI * 2
+      });
+    }
+  }
+  var wp = window._wp;
+  for (var p = 0; p < wp.length; p++) {
+    var pt = wp[p];
+    // Drift along the wave
+    pt.u += pt.spd * 0.01 * (spd > 0 ? 1 : 0);
+    if (pt.u > 1.05) { pt.u = -0.05; pt.band = (Math.random() - 0.5); }
+    var endTaperP = Math.sin(Math.max(0, Math.min(1, pt.u)) * Math.PI);
+    var py = waveCenter(pt.u, pt.band * 2.5) + pt.band * H * 0.12 * endTaperP;
+    var px = pt.u * W;
+    // Twinkle
+    var tw = 0.6 + 0.4 * Math.sin(T * 5.0 + pt.ph);
+    var pcol = palAt(0.2 + pt.band + 0.5);
+    var pa = pt.a * tw * iMult * endTaperP * 0.8;
+    if (pa <= 0.01) continue;
+    var rad = pt.size * (isMobile ? 1.0 : 1.4);
+    var g = ctx.createRadialGradient(px, py, 0, px, py, rad * 3);
+    g.addColorStop(0, 'rgba(255,255,255,' + pa.toFixed(3) + ')');
+    g.addColorStop(0.4, 'rgba(' + (pcol[0]|0) + ',' + (pcol[1]|0) + ',' + (pcol[2]|0) + ',' + (pa*0.6).toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(px - rad*3, py - rad*3, rad*6, rad*6);
+  }
 
   ctx.globalCompositeOperation = 'source-over';
   ctx.lineWidth = 1;
 }
-
 function initBokeh() {
   var count = Math.max(40, Math.floor(W * H / 18000));
   bokehCircles = [];
