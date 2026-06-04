@@ -2722,11 +2722,10 @@ var bokehCircles = null;
 // ── XMB Wave 2.0 — authentic PS3 flowing ribbon ──────────────────────────────
 function drawWavePS3v2() {
   ctx.clearRect(0, 0, W, H);
-  // Smooth vertical gradient background from the theme bg colors
   drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
 
   var spd   = animSpeed > 0 ? animSpeed : 0;
-  var T     = t * spd * 0.00045;
+  var T     = t * spd * 0.00040;
   var pal   = themeRgbPalette || [[120,180,255]];
   var iMult = blobOpacityMult || 1.0;
 
@@ -2740,100 +2739,98 @@ function drawWavePS3v2() {
     return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
   }
 
-  // ── The wave's centerline: a long flowing S-curve across the screen ──
-  // Returns the y position of the wave band center at horizontal fraction u (0..1)
-  function waveCenter(u, phase) {
+  // ── A flowing stream's centerline at horizontal fraction u (0..1) ──
+  // Each stream has its own phase so they weave past one another. Big sweeps.
+  function streamY(u, k) {
     var x = u * Math.PI * 2.0;
-    return H * 0.55
-      + Math.sin(x * 0.8 + T * 1.3 + phase) * H * 0.16
-      + Math.sin(x * 1.7 - T * 0.9 + phase * 1.7) * H * 0.06
-      + Math.sin(x * 0.45 + T * 0.6) * H * 0.05;
-  }
-  // Slope of the centerline (for particle flow direction + ribbon shading)
-  function waveSlope(u, phase) {
-    var e = 0.004;
-    return (waveCenter(u + e, phase) - waveCenter(u - e, phase)) / (e * 2);
+    var ph = k * 2.3;
+    return H * 0.52
+      + Math.sin(x * 0.9  + T * 1.1 + ph)       * H * 0.22
+      + Math.sin(x * 1.6  - T * 0.8 + ph * 1.5) * H * 0.10
+      + Math.sin(x * 0.5  + T * 0.6 + ph * 0.7) * H * 0.08
+      + Math.sin(x * 2.7  + T * 1.4 + ph)       * H * 0.03;
   }
 
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
 
-  // ── Silky ribbons: many thin translucent filaments braiding over/under ──
-  // Tightly bunched so they overlap into one luminous glowing core (the look
-  // the user circled) rather than spreading into separate visible lines.
-  var RIBBONS = isMobile ? 22 : 40;
-  var SEG     = isMobile ? 40 : 80;
+  // ── Streams of fine hair-like filaments ──
+  // A few streams (weaving past each other), each a dense bundle of thin
+  // strands. Color flows along the length through the palette.
+  var STREAMS  = 3;
+  var STRANDS  = isMobile ? 26 : 60;   // fine strands per stream
+  var SEG      = isMobile ? 36 : 70;
 
-  for (var r = 0; r < RIBBONS; r++) {
-    var rf = r / (RIBBONS - 1);            // 0..1 across the band thickness
-    var bandPos = (rf - 0.5);              // -0.5..0.5
-    // Ribbons crowd toward the center (cubic) so most overlap in a tight core
-    var crowd = bandPos * Math.abs(bandPos) * 2.0; // -0.5..0.5 but bunched at 0
-    // Core glow — brightest at band center, falls off toward edges
-    var coreGlow = Math.pow(1.0 - Math.abs(bandPos) * 2.0, 1.6);
-    if (coreGlow < 0.001) continue;
-
-    var col = palAt(rf * 0.7 + T * 0.05);
-    var colStr = (col[0]|0) + ',' + (col[1]|0) + ',' + (col[2]|0);
-    // Brightness builds up where ribbons overlap (additive) -> luminous core
-    var alpha = (0.010 + coreGlow * 0.05) * iMult;
-
-    ctx.beginPath();
-    for (var s = 0; s <= SEG; s++) {
-      var u = s / SEG;
-      // Horizontal ends taper the band so it pinches to nothing at L/R edges
-      var endTaper = Math.sin(u * Math.PI);
-      var phase = rf * 2.5;
-      var cy = waveCenter(u, phase);
-      // Tighter band (0.07 vs 0.13) + small braiding weave
-      var off = crowd * H * 0.07 * endTaper
-              + Math.sin(u * 6.0 + T * 1.6 + rf * 5.0) * H * 0.018 * endTaper;
-      var y = cy + off;
-      var px = u * W;
-      if (s === 0) ctx.moveTo(px, y);
-      else ctx.lineTo(px, y);
+  for (var k = 0; k < STREAMS; k++) {
+    // Each stream occupies its own slice of the palette, flowing along length.
+    // Build the colour-flow gradient ONCE per stream (cheap), strands reuse it.
+    var streamHue0 = k / STREAMS;
+    var baseAlpha = 0.020 * iMult;
+    var streamGrad = ctx.createLinearGradient(0, 0, W, 0);
+    for (var gi = 0; gi <= 4; gi++) {
+      var gf = gi / 4;
+      var c = palAt(streamHue0 + gf * 0.6 + T * 0.05);
+      streamGrad.addColorStop(gf, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + baseAlpha.toFixed(3) + ')');
     }
-    // Two passes: a soft wider body + the thin filament — cheap, no blur
-    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.5).toFixed(3) + ')';
-    ctx.lineWidth = (1.5 + coreGlow * 5.0) * (isMobile ? 1.0 : 1.2);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(' + colStr + ',' + alpha.toFixed(3) + ')';
-    ctx.lineWidth = (0.7 + coreGlow * 1.6) * (isMobile ? 1.0 : 1.2);
-    ctx.stroke();
-  }
+    ctx.strokeStyle = streamGrad;
+    for (var sd = 0; sd < STRANDS; sd++) {
+      var sf = sd / (STRANDS - 1);       // 0..1 across the bundle thickness
+      var spread = (sf - 0.5);           // -0.5..0.5
+      // Bundle is dense in the middle, wispy at the edges
+      var dens = Math.pow(1.0 - Math.abs(spread) * 2.0, 0.8);
+      if (dens < 0.02) continue;
+      var wob = Math.sin(sd * 1.7 + k * 3.1);
 
-  // ── Bright luminous core seam — the glowing white center the wave braids around ──
-  for (var h = 0; h < 4; h++) {
-    var hf = (h - 1.5) * 0.018;
+      ctx.globalAlpha = 0.3 + dens * 0.9;   // density fade via globalAlpha (cheap)
+      ctx.beginPath();
+      for (var s = 0; s <= SEG; s++) {
+        var u = s / SEG;
+        var endTaper = Math.sin(u * Math.PI);          // pinch at L/R edges
+        var cy = streamY(u, k);
+        var off = spread * H * 0.10 * endTaper
+                + Math.sin(u * 5.0 + T * 1.5 + sd * 0.6 + k) * H * 0.02 * endTaper
+                + wob * H * 0.015 * endTaper;
+        var y = cy + off;
+        var px = u * W;
+        if (s === 0) ctx.moveTo(px, y);
+        else ctx.lineTo(px, y);
+      }
+      ctx.lineWidth = (0.5 + dens * 1.2) * (isMobile ? 1.0 : 1.1);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1.0;
+
+  // ── Bright luminous cores where each stream bundle is densest ──
+  for (var k2 = 0; k2 < STREAMS; k2++) {
     ctx.beginPath();
     for (var s2 = 0; s2 <= SEG; s2++) {
       var u2 = s2 / SEG;
       var endT2 = Math.sin(u2 * Math.PI);
-      var y2 = waveCenter(u2, 0) + hf * H * endT2
-             + Math.sin(u2 * 6.0 + T * 1.6) * H * 0.012 * endT2;
+      var y2 = streamY(u2, k2) + Math.sin(u2 * 5.0 + T * 1.5 + k2) * H * 0.012 * endT2;
       var px2 = u2 * W;
       if (s2 === 0) ctx.moveTo(px2, y2);
       else ctx.lineTo(px2, y2);
     }
-    // Wide soft white glow + thin hot core
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.045 * iMult).toFixed(3) + ')';
-    ctx.lineWidth = 9.0;
+    var cc = palAt(k2 / STREAMS + 0.1 + T * 0.05);
+    ctx.strokeStyle = 'rgba(' + (cc[0]|0) + ',' + (cc[1]|0) + ',' + (cc[2]|0) + ',' + (0.05 * iMult).toFixed(3) + ')';
+    ctx.lineWidth = 6.0;
     ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.10 * iMult).toFixed(3) + ')';
-    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.06 * iMult).toFixed(3) + ')';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
   }
 
-  // ── Particles flowing along the wave ──
+  // ── Particles flowing along the streams ──
   if (!window._wp || window._wp.length === 0) {
     window._wp = [];
     var PC = isMobile ? 40 : 90;
     for (var i = 0; i < PC; i++) {
       window._wp.push({
-        u: Math.random(),                 // horizontal position 0..1
-        band: (Math.random() - 0.5),      // offset within band
-        spd: 0.02 + Math.random() * 0.05, // flow speed
+        u: Math.random(),
+        k: Math.floor(Math.random() * 3),     // which stream it rides
+        band: (Math.random() - 0.5),
+        spd: 0.02 + Math.random() * 0.05,
         size: 0.6 + Math.random() * 2.2,
         a: 0.3 + Math.random() * 0.7,
         ph: Math.random() * Math.PI * 2
@@ -2843,15 +2840,13 @@ function drawWavePS3v2() {
   var wp = window._wp;
   for (var p = 0; p < wp.length; p++) {
     var pt = wp[p];
-    // Drift along the wave
     pt.u += pt.spd * 0.01 * (spd > 0 ? 1 : 0);
-    if (pt.u > 1.05) { pt.u = -0.05; pt.band = (Math.random() - 0.5); }
+    if (pt.u > 1.05) { pt.u = -0.05; pt.band = (Math.random() - 0.5); pt.k = Math.floor(Math.random()*3); }
     var endTaperP = Math.sin(Math.max(0, Math.min(1, pt.u)) * Math.PI);
-    var py = waveCenter(pt.u, pt.band * 2.5) + pt.band * H * 0.07 * endTaperP;
+    var py = streamY(pt.u, pt.k) + pt.band * H * 0.09 * endTaperP;
     var px = pt.u * W;
-    // Twinkle
     var tw = 0.6 + 0.4 * Math.sin(T * 5.0 + pt.ph);
-    var pcol = palAt(0.2 + pt.band + 0.5);
+    var pcol = palAt(pt.k / 3 + 0.2 + T * 0.05);
     var pa = pt.a * tw * iMult * endTaperP * 0.8;
     if (pa <= 0.01) continue;
     var rad = pt.size * (isMobile ? 1.0 : 1.4);
