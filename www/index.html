@@ -2739,104 +2739,60 @@ function drawWavePS3v2() {
     return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
   }
 
-  // Centerline of a ribbon layer at horizontal fraction u (0..1).
-  // Each layer (k) gets its own phase so the stacked panes drift independently.
-  function ribbonY(u, k) {
+  // Ribbon centerline at horizontal fraction u (extends past both edges)
+  function ribbonY(u) {
     var x = u * Math.PI * 2.0;
-    var ph = k * 1.3;
     return H * 0.52
-      + Math.sin(x * 0.85 + T * 1.0 + ph)        * H * 0.16
-      + Math.sin(x * 1.5  - T * 0.7 + ph * 1.6)  * H * 0.07
-      + Math.sin(x * 0.45 + T * 0.5 + ph)        * H * 0.05;
+      + Math.sin(x * 0.85 + T * 1.0)        * H * 0.16
+      + Math.sin(x * 1.5  - T * 0.7)        * H * 0.07
+      + Math.sin(x * 0.45 + T * 0.5)        * H * 0.05;
   }
-  // Half-thickness of the ribbon along its length (pinched at the ends)
-  function ribbonHalf(u, k) {
-    var endTaper = Math.sin(u * Math.PI);                 // 0 at edges, 1 mid
-    var breathe  = 0.8 + 0.2 * Math.sin(u * 4.0 + T * 1.2 + k);
-    return (H * (0.085 + k * 0.018)) * endTaper * breathe;
+  // Half-thickness — no end pinch (continues past screen), gentle breathing
+  function ribbonHalf(u) {
+    var breathe = 0.85 + 0.15 * Math.sin(u * 4.0 + T * 1.2);
+    return H * 0.10 * breathe;
   }
 
-  var SEG = isMobile ? 48 : 90;
-  var LAYERS = isMobile ? 2 : 3;        // stacked translucent glass panes
+  // Draw slightly past the left/right edges so the ribbon runs off-screen
+  var SEG  = isMobile ? 56 : 100;
+  var uMin = -0.05, uMax = 1.05;
+  function uAt(s) { return uMin + (uMax - uMin) * (s / SEG); }
 
-  // ── Translucent glassmorphic ribbon: stacked filled panes ──
-  for (var k = LAYERS - 1; k >= 0; k--) {
-    // Build top edge L->R, then bottom edge R->L, into one closed shape
+  // ── Single translucent ribbon with soft blurred top/bottom falloff ──
+  // Build the soft edges by stacking several concentric translucent bands:
+  // wide+faint on the outside fading to denser in the core. No hard outline.
+  var BANDS = isMobile ? 5 : 8;
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (var b = BANDS - 1; b >= 0; b--) {
+    var bf = b / (BANDS - 1);              // 0 = core, 1 = outermost
+    // Outer bands are wider and fainter -> soft blurred falloff at edges
+    var widthMul = 0.35 + bf * 1.0;        // 0.35 (core) .. 1.35 (outer)
+    var op = (0.030 * (1.0 - bf * 0.78)) * iMult;  // core densest, edges faint
+
     ctx.beginPath();
     for (var s = 0; s <= SEG; s++) {
-      var u = s / SEG;
-      var y = ribbonY(u, k) - ribbonHalf(u, k);
+      var u = uAt(s);
+      var y = ribbonY(u) - ribbonHalf(u) * widthMul;
       var px = u * W;
       if (s === 0) ctx.moveTo(px, y);
       else ctx.lineTo(px, y);
     }
     for (var s2 = SEG; s2 >= 0; s2--) {
-      var u2 = s2 / SEG;
-      var y2 = ribbonY(u2, k) + ribbonHalf(u2, k);
+      var u2 = uAt(s2);
+      var y2 = ribbonY(u2) + ribbonHalf(u2) * widthMul;
       ctx.lineTo(u2 * W, y2);
     }
     ctx.closePath();
 
-    // Frosted-glass fill: low-opacity palette gradient flowing along length
-    var fillGrad = ctx.createLinearGradient(0, 0, W, 0);
+    var grad = ctx.createLinearGradient(0, 0, W, 0);
     for (var gi = 0; gi <= 5; gi++) {
       var gf = gi / 5;
-      var c = palAt(gf * 0.85 + k * 0.12 + T * 0.05);
-      // Back layers fainter than front for depth; all translucent
-      var op = (0.05 + (LAYERS - k) * 0.045) * iMult;
-      fillGrad.addColorStop(gf, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
+      var c = palAt(gf * 0.85 + T * 0.05);
+      grad.addColorStop(gf, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
     }
-    ctx.fillStyle = fillGrad;
+    ctx.fillStyle = grad;
     ctx.fill();
-  }
-
-  // ── Soft inner sheen: a brighter translucent core band down the middle ──
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.beginPath();
-  for (var s3 = 0; s3 <= SEG; s3++) {
-    var u3 = s3 / SEG;
-    var y3 = ribbonY(u3, 0) - ribbonHalf(u3, 0) * 0.35;
-    var px3 = u3 * W;
-    if (s3 === 0) ctx.moveTo(px3, y3);
-    else ctx.lineTo(px3, y3);
-  }
-  for (var s4 = SEG; s4 >= 0; s4--) {
-    var u4 = s4 / SEG;
-    var y4 = ribbonY(u4, 0) + ribbonHalf(u4, 0) * 0.35;
-    ctx.lineTo(u4 * W, y4);
-  }
-  ctx.closePath();
-  var sheen = ctx.createLinearGradient(0, 0, W, 0);
-  for (var gi2 = 0; gi2 <= 5; gi2++) {
-    var gf2 = gi2 / 5;
-    var c2 = palAt(gf2 * 0.85 + 0.4 + T * 0.05);
-    sheen.addColorStop(gf2, 'rgba(' + (c2[0]|0) + ',' + (c2[1]|0) + ',' + (c2[2]|0) + ',' + (0.05 * iMult).toFixed(3) + ')');
-  }
-  ctx.fillStyle = sheen;
-  ctx.fill();
-
-  // ── Bright glass rim highlights on the top & bottom edges ──
-  ctx.lineCap = 'round';
-  for (var edge = 0; edge < 2; edge++) {
-    var sign = edge === 0 ? -1 : 1;
-    ctx.beginPath();
-    for (var s5 = 0; s5 <= SEG; s5++) {
-      var u5 = s5 / SEG;
-      var y5 = ribbonY(u5, 0) + sign * ribbonHalf(u5, 0);
-      var px5 = u5 * W;
-      if (s5 === 0) ctx.moveTo(px5, y5);
-      else ctx.lineTo(px5, y5);
-    }
-    var rim = ctx.createLinearGradient(0, 0, W, 0);
-    for (var gi3 = 0; gi3 <= 5; gi3++) {
-      var gf3 = gi3 / 5;
-      var c3 = palAt(gf3 * 0.85 + T * 0.05);
-      var rimA = (edge === 0 ? 0.22 : 0.12) * iMult;   // top edge brighter
-      rim.addColorStop(gf3, 'rgba(' + (Math.min(255,c3[0]+80)|0) + ',' + (Math.min(255,c3[1]+80)|0) + ',' + (Math.min(255,c3[2]+80)|0) + ',' + rimA.toFixed(3) + ')');
-    }
-    ctx.strokeStyle = rim;
-    ctx.lineWidth = (edge === 0 ? 1.6 : 1.2) * (isMobile ? 1.0 : 1.2);
-    ctx.stroke();
   }
 
   // ── Particles flowing along the ribbon ──
@@ -2859,12 +2815,11 @@ function drawWavePS3v2() {
     var pt = wp[p];
     pt.u += pt.spd * 0.01 * (spd > 0 ? 1 : 0);
     if (pt.u > 1.05) { pt.u = -0.05; pt.band = (Math.random() - 0.5); }
-    var endTaperP = Math.sin(Math.max(0, Math.min(1, pt.u)) * Math.PI);
-    var py = ribbonY(pt.u, 0) + pt.band * ribbonHalf(pt.u, 0) * 1.6;
+    var py = ribbonY(pt.u) + pt.band * ribbonHalf(pt.u) * 1.6;
     var px = pt.u * W;
     var tw = 0.6 + 0.4 * Math.sin(T * 5.0 + pt.ph);
     var pcol = palAt(pt.u + T * 0.05);
-    var pa = pt.a * tw * iMult * endTaperP * 0.8;
+    var pa = pt.a * tw * iMult * 0.8;
     if (pa <= 0.01) continue;
     var rad = pt.size * (isMobile ? 1.0 : 1.4);
     var g2 = ctx.createRadialGradient(px, py, 0, px, py, rad * 3);
