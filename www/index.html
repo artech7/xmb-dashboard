@@ -2739,29 +2739,51 @@ function drawWavePS3v2() {
     return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
   }
 
-  // ── Moving blurred background glow that complements the ribbon ──
-  // A few large soft palette blobs drifting slowly behind everything.
-  ctx.globalCompositeOperation = 'lighter';
+  // ── Moving blurred background glow (true blur via low-res upscale) ──
+  // Render drifting palette blobs onto a tiny offscreen canvas, then scale it
+  // up to full size. The hardware's bilinear interpolation on the upscale
+  // produces a smooth, genuine blur — and drawing at ~1/8 resolution makes it
+  // cheaper than full-res gradients, not more expensive.
+  var bw = Math.max(40, Math.floor(W / 8));
+  var bh = Math.max(24, Math.floor(H / 8));
+  if (!window._bgBlur || window._bgBlur.width !== bw || window._bgBlur.height !== bh) {
+    window._bgBlur = document.createElement('canvas');
+    window._bgBlur.width = bw; window._bgBlur.height = bh;
+  }
+  var bgc = window._bgBlur;
+  var bx = bgc.getContext('2d');
+  bx.clearRect(0, 0, bw, bh);
+  bx.globalCompositeOperation = 'lighter';
   var bgBlobs = [
-    { x:0.22, y:0.38, r:0.75, sx:0.14, sy:0.10, hue:0.0 },
-    { x:0.72, y:0.58, r:0.82, sx:0.11, sy:0.13, hue:0.35 },
-    { x:0.48, y:0.65, r:0.68, sx:0.17, sy:0.08, hue:0.6 },
-    { x:0.86, y:0.32, r:0.62, sx:0.10, sy:0.11, hue:0.85 }
+    { x:0.20, y:0.36, r:0.85, sx:0.16, sy:0.11, hue:0.0  },
+    { x:0.74, y:0.60, r:0.92, sx:0.12, sy:0.14, hue:0.32 },
+    { x:0.46, y:0.66, r:0.78, sx:0.18, sy:0.09, hue:0.58 },
+    { x:0.88, y:0.30, r:0.70, sx:0.11, sy:0.12, hue:0.80 },
+    { x:0.10, y:0.62, r:0.66, sx:0.13, sy:0.10, hue:0.5  }
   ];
   for (var bi = 0; bi < bgBlobs.length; bi++) {
     var bb = bgBlobs[bi];
-    var cx = (bb.x + Math.sin(T * 0.6 + bi * 1.7) * bb.sx) * W;
-    var cy = (bb.y + Math.cos(T * 0.5 + bi * 2.1) * bb.sy) * H;
-    var rad = bb.r * Math.min(W, H);
+    var cx = (bb.x + Math.sin(T * 0.6 + bi * 1.7) * bb.sx) * bw;
+    var cy = (bb.y + Math.cos(T * 0.5 + bi * 2.1) * bb.sy) * bh;
+    var rad = bb.r * Math.min(bw, bh);
     var c = palAt(bb.hue + T * 0.04);
-    var op = 0.28 * iMult;   // much more visible (was 0.07)
-    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-    g.addColorStop(0,    'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
-    g.addColorStop(0.45, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (op*0.45).toFixed(3) + ')');
-    g.addColorStop(1,    'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(cx - rad, cy - rad, rad*2, rad*2);
+    var op = 0.55 * iMult;
+    var g = bx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0,   'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + op.toFixed(3) + ')');
+    g.addColorStop(0.5, 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (op*0.4).toFixed(3) + ')');
+    g.addColorStop(1,   'rgba(0,0,0,0)');
+    bx.fillStyle = g;
+    bx.fillRect(cx - rad, cy - rad, rad*2, rad*2);
   }
+  // Upscale the tiny canvas to full size — smoothing creates the blur.
+  // A small extra blur on the full draw deepens the frosted look; it is one
+  // pass over a single image (not per-blob), so it stays cheap.
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  if (!isMobile) ctx.filter = 'blur(' + Math.round(W * 0.012) + 'px)';
+  ctx.drawImage(bgc, 0, 0, bw, bh, 0, 0, W, H);
+  ctx.filter = 'none';
 
   // Ribbon centerline at horizontal fraction u (extends past both edges)
   function ribbonY(u) {
@@ -2781,37 +2803,47 @@ function drawWavePS3v2() {
   var uMin = -0.05, uMax = 1.05;
   function uAt(s) { return uMin + (uMax - uMin) * (s / SEG); }
 
-  // ── Single translucent ribbon, brighter, soft blurred top/bottom falloff ──
-  var BANDS = isMobile ? 5 : 8;
-  for (var b = BANDS - 1; b >= 0; b--) {
-    var bf = b / (BANDS - 1);              // 0 = core, 1 = outermost
-    var widthMul = 0.30 + bf * 1.05;
-    var op2 = (0.060 * (1.0 - bf * 0.74)) * iMult;  // brighter (was 0.030)
-
-    ctx.beginPath();
-    for (var s = 0; s <= SEG; s++) {
-      var u = uAt(s);
-      var y = ribbonY(u) - ribbonHalf(u) * widthMul;
-      var px = u * W;
-      if (s === 0) ctx.moveTo(px, y);
-      else ctx.lineTo(px, y);
-    }
-    for (var s2 = SEG; s2 >= 0; s2--) {
-      var u2 = uAt(s2);
-      var y2 = ribbonY(u2) + ribbonHalf(u2) * widthMul;
-      ctx.lineTo(u2 * W, y2);
-    }
-    ctx.closePath();
-
-    var grad = ctx.createLinearGradient(0, 0, W, 0);
-    for (var gi = 0; gi <= 5; gi++) {
-      var gf = gi / 5;
-      var c2 = palAt(gf * 0.85 + T * 0.05);
-      grad.addColorStop(gf, 'rgba(' + (c2[0]|0) + ',' + (c2[1]|0) + ',' + (c2[2]|0) + ',' + op2.toFixed(3) + ')');
-    }
-    ctx.fillStyle = grad;
-    ctx.fill();
+  // ── Single translucent ribbon with a SMOOTH (non-banded) soft falloff ──
+  // Render the ribbon to a low-res offscreen canvas, then upscale it. The
+  // bilinear interpolation on the upscale turns the soft edges into a genuine
+  // smooth blur with no visible bands, and low-res keeps it cheap.
+  var rw = Math.max(80, Math.floor(W / 4));
+  var rh = Math.max(60, Math.floor(H / 4));
+  if (!window._rib || window._rib.width !== rw || window._rib.height !== rh) {
+    window._rib = document.createElement('canvas');
+    window._rib.width = rw; window._rib.height = rh;
   }
+  var rc = window._rib;
+  var rx = rc.getContext('2d');
+  rx.clearRect(0, 0, rw, rh);
+  rx.globalCompositeOperation = 'lighter';
+
+  // Fill the ribbon as ONE shape, but use a vertical gradient that fades from
+  // a bright core at the centerline to transparent at the edges. Drawn in
+  // vertical slices so the gradient follows the wavy centerline.
+  var SLICES = isMobile ? 48 : 90;
+  for (var sl = 0; sl < SLICES; sl++) {
+    var u = uMin + (uMax - uMin) * (sl / (SLICES - 1));
+    var cyN = ribbonY(u) / H * rh;          // centerline in offscreen space
+    var halfN = ribbonHalf(u) * 1.35 / H * rh;
+    var xPx = u * rw;
+    var sliceW = (uMax - uMin) * rw / (SLICES - 1) + 1;
+    var c2 = palAt(u * 0.85 + T * 0.05);
+    var colStr = (c2[0]|0) + ',' + (c2[1]|0) + ',' + (c2[2]|0);
+    var coreOp = 0.42 * iMult;
+    var vg = rx.createLinearGradient(0, cyN - halfN, 0, cyN + halfN);
+    vg.addColorStop(0.0,  'rgba(' + colStr + ',0)');
+    vg.addColorStop(0.5,  'rgba(' + colStr + ',' + coreOp.toFixed(3) + ')');
+    vg.addColorStop(1.0,  'rgba(' + colStr + ',0)');
+    rx.fillStyle = vg;
+    rx.fillRect(xPx, cyN - halfN, sliceW, halfN * 2);
+  }
+
+  // Upscale to full size — interpolation smooths everything into a soft blur
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(rc, 0, 0, rw, rh, 0, 0, W, H);
 
   // ── Tiny star-like particles that ride along the ribbon ──
   if (!window._wp || window._wp.length === 0 || window._wp[0].tiny === undefined) {
