@@ -2758,29 +2758,27 @@ function drawWavePS3v2() {
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  // ONE cheap GPU blur pass over all the ribbons (vs per-stroke shadowBlur).
-  // Desktop only; mobile relies on the layered passes alone for perf.
-  if (!isMobile) ctx.filter = 'blur(3px)';
 
   // ── Silky ribbons: many thin translucent filaments braiding over/under ──
+  // Tightly bunched so they overlap into one luminous glowing core (the look
+  // the user circled) rather than spreading into separate visible lines.
   var RIBBONS = isMobile ? 22 : 40;
   var SEG     = isMobile ? 40 : 80;
 
   for (var r = 0; r < RIBBONS; r++) {
     var rf = r / (RIBBONS - 1);            // 0..1 across the band thickness
-    // Each ribbon is offset from the centerline; offset weaves over time
-    var weave = Math.sin(T * 1.1 + rf * 6.2831) * 0.5 + 0.5;
     var bandPos = (rf - 0.5);              // -0.5..0.5
-    // Thickness of the whole band, pinched at the ends like the reference
-    var coreGlow = Math.pow(1.0 - Math.abs(bandPos) * 2.0, 1.3);
+    // Ribbons crowd toward the center (cubic) so most overlap in a tight core
+    var crowd = bandPos * Math.abs(bandPos) * 2.0; // -0.5..0.5 but bunched at 0
+    // Core glow — brightest at band center, falls off toward edges
+    var coreGlow = Math.pow(1.0 - Math.abs(bandPos) * 2.0, 1.6);
     if (coreGlow < 0.001) continue;
 
     var col = palAt(rf * 0.7 + T * 0.05);
     var colStr = (col[0]|0) + ',' + (col[1]|0) + ',' + (col[2]|0);
-    // Brightness: brightest in the core of the band, soft at edges
-    var alpha = (0.012 + coreGlow * 0.06) * iMult;
+    // Brightness builds up where ribbons overlap (additive) -> luminous core
+    var alpha = (0.010 + coreGlow * 0.05) * iMult;
 
-    // Build the path once, reuse for each soft pass
     ctx.beginPath();
     for (var s = 0; s <= SEG; s++) {
       var u = s / SEG;
@@ -2788,57 +2786,44 @@ function drawWavePS3v2() {
       var endTaper = Math.sin(u * Math.PI);
       var phase = rf * 2.5;
       var cy = waveCenter(u, phase);
-      // Ribbon's own offset from centerline, modulated so ribbons braid
-      var off = bandPos * H * 0.13 * endTaper
-              + Math.sin(u * 6.0 + T * 1.6 + rf * 5.0) * H * 0.025 * endTaper;
+      // Tighter band (0.07 vs 0.13) + small braiding weave
+      var off = crowd * H * 0.07 * endTaper
+              + Math.sin(u * 6.0 + T * 1.6 + rf * 5.0) * H * 0.018 * endTaper;
       var y = cy + off;
       var px = u * W;
       if (s === 0) ctx.moveTo(px, y);
       else ctx.lineTo(px, y);
     }
-
-    var baseW = (0.8 + coreGlow * 2.2) * (isMobile ? 1.0 : 1.3);
-    // Soft silky body via layered translucent passes (cheap — no shadowBlur).
-    // Pass 1 — very wide, very faint halo
-    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.22).toFixed(3) + ')';
-    ctx.lineWidth = baseW * 9.0;
+    // Two passes: a soft wider body + the thin filament — cheap, no blur
+    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.5).toFixed(3) + ')';
+    ctx.lineWidth = (1.5 + coreGlow * 5.0) * (isMobile ? 1.0 : 1.2);
     ctx.stroke();
-    // Pass 2 — wide, faint underlay
-    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.4).toFixed(3) + ')';
-    ctx.lineWidth = baseW * 4.5;
-    ctx.stroke();
-    // Pass 3 — medium
-    ctx.strokeStyle = 'rgba(' + colStr + ',' + (alpha * 0.7).toFixed(3) + ')';
-    ctx.lineWidth = baseW * 2.2;
-    ctx.stroke();
-    // Pass 4 — thin bright core
     ctx.strokeStyle = 'rgba(' + colStr + ',' + alpha.toFixed(3) + ')';
-    ctx.lineWidth = baseW;
+    ctx.lineWidth = (0.7 + coreGlow * 1.6) * (isMobile ? 1.0 : 1.2);
     ctx.stroke();
   }
 
-  // ── A few bright specular highlight ribbons along the core ──
-  for (var h = 0; h < 3; h++) {
-    var hf = (h - 1) * 0.05;
-    var hcol = palAt(0.1 + h * 0.3 + T * 0.05);
+  // ── Bright luminous core seam — the glowing white center the wave braids around ──
+  for (var h = 0; h < 4; h++) {
+    var hf = (h - 1.5) * 0.018;
     ctx.beginPath();
     for (var s2 = 0; s2 <= SEG; s2++) {
       var u2 = s2 / SEG;
       var endT2 = Math.sin(u2 * Math.PI);
-      var y2 = waveCenter(u2, 0) + hf * H * 0.13 * endT2
-             + Math.sin(u2 * 6.0 + T * 1.6) * H * 0.02 * endT2;
+      var y2 = waveCenter(u2, 0) + hf * H * endT2
+             + Math.sin(u2 * 6.0 + T * 1.6) * H * 0.012 * endT2;
       var px2 = u2 * W;
       if (s2 === 0) ctx.moveTo(px2, y2);
       else ctx.lineTo(px2, y2);
     }
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.04 * iMult).toFixed(3) + ')';
-    ctx.lineWidth = 5.0;
+    // Wide soft white glow + thin hot core
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.045 * iMult).toFixed(3) + ')';
+    ctx.lineWidth = 9.0;
     ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.06 * iMult).toFixed(3) + ')';
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.10 * iMult).toFixed(3) + ')';
     ctx.lineWidth = 1.4;
     ctx.stroke();
   }
-  if (!isMobile) ctx.filter = 'none';  // particles stay crisp
 
   // ── Particles flowing along the wave ──
   if (!window._wp || window._wp.length === 0) {
@@ -2862,7 +2847,7 @@ function drawWavePS3v2() {
     pt.u += pt.spd * 0.01 * (spd > 0 ? 1 : 0);
     if (pt.u > 1.05) { pt.u = -0.05; pt.band = (Math.random() - 0.5); }
     var endTaperP = Math.sin(Math.max(0, Math.min(1, pt.u)) * Math.PI);
-    var py = waveCenter(pt.u, pt.band * 2.5) + pt.band * H * 0.12 * endTaperP;
+    var py = waveCenter(pt.u, pt.band * 2.5) + pt.band * H * 0.07 * endTaperP;
     var px = pt.u * W;
     // Twinkle
     var tw = 0.6 + 0.4 * Math.sin(T * 5.0 + pt.ph);
