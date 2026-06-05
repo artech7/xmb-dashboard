@@ -2217,15 +2217,15 @@ function initAurora() {
       width:     0.10 + Math.random() * 0.16,
       height:    0.35 + Math.random() * 0.35,   // fraction of H
       yTop:      0.02 + Math.random() * 0.15,
-      speed:     0.0007 + Math.random() * 0.0009,
+      speed:     0.0012 + Math.random() * 0.0014,
       phase:     Math.random() * Math.PI * 2,
       waveFreq:  0.8 + Math.random() * 1.2,
       waveAmp:   0.015 + Math.random() * 0.025,
       shimmer:   Math.random() * Math.PI * 2,
-      shimSpd:   0.032 + Math.random() * 0.044,
-      drift:     (Math.random() - 0.5) * 0.00034,
-      palIdx:    i % 4,
-      palIdx2:   (i + 2) % 4,
+      shimSpd:   0.055 + Math.random() * 0.070,
+      drift:     (Math.random() - 0.5) * 0.00055,
+      palIdx:    i % 6,
+      palIdx2:   (i + 3) % 6,
     });
   }
 }
@@ -3616,7 +3616,7 @@ var GL_AURORA_FRAG = [
 
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float t=u_time*0.00090;',
+  '  float t=u_time*0.00150;',
 
   '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.2),uv.y*0.65+0.35);',
 
@@ -3629,21 +3629,36 @@ var GL_AURORA_FRAG = [
   '  vec3 rm;',
   '  float g;',
 
+  // Each curtain sweeps through several palette colours along its height and
+  // by screen position, so the whole spectrum reads across the aurora.
   '  g=curtain(uv,t,0.12,0.22,0.16,rm);',
-  '  vec3 cA=mix(u_c0,u_c1,uv.y);',
-  '  col+=mix(cA,vec3(1.0),g*g*0.22)*g*1.05*u_intensity;',
+  '  vec3 cA=mix(u_c0,u_c1,smoothstep(0.1,0.7,uv.y));',
+  '  cA=mix(cA,u_c2,smoothstep(0.5,0.95,uv.y));',
+  '  col+=mix(cA,vec3(1.0),g*g*0.20)*g*1.15*u_intensity;',
 
   '  g=curtain(uv,t*1.07,0.55,0.50,0.20,rm);',
-  '  vec3 cB=mix(u_c2,u_c3,uv.y);',
-  '  col+=mix(cB,vec3(1.0),g*g*0.22)*g*0.95*u_intensity;',
+  '  vec3 cB=mix(u_c2,u_c3,smoothstep(0.1,0.7,uv.y));',
+  '  cB=mix(cB,u_c4,smoothstep(0.5,0.95,uv.y));',
+  '  col+=mix(cB,vec3(1.0),g*g*0.20)*g*1.05*u_intensity;',
 
   '  g=curtain(uv,t*0.93,0.81,0.76,0.17,rm);',
-  '  vec3 cC=mix(u_c4,u_c5,uv.y);',
-  '  col+=mix(cC,vec3(1.0),g*g*0.22)*g*1.0*u_intensity;',
+  '  vec3 cC=mix(u_c4,u_c5,smoothstep(0.1,0.7,uv.y));',
+  '  cC=mix(cC,u_c1,smoothstep(0.5,0.95,uv.y));',
+  '  col+=mix(cC,vec3(1.0),g*g*0.20)*g*1.1*u_intensity;',
 
-  // A wide faint back-curtain for depth.
+  // Two extra mid curtains so all six colours appear and overlap.
+  '  g=curtain(uv,t*1.18,0.40,0.36,0.15,rm);',
+  '  vec3 cD=mix(u_c1,u_c3,uv.y);',
+  '  col+=mix(cD,vec3(1.0),g*g*0.20)*g*0.95*u_intensity;',
+
+  '  g=curtain(uv,t*0.86,0.68,0.63,0.15,rm);',
+  '  vec3 cE=mix(u_c5,u_c0,uv.y);',
+  '  col+=mix(cE,vec3(1.0),g*g*0.20)*g*0.95*u_intensity;',
+
+  // A wide faint back-curtain for depth (sweeps palette across x).
   '  g=curtain(uv,t*0.8,0.33,0.45,0.34,rm)*0.5;',
-  '  col+=mix(u_c1,u_c4,uv.x)*g*0.7*u_intensity;',
+  '  vec3 cBack=mix(u_c0,u_c2,uv.x); cBack=mix(cBack,u_c4,smoothstep(0.5,1.0,uv.x));',
+  '  col+=cBack*g*0.7*u_intensity;',
 
   // Soft sky glow rising from the hem region.
   '  float hemGlow=smoothstep(0.85,0.55,uv.y)*smoothstep(0.30,0.62,uv.y);',
