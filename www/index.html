@@ -2255,6 +2255,7 @@ function drawSolarWind() {
   });
 
   // ── Aurora curtains ───────────────────────────────────────
+  ctx.globalCompositeOperation = 'lighter';
   auroraCurtains.forEach(function(c) {
     c.phase   += c.speed * spd;
     c.shimmer += c.shimSpd * spd;
@@ -2276,33 +2277,36 @@ function drawSolarWind() {
     var col2 = themeRgbPalette[c.palIdx2] || [ar, ag, ab];
 
     // Number of vertical strips — each wiggles independently for curtain wave
-    var strips = 18;
+    var strips = 20;
     for (var s2 = 0; s2 <= strips; s2++) {
       var sf  = s2 / strips;
-      // Horizontal wave displacement
-      var wx  = Math.sin(sf * c.waveFreq * Math.PI + c.phase) * c.waveAmp * W
-              + Math.sin(sf * c.waveFreq * 1.6 * Math.PI + c.phase * 0.7) * c.waveAmp * 0.4 * W;
+      // Horizontal wave displacement — folds travel DOWN the curtain over time
+      // so the sheet ripples like hanging fabric, and sways side to side.
+      var wx  = Math.sin(sf * c.waveFreq * Math.PI * 2.0 + c.phase) * c.waveAmp * W
+              + Math.sin(sf * c.waveFreq * 3.3 * Math.PI - c.phase * 1.3) * c.waveAmp * 0.45 * W
+              + Math.sin(c.phase * 0.6 + c.shimmer * 0.3) * c.waveAmp * 0.6 * W;
       var sx2 = cx - cw * 0.5 + sf * cw + wx;
 
-      // Strip alpha tapers at edges and top/bottom
+      // Strip alpha tapers at edges; subtle per-strip ray brightness variation
       var edgeFade = Math.sin(sf * Math.PI);      // 0 at edges, 1 at centre
-      var sa2 = shimAlpha * edgeFade;
+      var rayVar = 0.7 + 0.3 * Math.sin(sf * 22.0 + c.shimmer * 1.5 + c.phase);
+      var sa2 = shimAlpha * edgeFade * rayVar;
 
       // Blend between two palette colors across the curtain width
       var r = Math.round(col[0]  + (col2[0]-col[0])  * sf);
       var g = Math.round(col[1]  + (col2[1]-col[1])  * sf);
       var b = Math.round(col[2]  + (col2[2]-col[2])  * sf);
 
-      // Vertical gradient: transparent top → bright → bright mid → fade bottom
+      // Vertical gradient: wispy faint tips at top → bright glowing hem lower
       var grad = ctx.createLinearGradient(sx2, yTop, sx2, yBot);
       grad.addColorStop(0,    'rgba(' + r + ',' + g + ',' + b + ',0)');
-      grad.addColorStop(0.08, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.5) + ')');
-      grad.addColorStop(0.25, 'rgba(' + r + ',' + g + ',' + b + ',' + sa2 + ')');
-      grad.addColorStop(0.55, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.85) + ')');
-      grad.addColorStop(0.80, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.35) + ')');
+      grad.addColorStop(0.15, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.28) + ')');
+      grad.addColorStop(0.45, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.7) + ')');
+      grad.addColorStop(0.72, 'rgba(' + r + ',' + g + ',' + b + ',' + sa2 + ')');
+      grad.addColorStop(0.90, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.6) + ')');
       grad.addColorStop(1,    'rgba(' + r + ',' + g + ',' + b + ',0)');
 
-      var stripW = cw / strips * 1.5;
+      var stripW = cw / strips * 1.6;
       ctx.fillStyle = grad;
       ctx.fillRect(sx2 - stripW * 0.5, yTop, stripW, ch);
     }
@@ -2316,6 +2320,7 @@ function drawSolarWind() {
     ctx.fillStyle = hem;
     ctx.fillRect(cx - cw * 0.55, hemY - 4, cw * 1.1, H * 0.06);
   });
+  ctx.globalCompositeOperation = 'source-over';
 
   // ── Ground glow reflection ────────────────────────────────
   var gnd = ctx.createLinearGradient(0, H * 0.85, 0, H);
@@ -3573,6 +3578,7 @@ var GL_AURORA_FRAG = [
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
+  'float fbm(vec2 p){float v=0.0,a=0.5;for(int k=0;k<4;k++){v+=a*vnoise(p);p*=2.02;a*=0.5;}return v;}',
 
   'float starField(vec2 uv,float sc,vec2 off){',
   '  vec2 g=floor(uv*sc+off);float v=h2(g);if(v<0.988)return 0.0;',
@@ -3581,76 +3587,67 @@ var GL_AURORA_FRAG = [
   '  float shim=0.84+0.12*sin(u_time*0.0016*(0.5+v)+v*43.7);',
   '  return (1.0-smoothstep(0.0,sz,d))*(0.40+v*0.55)*shim;}',
 
+  // One vertical aurora curtain. cx = horizontal centre (0..1), driven by
+  // slow travelling folds so the sheet ripples side to side. Returns glow.
+  'float curtain(vec2 uv,float t,float seed,float cxBase,float wide,out vec3 rayMod){',
+  // Horizontal position of this curtain column, rippling over height + time.
+  // Folds travel DOWN the curtain (depend on uv.y) so it waves like fabric.
+  '  float fold = sin(uv.y*2.2 + t*0.6 + seed*6.28)*0.045',
+  '             + sin(uv.y*4.7 - t*0.9 + seed*3.1)*0.022',
+  '             + sin(uv.y*1.1 + t*0.35)*0.030;',
+  '  float cx = cxBase + fold;',
+  '  float dx = (uv.x - cx);',
+  // Curtain body: gaussian across width, soft feathered edges.
+  '  float body = exp(-dx*dx/(wide*wide));',
+  // Vertical falloff: bright glowing base (lower), fading up to wispy tips.
+  '  float top = 0.10 + 0.08*sin(t*0.3+seed*5.0);',          // where it starts
+  '  float baseY = 0.74 + 0.05*sin(t*0.25+seed*2.0);',       // glowing hem line
+  '  float vert = smoothstep(top, baseY, uv.y) * smoothstep(0.96, baseY, uv.y);',
+  // Brighten strongly toward the hem.
+  '  vert += smoothstep(top, baseY, uv.y) * pow(smoothstep(top,baseY,uv.y),2.0)*0.6;',
+  // Vertical ray striations — thin light rays running down the curtain.
+  '  float rays = fbm(vec2((uv.x)*55.0 + seed*20.0, uv.y*6.0 + t*0.15));',
+  '  rays = 0.55 + rays*0.9;',
+  // Shimmer up/down the rays.
+  '  float shim = 0.8 + 0.2*sin(uv.y*30.0 - t*3.0 + dx*20.0 + seed*4.0);',
+  '  rayMod = vec3(rays*shim);',
+  '  return body * vert * rays * shim;',
+  '}',
+
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float t=u_time*0.00042;',
+  '  float t=u_time*0.00045;',
 
   '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.2),uv.y*0.65+0.35);',
 
   // Stars
-  '  col+=starField(uv,280.0,vec2(0.0,0.0))*0.65;',
-  '  col+=starField(uv,160.0,vec2(57.3,83.7))*0.80;',
-  '  col+=starField(uv,90.0,vec2(31.1,47.9))*0.95;',
-  '  float bh=h2(floor(uv*50.0)+vec2(89.3,13.5));',
-  '  col+=mix(vec3(1.0),vec3(0.75,0.88,1.0),step(0.55,bh))*starField(uv,50.0,vec2(89.3,13.5))*1.1;',
+  '  col+=starField(uv,280.0,vec2(0.0,0.0))*0.60;',
+  '  col+=starField(uv,160.0,vec2(57.3,83.7))*0.75;',
+  '  col+=starField(uv,90.0,vec2(31.1,47.9))*0.90;',
 
-  // HORIZONTAL AURORA — bands flow across screen like XMB wave
-  // Large-scale vertical structure (where bands are thick/thin)
-  '  float bigY=vnoise(vec2(uv.y*1.5+t*0.20,t*0.15))*0.50',
-  '            +vnoise(vec2(uv.y*3.0+t*0.35,t*0.12+1.3))*0.30',
-  '            +vnoise(vec2(uv.y*0.6+t*0.10,t*0.08+2.7))*0.20;',
+  // Several overlapping vertical curtains at different x, width, speed, colour.
+  '  vec3 rm;',
+  '  float g;',
 
-  // Fold from x only — displaces bands up/down, keeps them horizontal
-  '  float fold=sin(uv.x*2.5+t*5.0)*0.07+sin(uv.x*5.8+t*7.8)*0.028+sin(uv.x*12.0+t*11.5)*0.010;',
-  '  float fy=uv.y+fold;',
+  '  g=curtain(uv,t,0.12,0.22,0.16,rm);',
+  '  vec3 cA=mix(u_c0,u_c1,uv.y);',
+  '  col+=mix(cA,vec3(1.0),g*g*0.4)*g*1.7*u_intensity;',
 
-  // Ray texture: HIGH y-freq (thin horizontal bands), LOW x-freq (wide)
-  '  float rA=vnoise(vec2(uv.x*0.5+t*0.12,fy*20.0+t*0.55));',
-  '  float rB=vnoise(vec2(uv.x*1.0+t*0.22,fy*40.0+t*0.90));',
-  '  float rC=vnoise(vec2(uv.x*0.3+t*0.08,fy*10.0+t*0.30));',
-  '  float w=max(0.0,(rA*0.50+rB*0.28+rC*0.22)*bigY-0.18);',
-  '  float rays=pow(w/0.82,1.3);',
+  '  g=curtain(uv,t*1.07,0.55,0.50,0.20,rm);',
+  '  vec3 cB=mix(u_c2,u_c3,uv.y);',
+  '  col+=mix(cB,vec3(1.0),g*g*0.4)*g*1.5*u_intensity;',
 
-  // Second layer
-  '  float fold2=sin(uv.x*2.1+t*4.0+1.9)*0.08+sin(uv.x*4.9+t*6.5+0.8)*0.030;',
-  '  float fy2=uv.y+fold2;',
-  '  float bigY2=vnoise(vec2(uv.y*1.3+t*0.16+2.1,t*0.12+1.8))*0.55',
-  '             +vnoise(vec2(uv.y*2.6+t*0.28,t*0.09+3.4))*0.45;',
-  '  float rD=vnoise(vec2(uv.x*0.5+t*0.10+3.1,fy2*16.0+t*0.42));',
-  '  float rE=vnoise(vec2(uv.x*1.0+t*0.18,fy2*32.0+t*0.72));',
-  '  float w2=max(0.0,(rD*0.55+rE*0.45)*bigY2-0.20);',
-  '  float rays2=pow(w2/0.80,1.3)*0.65;',
+  '  g=curtain(uv,t*0.93,0.81,0.76,0.17,rm);',
+  '  vec3 cC=mix(u_c4,u_c5,uv.y);',
+  '  col+=mix(cC,vec3(1.0),g*g*0.4)*g*1.6*u_intensity;',
 
-  '  float sh1=0.65+0.35*sin(t*18.0+uv.y*28.0+uv.x*9.0);',
-  '  float sh2=0.70+0.30*sin(t*14.0+uv.y*22.0+uv.x*6.0+2.1);',
-  // Vertical mask with animated edge noise — top/bottom breathe and bleed unevenly
-  '  float edgeNoise=vnoise(vec2(uv.x*2.8+t*0.40, t*0.25))*0.18',
-  '                 +vnoise(vec2(uv.x*5.5+t*0.65, t*0.18+1.3))*0.08;',
-  '  float topEdge=0.32+edgeNoise;',
-  '  float botEdge=0.70-edgeNoise*0.7;',
-  '  float vMask=smoothstep(0.02,topEdge,uv.y)*smoothstep(1.0,botEdge,uv.y);',
-  '  float d1=rays*sh1*u_intensity*vMask;',
-  '  float d2=rays2*sh2*u_intensity*vMask;',
+  // A wide faint back-curtain for depth.
+  '  g=curtain(uv,t*0.8,0.33,0.45,0.34,rm)*0.5;',
+  '  col+=mix(u_c1,u_c4,uv.x)*g*1.0*u_intensity;',
 
-  // Color varies left-right using all 6 palette colors — wide overlapping blends
-  '  float xf=uv.x;',
-  '  vec3 aCol=u_c0;',
-  '  aCol=mix(aCol,u_c1,smoothstep(0.00,0.50,xf));',
-  '  aCol=mix(aCol,u_c2,smoothstep(0.17,0.67,xf));',
-  '  aCol=mix(aCol,u_c3,smoothstep(0.33,0.83,xf));',
-  '  aCol=mix(aCol,u_c4,smoothstep(0.50,1.00,xf));',
-  '  aCol=mix(aCol,u_c5,smoothstep(0.70,1.00,xf));',
-  // Second layer shifted
-  '  float xf2=fract(xf+0.5);',
-  '  vec3 aCol2=u_c3;',
-  '  aCol2=mix(aCol2,u_c4,smoothstep(0.00,0.50,xf2));',
-  '  aCol2=mix(aCol2,u_c5,smoothstep(0.17,0.67,xf2));',
-  '  aCol2=mix(aCol2,u_c0,smoothstep(0.33,0.83,xf2));',
-  '  aCol2=mix(aCol2,u_c1,smoothstep(0.50,1.00,xf2));',
-  '  aCol2=mix(aCol2,u_c2,smoothstep(0.70,1.00,xf2));',
-  '  col+=mix(aCol,vec3(1.0),d1*d1*0.50)*d1*1.65;',
-  '  col+=mix(mix(aCol2,u_c2,0.4),vec3(1.0),d2*d2*0.28)*d2*0.70;',
-  '  col+=u_c0*smoothstep(0.30,0.08,uv.y)*d1*0.14;',
+  // Soft sky glow rising from the hem region.
+  '  float hemGlow=smoothstep(0.85,0.55,uv.y)*smoothstep(0.30,0.62,uv.y);',
+  '  col+=mix(u_c2,u_c0,uv.x)*hemGlow*0.10*u_intensity;',
 
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(0.80,1.0),vc*vec2(0.80,1.0))*1.10;',
