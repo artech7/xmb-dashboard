@@ -3604,7 +3604,7 @@ var GL_AURORA_FRAG = [
   '  float baseY = 0.74 + 0.05*sin(t*0.25+seed*2.0);',       // glowing hem line
   '  float vert = smoothstep(top, baseY, uv.y) * smoothstep(0.96, baseY, uv.y);',
   // Brighten strongly toward the hem.
-  '  vert += smoothstep(top, baseY, uv.y) * pow(smoothstep(top,baseY,uv.y),2.0)*0.6;',
+  '  vert += smoothstep(top, baseY, uv.y) * pow(smoothstep(top,baseY,uv.y),2.0)*0.3;',
   // Vertical ray striations — thin light rays running down the curtain.
   '  float rays = fbm(vec2((uv.x)*55.0 + seed*20.0, uv.y*6.0 + t*0.15));',
   '  rays = 0.55 + rays*0.9;',
@@ -3631,23 +3631,26 @@ var GL_AURORA_FRAG = [
 
   '  g=curtain(uv,t,0.12,0.22,0.16,rm);',
   '  vec3 cA=mix(u_c0,u_c1,uv.y);',
-  '  col+=mix(cA,vec3(1.0),g*g*0.4)*g*1.7*u_intensity;',
+  '  col+=mix(cA,vec3(1.0),g*g*0.22)*g*1.05*u_intensity;',
 
   '  g=curtain(uv,t*1.07,0.55,0.50,0.20,rm);',
   '  vec3 cB=mix(u_c2,u_c3,uv.y);',
-  '  col+=mix(cB,vec3(1.0),g*g*0.4)*g*1.5*u_intensity;',
+  '  col+=mix(cB,vec3(1.0),g*g*0.22)*g*0.95*u_intensity;',
 
   '  g=curtain(uv,t*0.93,0.81,0.76,0.17,rm);',
   '  vec3 cC=mix(u_c4,u_c5,uv.y);',
-  '  col+=mix(cC,vec3(1.0),g*g*0.4)*g*1.6*u_intensity;',
+  '  col+=mix(cC,vec3(1.0),g*g*0.22)*g*1.0*u_intensity;',
 
   // A wide faint back-curtain for depth.
   '  g=curtain(uv,t*0.8,0.33,0.45,0.34,rm)*0.5;',
-  '  col+=mix(u_c1,u_c4,uv.x)*g*1.0*u_intensity;',
+  '  col+=mix(u_c1,u_c4,uv.x)*g*0.7*u_intensity;',
 
   // Soft sky glow rising from the hem region.
   '  float hemGlow=smoothstep(0.85,0.55,uv.y)*smoothstep(0.30,0.62,uv.y);',
-  '  col+=mix(u_c2,u_c0,uv.x)*hemGlow*0.10*u_intensity;',
+  '  col+=mix(u_c2,u_c0,uv.x)*hemGlow*0.08*u_intensity;',
+
+  // Keep colour from blowing out: soft-clamp highlights back toward palette.
+  '  col=col/(1.0+max(vec3(0.0),col-1.0)*0.85);',
 
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(0.80,1.0),vc*vec2(0.80,1.0))*1.10;',
