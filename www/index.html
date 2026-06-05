@@ -3120,7 +3120,11 @@ function drawGrassField() {
 
 // Voronoi cell seeds (persistent)
 function _voronoiSeeds() {
-  var COUNT = isMobile ? 60 : 130;
+  // More cells = finer mosaic. When a stained-glass image is loaded we use a
+  // lot more (and it's static, so the cost is paid once visually) so the photo
+  // reads clearly while keeping the faceted/pixelated look.
+  var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
+  var COUNT = hasImg ? (isMobile ? 220 : 480) : (isMobile ? 90 : 200);
   if (!window._vor || window._vor.length !== COUNT) {
     window._vor = [];
     for (var i = 0; i < COUNT; i++) {
@@ -3206,41 +3210,63 @@ function drawVoronoi() {
   // Rasterize Voronoi on a coarse grid (cheap): for each grid cell find nearest
   // seed, fill that block with the seed's colour. Grid resolution scales with
   // device. This gives the faceted stained-glass look without per-pixel cost.
-  var GX = isMobile ? 64 : 110;
-  var GY = Math.round(GX * (H / W));
-  var cellW = W / GX, cellH = H / GY;
-  // Precompute each seed colour
-  var cols = [];
-  for (var k = 0; k < pts.length; k++) {
-    var base;
-    if (hasImg) {
-      var sc2 = sampleImg(pts[k].u, pts[k].v);
-      // Recolour through palette: blend image colour with a palette tone of
-      // similar brightness so it reads as themed stained glass.
-      var lum = (sc2[0]*0.299 + sc2[1]*0.587 + sc2[2]*0.114) / 255;
-      var pcol = palAt(lum * 0.8 + pts[k].hue * 0.2);
-      base = [sc2[0]*0.45 + pcol[0]*0.55, sc2[1]*0.45 + pcol[1]*0.55, sc2[2]*0.45 + pcol[2]*0.55];
-    } else {
-      base = palAt(pts[k].hue + pts[k].u * 0.3 + TT * 0.02);
+  // ── Static cache: in image mode the cells don't move, so rasterize once to
+  // an offscreen canvas and just blit it each frame. Re-render only when the
+  // image, palette, intensity, seed count, or canvas size changes. ──
+  var palKey = pal.map(function(c){return (c[0]|0)+'_'+(c[1]|0)+'_'+(c[2]|0);}).join('|');
+  var cacheKey = (hasImg ? 'img' : 'pal') + ':' + seeds.length + ':' + W + 'x' + H + ':' + palKey + ':' + iMult.toFixed(2) + ':' + (window._vorImg ? window._vorImg.src.length : 0);
+
+  function rasterizeVoronoi(target) {
+    var GX = hasImg ? (isMobile ? 130 : 240) : (isMobile ? 70 : 120);
+    var GY = Math.round(GX * (H / W));
+    var cellW = W / GX, cellH = H / GY;
+    var cols = [];
+    for (var k = 0; k < pts.length; k++) {
+      var base;
+      if (hasImg) {
+        var sc2 = sampleImg(pts[k].u, pts[k].v);
+        var lum = (sc2[0]*0.299 + sc2[1]*0.587 + sc2[2]*0.114) / 255;
+        var pcol = palAt(lum * 0.8 + pts[k].hue * 0.2);
+        base = [sc2[0]*0.45 + pcol[0]*0.55, sc2[1]*0.45 + pcol[1]*0.55, sc2[2]*0.45 + pcol[2]*0.55];
+      } else {
+        base = palAt(pts[k].hue + pts[k].u * 0.3 + TT * 0.02);
+      }
+      cols.push(base);
     }
-    cols.push(base);
+    for (var gy = 0; gy < GY; gy++) {
+      var py2 = (gy + 0.5) * cellH;
+      for (var gx = 0; gx < GX; gx++) {
+        var px2 = (gx + 0.5) * cellW;
+        var best = 0, bestD = 1e9;
+        for (var n = 0; n < pts.length; n++) {
+          var dx = pts[n].x - px2, dy = pts[n].y - py2;
+          var dd = dx*dx + dy*dy;
+          if (dd < bestD) { bestD = dd; best = n; }
+        }
+        var c = cols[best];
+        target.fillStyle = 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (0.9 * iMult).toFixed(3) + ')';
+        target.fillRect(gx*cellW, gy*cellH, cellW+1, cellH+1);
+      }
+    }
   }
 
-  for (var gy = 0; gy < GY; gy++) {
-    var py2 = (gy + 0.5) * cellH;
-    for (var gx = 0; gx < GX; gx++) {
-      var px2 = (gx + 0.5) * cellW;
-      // nearest seed
-      var best = 0, bestD = 1e9;
-      for (var n = 0; n < pts.length; n++) {
-        var dx = pts[n].x - px2, dy = pts[n].y - py2;
-        var dd = dx*dx + dy*dy;
-        if (dd < bestD) { bestD = dd; best = n; }
-      }
-      var c = cols[best];
-      ctx.fillStyle = 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (0.9 * iMult).toFixed(3) + ')';
-      ctx.fillRect(gx*cellW, gy*cellH, cellW+1, cellH+1);
+  if (hasImg) {
+    // Static — use the cached render, rebuild only when something changed
+    if (!window._vorCache || window._vorCacheKey !== cacheKey ||
+        window._vorCache.width !== W || window._vorCache.height !== H) {
+      var cc = window._vorCache && window._vorCache.width === W && window._vorCache.height === H
+        ? window._vorCache : document.createElement('canvas');
+      cc.width = W; cc.height = H;
+      var cx2 = cc.getContext('2d');
+      cx2.clearRect(0, 0, W, H);
+      rasterizeVoronoi(cx2);
+      window._vorCache = cc;
+      window._vorCacheKey = cacheKey;
     }
+    ctx.drawImage(window._vorCache, 0, 0);
+  } else {
+    // Animated — rasterize straight to the screen each frame
+    rasterizeVoronoi(ctx);
   }
 
   // Vignette on the edges
