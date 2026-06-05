@@ -1252,6 +1252,7 @@ function animLoop() {
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
     case 'flow':      drawFlowField();                           break;
+    case 'grass':     drawGrassField();                          break;
     case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
@@ -2823,6 +2824,113 @@ function hexToRgbStr(hex) {
   if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
   var n = parseInt(hex, 16);
   return ((n>>16)&255) + ',' + ((n>>8)&255) + ',' + (n&255);
+}
+
+function drawGrassField() {
+  // Field of grass blades bending in waves of wind, Flower-style.
+  // Wind = travelling gusts sweeping L->R; color blooms as gusts pass.
+  var pal = themeRgbPalette || [[120,180,255]];
+  var iMult = blobOpacityMult || 1.0;
+  var spd = animSpeed > 0 ? animSpeed : 0;
+
+  function palAt(f) {
+    var n = pal.length;
+    f = f - Math.floor(f);
+    var x = f * (n - 1);
+    var lo = Math.floor(x), hi = Math.min(lo + 1, n - 1);
+    var fr = x - lo;
+    var a = pal[lo], b = pal[hi];
+    return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
+  }
+
+  // Background — deep theme gradient
+  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
+
+  var TT = t * spd * 0.001;
+
+  // Wind field: base breeze + occasional big rolling gusts travelling across.
+  // Returns a bend strength (-1..~1.4) at horizontal fraction ux, time-varying.
+  function windAt(ux) {
+    var breeze = Math.sin(ux * 3.0 - TT * 1.4) * 0.35
+               + Math.sin(ux * 6.0 - TT * 2.1) * 0.15;
+    // Big gusts: a moving gaussian bump sweeping L->R, recurring
+    var gustPos = (TT * 0.18) % 1.6 - 0.3;          // travels across, repeats
+    var g1 = Math.exp(-Math.pow((ux - gustPos) * 3.2, 2.0)) * 1.1;
+    var gustPos2 = (TT * 0.12 + 0.8) % 1.9 - 0.3;
+    var g2 = Math.exp(-Math.pow((ux - gustPos2) * 4.0, 2.0)) * 0.8;
+    return breeze + g1 + g2;
+  }
+
+  // Init blades once (persistent), arranged in depth layers
+  var COUNT = isMobile ? 90 : 220;
+  if (!window._grass || window._grass.length !== COUNT) {
+    window._grass = [];
+    for (var i = 0; i < COUNT; i++) {
+      var depth = Math.random();                  // 0 far .. 1 near
+      window._grass.push({
+        x: Math.random(),                         // horizontal fraction
+        depth: depth,
+        h: (0.18 + depth * 0.42) * (0.8 + Math.random() * 0.4), // blade height frac
+        lean: (Math.random() - 0.5) * 0.3,        // resting lean
+        stiff: 0.6 + Math.random() * 0.8,         // how much it resists wind
+        phase: Math.random() * Math.PI * 2,
+        hue: Math.random(),
+        width: 2.0 + depth * 4.0
+      });
+    }
+    // Sort far->near so near blades draw on top
+    window._grass.sort(function(a,b){ return a.depth - b.depth; });
+  }
+  var blades = window._grass;
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.lineCap = 'round';
+
+  for (var bi = 0; bi < blades.length; bi++) {
+    var bl = blades[bi];
+    var baseX = bl.x * W;
+    var baseY = H * (1.02 + bl.depth * 0.04);     // rooted near/below bottom
+    var bladeH = bl.h * H;
+    // Wind bend at this blade + its own sway
+    var wind = windAt(bl.x) / bl.stiff;
+    var sway = Math.sin(TT * 2.0 + bl.phase) * 0.06;
+    var bend = (bl.lean + wind + sway) * bladeH * 0.8;
+
+    // Gust strength here drives a color "bloom" (brighter + shifts palette)
+    var gust = Math.max(0, wind);
+    var bloom = Math.min(1, gust * 0.7);
+
+    // Tip position via a quadratic curve (base -> control -> tip)
+    var tipX = baseX + bend;
+    var tipY = baseY - bladeH;
+    var ctrlX = baseX + bend * 0.45;
+    var ctrlY = baseY - bladeH * 0.55;
+
+    // Color: palette by position + own hue, brightened by bloom
+    var c = palAt(bl.x * 0.6 + bl.hue * 0.4 + TT * 0.02 + bloom * 0.15);
+    var br = 0.45 + bl.depth * 0.35 + bloom * 0.5;  // brightness
+    var R = Math.min(255, c[0] * br + bloom * 80);
+    var G = Math.min(255, c[1] * br + bloom * 80);
+    var B = Math.min(255, c[2] * br + bloom * 80);
+    var alpha = (0.5 + bl.depth * 0.4) * iMult;
+
+    ctx.strokeStyle = 'rgba(' + (R|0) + ',' + (G|0) + ',' + (B|0) + ',' + alpha.toFixed(3) + ')';
+    ctx.lineWidth = bl.width * (isMobile ? 0.8 : 1.0);
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY);
+    ctx.stroke();
+
+    // Bright tip dot when blooming (catches the light like Flower)
+    if (bloom > 0.15) {
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, bl.width * 0.5 * (0.5 + bloom), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + (R|0) + ',' + (G|0) + ',' + (B|0) + ',' + (bloom * 0.6 * iMult).toFixed(3) + ')';
+      ctx.fill();
+    }
+  }
+
+  ctx.lineWidth = 1;
 }
 function initBokeh() {
   var count = Math.max(40, Math.floor(W * H / 18000));
@@ -4998,7 +5106,7 @@ var _prefsOpen = false; // global flag checked by all key handlers
 
 // Keyboard nav state for prefs panel
 // Row 0 = theme grid (count set after themes load), rows 1-8 = settings, 9 = reset
-var ROW_COLS     = [40, 5, 3, 3, 3, 3, 3, 2, 3, 3, 1];
+var ROW_COLS     = [40, 5, 3, 4, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
@@ -5243,7 +5351,7 @@ function renderPrefsUI() {
 
   // ── Show/hide settings based on current animation ─────────
   var anim = userPrefs.animStyle || 'nebula';
-  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','flow'].indexOf(anim) >= 0;
+  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','flow','grass'].indexOf(anim) >= 0;
   var showParticles = anim === 'bokeh';
   var showRandomize = anim === 'nebula';
 
@@ -7081,10 +7189,11 @@ document.addEventListener('keydown', function(e) {
           </div>
         </div>
         <div class="p-row" data-pref-row="3">
-          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:100%">
+          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;width:100%">
             <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="3" data-pref-col="0">Particles</button>
             <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="3" data-pref-col="1">Smoke</button>
             <button class="p-toggle" data-pref="animStyle" data-val="hex"   data-pref-row="3" data-pref-col="2">Hex Grid</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="grass" data-pref-row="3" data-pref-col="3">Grass</button>
           </div>
         </div>
       </div>
