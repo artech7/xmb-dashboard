@@ -2894,14 +2894,14 @@ function drawGrassField() {
   skyTop = mix3(skyTop, paletteTop, 0.30);
   skyHorizon = mix3(skyHorizon, paletteHorizon, 0.28 + golden * 0.15);
 
-  var horizonY = H * 0.72;   // where sky meets grass
+  var horizonY = H;   // grass rises from the bottom of the screen
 
-  // ── Draw sky gradient ──
-  var sky = ctx.createLinearGradient(0, 0, 0, horizonY);
+  // ── Draw sky gradient over the FULL screen (no ground plane) ──
+  var sky = ctx.createLinearGradient(0, 0, 0, H);
   sky.addColorStop(0, rgba(skyTop, 1));
   sky.addColorStop(1, rgba(skyHorizon, 1));
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, horizonY);
+  ctx.fillRect(0, 0, W, H);
 
   // ── Stars at night (fade with daylight) ──
   var starA = Math.max(0, 1 - light * 1.6) * iMult;
@@ -2951,19 +2951,13 @@ function drawGrassField() {
   var moonPos = !isDay || moonElev > 0 ? drawOrb(moonElev, false) : null;
   var sunPos  = drawOrb(sunElev, true);
 
-  // ── Horizon haze band (atmospheric glow where sky meets grass) ──
+  // ── Soft haze glow at the bottom (atmosphere among the grass roots) ──
   var hazeCol = golden > 0.05 ? mix3(skyHorizon, [255, 180, 120], golden * 0.6) : skyHorizon;
-  var haze = ctx.createLinearGradient(0, horizonY - H*0.18, 0, horizonY + H*0.05);
+  var haze = ctx.createLinearGradient(0, H * 0.6, 0, H);
   haze.addColorStop(0, rgba(hazeCol, 0));
-  haze.addColorStop(1, rgba(hazeCol, (0.35 + golden * 0.35) * iMult));
+  haze.addColorStop(1, rgba(hazeCol, (0.30 + golden * 0.30) * iMult));
   ctx.fillStyle = haze;
-  ctx.fillRect(0, horizonY - H*0.18, W, H*0.23);
-
-  // ── Ground base (dark, lit by sky) below horizon ──
-  var groundCol = mix3([6, 8, 12], palAt(0.6), 0.18);
-  groundCol = mix3(groundCol, skyHorizon, 0.12 + light * 0.10);
-  ctx.fillStyle = rgba(groundCol, 1);
-  ctx.fillRect(0, horizonY, W, H - horizonY);
+  ctx.fillRect(0, H * 0.6, W, H * 0.4);
 
   // ── Wind field ──
   var TT = t * spd * 0.001;
@@ -3001,10 +2995,10 @@ function drawGrassField() {
   for (var bi = 0; bi < blades.length; bi++) {
     var bl = blades[bi];
     var baseX = bl.x * W;
-    // Root blades in a dense band just below the horizon so they fill it in
-    // and there is no bare foreground. Deeper blades sit a touch lower.
-    var baseY = horizonY + bl.root * (H - horizonY) * 0.32 + bl.depth * (H - horizonY) * 0.10;
-    var bladeH = bl.h * H;
+    // Root blades along the bottom of the screen, rising up into the sky.
+    // A little vertical scatter so the bases are not a dead-straight line.
+    var baseY = H + bl.root * H * 0.04;
+    var bladeH = bl.h * H * 1.9;   // taller so they reach well up the frame
     var wind = windAt(bl.x) / bl.stiff;
     var sway = Math.sin(TT * 2.0 + bl.phase) * 0.06;
     var bend = (bl.lean + wind + sway) * bladeH * 0.8;
