@@ -832,6 +832,7 @@ body {
 
 <canvas id="bg-canvas"></canvas>
 <canvas id="gl-canvas" style="display:none"></canvas>
+<svg id="glass-svg" style="display:none;position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none"></svg>
 <div id="loading">
   <div id="loading-title">Homelab</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
@@ -1094,6 +1095,7 @@ function resize() {
   matrixCols = null; flameParticles = null; flameEmbers = null;
   auroraCurtains = null; bokehCircles = null; inkBlobs = null;
   hexGridCanvas = null; hexCells = null; pfParticles = null;
+  if (typeof updateGlassLayer === 'function') { window._glassBuiltKey = null; updateGlassLayer(); }
 }
 
 function randomizeNebulaBlobs() {
@@ -1251,9 +1253,8 @@ function animLoop() {
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
-    case 'flow':      drawFlowField();                           break;
     case 'grass':     drawGrassField();                          break;
-    case 'voronoi':   drawVoronoi();                             break;
+    case 'voronoi':   ctx.clearRect(0,0,W,H);                    break;
     case 'wallpaper': drawWallpaper();                           break;
     case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
@@ -1265,7 +1266,7 @@ function animLoop() {
 }
 
 window.addEventListener('resize', resize);
-document.addEventListener('themechange', function(){ hexGridCanvas = null; galaxyClouds = null; galaxyStars = null; galaxyCloudCanvas = null; });
+document.addEventListener('themechange', function(){ hexGridCanvas = null; galaxyClouds = null; galaxyStars = null; galaxyCloudCanvas = null; if (typeof updateGlassLayer === 'function') { window._glassBuiltKey = null; updateGlassLayer(); } });
 resize();
 // Defer animLoop start until all script blocks have executed
 // so initWebGL() has run and glSupported is set correctly
@@ -2723,103 +2724,6 @@ var bokehCircles = null;
 
 
 // ── XMB Wave 2.0 — authentic PS3 flowing ribbon ──────────────────────────────
-function drawFlowField() {
-  // Flow field: particles drift along an invisible noise-driven vector field,
-  // each coloured by its position so the whole palette sweeps across screen.
-  var pal = themeRgbPalette || [[120,180,255]];
-  var iMult = blobOpacityMult || 1.0;
-  var spd = animSpeed > 0 ? animSpeed : 0;
-
-  function palAt(f) {
-    var n = pal.length;
-    f = f - Math.floor(f);
-    var x = f * (n - 1);
-    var lo = Math.floor(x), hi = Math.min(lo + 1, n - 1);
-    var fr = x - lo;
-    var a = pal[lo], b = pal[hi];
-    return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
-  }
-
-  // Fade the previous frame slightly instead of clearing — leaves silky trails
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = 'rgba(' + hexToRgbStr(nebulaBackground[2] || '#010009') + ',0.10)';
-  ctx.fillRect(0, 0, W, H);
-
-  var TT = t * spd;
-
-  // Smooth pseudo-noise → flow angle at a point (cheap, no texture lookups)
-  function flowAngle(x, y) {
-    var nx = x * 0.0016, ny = y * 0.0016;
-    var tt = TT * 0.0004;
-    var a = Math.sin(nx + tt) + Math.cos(ny * 1.3 - tt * 0.8)
-          + Math.sin((nx + ny) * 0.7 + tt * 1.2)
-          + Math.cos((nx * 1.7 - ny * 0.9) + tt * 0.5);
-    return a * 1.4;  // radians
-  }
-
-  // Init particles once
-  var COUNT = isMobile ? 280 : 700;
-  if (!window._ff || window._ff.length !== COUNT) {
-    window._ff = [];
-    for (var i = 0; i < COUNT; i++) {
-      window._ff.push({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        life: Math.random() * 200,
-        maxLife: 120 + Math.random() * 220,
-        hue: Math.random(),               // its slot in the palette
-        spd: 0.5 + Math.random() * 1.4,
-        size: 0.6 + Math.random() * 1.8
-      });
-    }
-  }
-  var ff = window._ff;
-
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.lineCap = 'round';
-
-  for (var p = 0; p < ff.length; p++) {
-    var pt = ff[p];
-    var ang = flowAngle(pt.x, pt.y);
-    var vx = Math.cos(ang) * pt.spd * (1 + spd * 0.5);
-    var vy = Math.sin(ang) * pt.spd * (1 + spd * 0.5);
-    var nxp = pt.x + vx, nyp = pt.y + vy;
-
-    // Colour: blend the particle's own hue with where it is on screen, so the
-    // whole palette spreads across the field and shifts as particles travel.
-    var posHue = (pt.x / W) * 0.5 + (pt.y / H) * 0.3;
-    var c = palAt(pt.hue * 0.6 + posHue + TT * 0.00002);
-    // Fade in/out over the particle's life so trails appear/vanish smoothly
-    var lifeF = pt.life / pt.maxLife;
-    var fade = Math.sin(lifeF * Math.PI);   // 0 at birth/death, 1 mid-life
-    var alpha = 0.5 * fade * iMult;
-
-    ctx.strokeStyle = 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + alpha.toFixed(3) + ')';
-    ctx.lineWidth = pt.size * (isMobile ? 1.0 : 1.2);
-    ctx.beginPath();
-    ctx.moveTo(pt.x, pt.y);
-    ctx.lineTo(nxp, nyp);
-    ctx.stroke();
-
-    pt.x = nxp; pt.y = nyp;
-    pt.life += 1;
-
-    // Respawn when off-screen or end of life
-    if (pt.life > pt.maxLife || pt.x < -10 || pt.x > W + 10 || pt.y < -10 || pt.y > H + 10) {
-      pt.x = Math.random() * W;
-      pt.y = Math.random() * H;
-      pt.life = 0;
-      pt.maxLife = 120 + Math.random() * 220;
-      pt.hue = Math.random();
-      pt.spd = 0.5 + Math.random() * 1.4;
-      pt.size = 0.6 + Math.random() * 1.8;
-    }
-  }
-
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.lineWidth = 1;
-}
-
 // Helper: '#rrggbb' -> 'r,g,b'
 function hexToRgbStr(hex) {
   hex = (hex || '#000000').replace('#','');
@@ -3118,274 +3022,199 @@ function drawGrassField() {
   ctx.lineWidth = 1;
 }
 
-// ── Voronoi half-plane clipping (Sutherland-Hodgman) ──
-function _vorClip(poly, ax, ay, bx, by) {
-  // Keep the side of the perpendicular bisector of (a,b) nearer to a.
-  var mx = (ax+bx)*0.5, my = (ay+by)*0.5;
-  var nx = bx-ax, ny = by-ay;
-  var out = [];
+// ════════════════════════════════════════════════════════════════════════════
+//  STAINED GLASS  —  SVG renderer (static; regenerated on demand)
+//  True vector Voronoi panes with lead-came strokes, per-pane glass texture,
+//  sheen, and an optional continuous wallpaper masked through all panes.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Seeded RNG (mulberry32) so a stored seed reproduces the same layout.
+function _glassRng(seed) {
+  var s = seed >>> 0;
+  return function() {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    var t2 = Math.imul(s ^ (s >>> 15), 1 | s);
+    t2 = (t2 + Math.imul(t2 ^ (t2 >>> 7), 61 | t2)) ^ t2;
+    return ((t2 ^ (t2 >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Half-plane clip (Sutherland–Hodgman) — keep side nearer to a.
+function _glassClip(poly, ax, ay, bx, by) {
+  var mx = (ax+bx)*0.5, my = (ay+by)*0.5, nx = bx-ax, ny = by-ay, out = [];
   for (var i = 0; i < poly.length; i++) {
     var cur = poly[i], nxt = poly[(i+1) % poly.length];
     var dc = (cur.x-mx)*nx + (cur.y-my)*ny;
     var dn = (nxt.x-mx)*nx + (nxt.y-my)*ny;
     var ci = dc <= 0, ni = dn <= 0;
     if (ci) out.push(cur);
-    if (ci !== ni) {
-      var tt = dc/(dc-dn);
-      out.push({ x: cur.x+(nxt.x-cur.x)*tt, y: cur.y+(nxt.y-cur.y)*tt });
-    }
+    if (ci !== ni) { var tt = dc/(dc-dn); out.push({ x: cur.x+(nxt.x-cur.x)*tt, y: cur.y+(nxt.y-cur.y)*tt }); }
   }
   return out;
 }
 
-// Voronoi cell seeds (persistent). Honours density + regen generation so the
-// randomizer can reshuffle layout, density and per-cell glass texture.
-function _voronoiSeeds() {
-  var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
-  var density = window._vorDensity || 1.0;
-  var baseCount = hasImg ? (isMobile ? 300 : 620) : (isMobile ? 90 : 200);
-  var COUNT = Math.max(24, Math.round(baseCount * density));
-  var gen = window._vorGen || 0;
-  if (!window._vor || window._vor.length !== COUNT ||
-      window._vorBuiltGen !== gen || window._vorBuiltImg !== hasImg) {
-    window._vor = [];
-    for (var i = 0; i < COUNT; i++) {
-      window._vor.push({
-        x: Math.random(), y: Math.random(),
-        hue: Math.random(),
-        phase: Math.random() * Math.PI * 2,
-        // per-cell glass texture params
-        tAng:    Math.random() * Math.PI,          // streak direction
-        tStreak: 2 + (Math.random() * 3 | 0),       // number of streaks
-        tBright: (Math.random() - 0.5) * 0.30,      // brightness offset
-        tSheen:  Math.random() * Math.PI,           // sheen direction
-        tStr:    0.5 + Math.random() * 0.8          // streak strength
-      });
-    }
-    window._vorBuiltGen = gen;
-    window._vorBuiltImg = hasImg;
-  }
-  return window._vor;
-}
-
-function drawVoronoi() {
+// Build (or rebuild) the stained-glass SVG. Static — called only on
+// selection, randomize, palette change, image change, or resize.
+function buildGlassSVG() {
+  var svg = document.getElementById('glass-svg');
+  if (!svg) return;
   var pal = themeRgbPalette || [[120,180,255]];
   var iMult = blobOpacityMult || 1.0;
-  var spd = animSpeed > 0 ? animSpeed : 0;
-
   function palAt(f) {
-    var n = pal.length;
-    f = f - Math.floor(f);
-    var x = f * (n - 1);
-    var lo = Math.floor(x), hi = Math.min(lo + 1, n - 1);
-    var fr = x - lo;
+    var n = pal.length; f = f - Math.floor(f);
+    var x = f*(n-1), lo = Math.floor(x), hi = Math.min(lo+1,n-1), fr = x-lo;
     var a = pal[lo], b = pal[hi];
     return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
   }
+  function rgb(c){ return 'rgb('+(c[0]|0)+','+(c[1]|0)+','+(c[2]|0)+')'; }
 
+  var VW = W, VH = H;
   var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
-  var TT = hasImg ? 0 : t * spd * 0.0002;
+  var tint = (window._vorTint !== undefined ? window._vorTint : 0.45); // image recolour strength
+  var seed = (window._vorSeed || 1) >>> 0;
+  var rng = _glassRng(seed);
 
-  // Image colour sampler
-  var sampler = null;
-  if (hasImg) {
-    if (!window._vorSampler || window._vorSamplerImg !== window._vorImg) {
-      var sc = document.createElement('canvas');
-      sc.width = 160; sc.height = 100;
-      var sx = sc.getContext('2d');
-      var iw = window._vorImg.naturalWidth, ih = window._vorImg.naturalHeight;
-      var ar = iw/ih, car = sc.width/sc.height;
-      var dw, dh, dx, dy;
-      if (ar > car) { dh = sc.height; dw = dh*ar; dx = (sc.width-dw)/2; dy = 0; }
-      else { dw = sc.width; dh = dw/ar; dx = 0; dy = (sc.height-dh)/2; }
-      sx.drawImage(window._vorImg, dx, dy, dw, dh);
-      window._vorSampler = sx.getImageData(0,0,sc.width,sc.height);
-      window._vorSamplerImg = window._vorImg;
+  // ── Generate points with Lloyd relaxation (a couple passes) so panes are
+  //    even and natural — avoids tiny slivers. Density from randomizer. ──
+  var density = window._vorDensity || 1.0;
+  var COUNT = Math.max(24, Math.round((isMobile ? 120 : 240) * density));
+  var pad = Math.max(VW, VH) * 0.08;
+  var pts = [];
+  for (var i = 0; i < COUNT; i++) pts.push({ x: rng()*VW, y: rng()*VH });
+
+  function cellPoly(p, all) {
+    var nb = [];
+    for (var j = 0; j < all.length; j++) {
+      if (all[j] === p) continue;
+      var dx = all[j].x-p.x, dy = all[j].y-p.y;
+      nb.push({ q: all[j], d: dx*dx+dy*dy });
     }
-    sampler = window._vorSampler;
+    nb.sort(function(a,b){ return a.d-b.d; });
+    var poly = [{x:-pad,y:-pad},{x:VW+pad,y:-pad},{x:VW+pad,y:VH+pad},{x:-pad,y:VH+pad}];
+    var kk = Math.min(18, nb.length);
+    for (var n = 0; n < kk && poly.length; n++) poly = _glassClip(poly, p.x, p.y, nb[n].q.x, nb[n].q.y);
+    return poly;
   }
-  function sampleImg(u, v) {
-    var sw = 160, sh = 100;
-    var px = Math.max(0, Math.min(sw-1, (u*sw)|0));
-    var py = Math.max(0, Math.min(sh-1, (v*sh)|0));
-    var idx = (py*sw + px) * 4;
-    var d = sampler.data;
-    return [d[idx], d[idx+1], d[idx+2]];
-  }
-
-  var seeds = _voronoiSeeds();
-
-  // Renders the full stained-glass scene to a target 2D context.
-  function renderGlass(g) {
-    g.clearRect(0, 0, W, H);
-    g.fillStyle = 'rgb(' + hexToRgbStr(nebulaBackground[2] || '#05060a') + ')';
-    g.fillRect(0, 0, W, H);
-
-    // Cell positions (drift only if no image)
-    var pts = [];
-    for (var i = 0; i < seeds.length; i++) {
-      var s = seeds[i];
-      var cx = hasImg ? s.x : (s.x + Math.sin(TT*0.6 + s.phase)*0.05);
-      var cy = hasImg ? s.y : (s.y + Math.cos(TT*0.5 + s.phase)*0.05);
-      pts.push({ x: cx*W, y: cy*H, u: cx, v: cy, idx: i });
-    }
-
-    // Leading thickness scales down as cells get smaller
-    var leadW = Math.max(1.2, Math.sqrt((W*H)/pts.length) * 0.055);
-    var pad = Math.max(W, H) * 0.08;
-    var K = 18;  // neighbours to clip against (enough for true Voronoi cells)
-
-    for (var i2 = 0; i2 < pts.length; i2++) {
-      var p = pts[i2];
-      // nearest K neighbours
-      var nb = [];
-      for (var j = 0; j < pts.length; j++) {
-        if (j === i2) continue;
-        var dx = pts[j].x - p.x, dy = pts[j].y - p.y;
-        nb.push({ j: j, d: dx*dx + dy*dy });
-      }
-      nb.sort(function(a,b){ return a.d - b.d; });
-      var kk = Math.min(K, nb.length);
-      // cell polygon = padded screen rect clipped by bisectors
-      var poly = [
-        { x: -pad, y: -pad }, { x: W+pad, y: -pad },
-        { x: W+pad, y: H+pad }, { x: -pad, y: H+pad }
-      ];
-      for (var n = 0; n < kk && poly.length; n++) {
-        var q = pts[nb[n].j];
-        poly = _vorClip(poly, p.x, p.y, q.x, q.y);
-      }
+  // Lloyd relaxation: move each point to its cell centroid
+  for (var pass = 0; pass < 2; pass++) {
+    for (var a = 0; a < pts.length; a++) {
+      var poly = cellPoly(pts[a], pts);
       if (poly.length < 3) continue;
-
-      var cell = seeds[p.idx];
-      // base colour
-      var base;
-      if (hasImg) {
-        var sc2 = sampleImg(p.u, p.v);
-        var lum = (sc2[0]*0.299 + sc2[1]*0.587 + sc2[2]*0.114) / 255;
-        var pcol = palAt(lum * 0.8 + cell.hue * 0.2);
-        base = [sc2[0]*0.58 + pcol[0]*0.42, sc2[1]*0.58 + pcol[1]*0.42, sc2[2]*0.58 + pcol[2]*0.42];
-      } else {
-        base = palAt(cell.hue + p.u * 0.3 + TT * 0.02);
-      }
-      // brightness variation per cell
-      var bAdj = 1 + cell.tBright;
-      var R = Math.max(0, Math.min(255, base[0]*bAdj));
-      var G = Math.max(0, Math.min(255, base[1]*bAdj));
-      var B = Math.max(0, Math.min(255, base[2]*bAdj));
-
-      // bbox + centroid of the polygon
-      var minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9,cxs=0,cys=0;
-      for (var v2=0; v2<poly.length; v2++){
-        var pp=poly[v2];
-        if(pp.x<minX)minX=pp.x; if(pp.x>maxX)maxX=pp.x;
-        if(pp.y<minY)minY=pp.y; if(pp.y>maxY)maxY=pp.y;
-        cxs+=pp.x; cys+=pp.y;
-      }
-      cxs/=poly.length; cys/=poly.length;
-      var bw=maxX-minX, bh=maxY-minY, bmax=Math.max(bw,bh);
-
-      // path
-      g.beginPath();
-      g.moveTo(poly[0].x, poly[0].y);
-      for (var v3=1; v3<poly.length; v3++) g.lineTo(poly[v3].x, poly[v3].y);
-      g.closePath();
-
-      // base fill
-      g.fillStyle = 'rgba('+(R|0)+','+(G|0)+','+(B|0)+','+(0.92*iMult).toFixed(3)+')';
-      g.fill();
-
-      // glass texture + sheen, clipped to the cell
-      g.save();
-      g.clip();
-        // soft radial depth (brighter core, settles to base at edges)
-        var rg = g.createRadialGradient(cxs - bw*0.15, cys - bh*0.15, 0, cxs, cys, bmax*0.75);
-        rg.addColorStop(0, 'rgba(255,255,255,'+(0.10*iMult).toFixed(3)+')');
-        rg.addColorStop(1, 'rgba(255,255,255,0)');
-        g.fillStyle = rg;
-        g.fillRect(minX, minY, bw, bh);
-
-        // streaks — a few soft directional bands (cathedral glass texture)
-        g.globalCompositeOperation = 'lighter';
-        var ca = Math.cos(cell.tAng), sa = Math.sin(cell.tAng);
-        for (var st=0; st<cell.tStreak; st++) {
-          var off = (st/(cell.tStreak)-0.45) * bmax;
-          var ox = cxs + (-sa)*off, oy = cys + (ca)*off;
-          g.strokeStyle = 'rgba(255,255,255,'+(0.05*cell.tStr*iMult).toFixed(3)+')';
-          g.lineWidth = bmax * (0.05 + 0.05*((st*7%3)/3));
-          g.beginPath();
-          g.moveTo(ox - ca*bmax, oy - sa*bmax);
-          g.lineTo(ox + ca*bmax, oy + sa*bmax);
-          g.stroke();
-        }
-        // a couple of darker streaks for contrast
-        g.globalCompositeOperation = 'source-over';
-        for (var st2=0; st2<2; st2++) {
-          var off2 = (st2-0.5) * bmax * 0.5;
-          var ox2 = cxs + (-sa)*off2, oy2 = cys + (ca)*off2;
-          g.strokeStyle = 'rgba(0,0,0,'+(0.045*cell.tStr).toFixed(3)+')';
-          g.lineWidth = bmax * 0.06;
-          g.beginPath();
-          g.moveTo(ox2 - ca*bmax, oy2 - sa*bmax);
-          g.lineTo(ox2 + ca*bmax, oy2 + sa*bmax);
-          g.stroke();
-        }
-        // sheen — diagonal glossy highlight
-        var shc = Math.cos(cell.tSheen), shs = Math.sin(cell.tSheen);
-        var sg = g.createLinearGradient(cxs - shc*bmax*0.6, cys - shs*bmax*0.6,
-                                        cxs + shc*bmax*0.6, cys + shs*bmax*0.6);
-        sg.addColorStop(0.0, 'rgba(255,255,255,0)');
-        sg.addColorStop(0.45,'rgba(255,255,255,0)');
-        sg.addColorStop(0.6, 'rgba(255,255,255,'+(0.09*iMult).toFixed(3)+')');
-        sg.addColorStop(0.75,'rgba(255,255,255,0)');
-        g.globalCompositeOperation = 'lighter';
-        g.fillStyle = sg;
-        g.fillRect(minX, minY, bw, bh);
-        g.globalCompositeOperation = 'source-over';
-      g.restore();
-
-      // dark leading (came) around the cell
-      g.strokeStyle = 'rgba(2,4,8,0.72)';
-      g.lineJoin = 'round';
-      g.lineWidth = leadW;
-      g.stroke();
+      var cx=0, cy=0;
+      for (var v=0; v<poly.length; v++){ cx+=poly[v].x; cy+=poly[v].y; }
+      // clamp centroid to screen so points stay on-canvas
+      pts[a].x = Math.max(0, Math.min(VW, cx/poly.length));
+      pts[a].y = Math.max(0, Math.min(VH, cy/poly.length));
     }
-
-    // edge vignette
-    var vg = g.createRadialGradient(W/2, H/2, Math.min(W,H)*0.35, W/2, H/2, Math.max(W,H)*0.72);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.5)');
-    g.fillStyle = vg;
-    g.fillRect(0, 0, W, H);
   }
 
-  // ── Caching: the glass render is expensive, so cache it. Image mode is
-  // static (rebuild only on change). Animated mode drifts slowly, so rebuild
-  // the cache on a throttle (a few times/sec) and blit every frame. ──
+  // Lead-came thickness scales with pane size
+  var leadW = Math.max(1.5, Math.sqrt((VW*VH)/pts.length) * 0.06);
+
+  // ── Build SVG markup ──
+  var defs = '';
+  var body = '';
+  // continuous wallpaper image (one element, referenced via clip per pane)
+  var imgHref = hasImg ? window._vorImg.src : null;
+
+  for (var c = 0; c < pts.length; c++) {
+    var p = pts[c];
+    var poly = cellPoly(p, pts);
+    if (poly.length < 3) continue;
+    var dpath = 'M' + poly.map(function(pt){ return pt.x.toFixed(1)+','+pt.y.toFixed(1); }).join('L') + 'Z';
+    // centroid + bbox
+    var minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9,cxs=0,cys=0;
+    for (var w=0; w<poly.length; w++){ var pp=poly[w]; if(pp.x<minX)minX=pp.x; if(pp.x>maxX)maxX=pp.x; if(pp.y<minY)minY=pp.y; if(pp.y>maxY)maxY=pp.y; cxs+=pp.x; cys+=pp.y; }
+    cxs/=poly.length; cys/=poly.length;
+    var bw=maxX-minX, bh=maxY-minY, bmax=Math.max(bw,bh);
+
+    // pane colour
+    var pr = rng(), pg = rng();
+    var bright = 1 + (rng()-0.5)*0.30;
+    var col = palAt(pr*0.85 + (p.x/VW)*0.2);
+    var R = Math.max(0,Math.min(255,col[0]*bright));
+    var G = Math.max(0,Math.min(255,col[1]*bright));
+    var B = Math.max(0,Math.min(255,col[2]*bright));
+
+    var cid = 'gc'+c;
+    defs += '<clipPath id="'+cid+'"><path d="'+dpath+'"/></clipPath>';
+
+    body += '<g clip-path="url(#'+cid+')">';
+    if (hasImg) {
+      // continuous image across panes + palette tint overlay
+      body += '<image href="'+imgHref+'" x="0" y="0" width="'+VW+'" height="'+VH+'" preserveAspectRatio="xMidYMid slice"/>';
+      if (tint > 0.001) body += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([R,G,B])+'" opacity="'+(tint*0.85).toFixed(3)+'" style="mix-blend-mode:overlay"/>';
+    } else {
+      body += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([R,G,B])+'" opacity="'+(0.9*iMult).toFixed(3)+'"/>';
+    }
+    // glass texture: soft radial depth + a few directional streaks
+    var gid = 'gr'+c;
+    defs += '<radialGradient id="'+gid+'" cx="'+(((cxs-bw*0.15)-minX)/Math.max(1,bw)).toFixed(3)+'" cy="'+(((cys-bh*0.15)-minY)/Math.max(1,bh)).toFixed(3)+'" r="0.75">'
+          + '<stop offset="0" stop-color="#fff" stop-opacity="'+(0.12*iMult).toFixed(3)+'"/>'
+          + '<stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>';
+    body += '<rect x="'+minX.toFixed(1)+'" y="'+minY.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="url(#'+gid+')"/>';
+    // streaks
+    var ang = rng()*Math.PI;
+    var nStreak = 2 + (rng()*3|0);
+    var ca = Math.cos(ang), sa = Math.sin(ang);
+    for (var st=0; st<nStreak; st++) {
+      var off = (st/nStreak - 0.45) * bmax;
+      var ox = cxs + (-sa)*off, oy = cys + (ca)*off;
+      var sw2 = (bmax*(0.04 + 0.05*rng())).toFixed(1);
+      body += '<line x1="'+(ox-ca*bmax).toFixed(1)+'" y1="'+(oy-sa*bmax).toFixed(1)+'" x2="'+(ox+ca*bmax).toFixed(1)+'" y2="'+(oy+sa*bmax).toFixed(1)+'" stroke="#fff" stroke-opacity="'+(0.05*iMult).toFixed(3)+'" stroke-width="'+sw2+'" style="mix-blend-mode:screen"/>';
+    }
+    // sheen: diagonal highlight
+    var shAng = rng()*Math.PI, shc=Math.cos(shAng), shs=Math.sin(shAng);
+    var lgid = 'gs'+c;
+    defs += '<linearGradient id="'+lgid+'" x1="'+((0.5-shc*0.5)).toFixed(3)+'" y1="'+((0.5-shs*0.5)).toFixed(3)+'" x2="'+((0.5+shc*0.5)).toFixed(3)+'" y2="'+((0.5+shs*0.5)).toFixed(3)+'">'
+          + '<stop offset="0" stop-color="#fff" stop-opacity="0"/>'
+          + '<stop offset="0.5" stop-color="#fff" stop-opacity="0"/>'
+          + '<stop offset="0.62" stop-color="#fff" stop-opacity="'+(0.10*iMult).toFixed(3)+'"/>'
+          + '<stop offset="0.74" stop-color="#fff" stop-opacity="0"/></linearGradient>';
+    body += '<rect x="'+minX.toFixed(1)+'" y="'+minY.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="url(#'+lgid+')" style="mix-blend-mode:screen"/>';
+    body += '</g>';
+    // lead came (stroke the pane outline, drawn over the fill)
+    body += '<path d="'+dpath+'" fill="none" stroke="rgba(2,4,8,0.78)" stroke-width="'+leadW.toFixed(2)+'" stroke-linejoin="round"/>';
+  }
+
+  // edge vignette overlay
+  defs += '<radialGradient id="gvig" cx="0.5" cy="0.5" r="0.72">'
+        + '<stop offset="0.45" stop-color="#000" stop-opacity="0"/>'
+        + '<stop offset="1" stop-color="#000" stop-opacity="0.5"/></radialGradient>';
+
+  svg.setAttribute('viewBox', '0 0 '+VW+' '+VH);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  // dark base so any anti-alias gaps read as lead, not background
+  svg.innerHTML = '<defs>'+defs+'</defs>'
+    + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="rgb('+hexToRgbStr(nebulaBackground[2]||'#05060a')+')"/>'
+    + body
+    + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="url(#gvig)"/>';
+
+  window._glassBuiltKey = _glassKey();
+}
+
+// Cache key — rebuild only when something visible changes.
+function _glassKey() {
+  var pal = themeRgbPalette || [[120,180,255]];
   var palKey = pal.map(function(c){return (c[0]|0)+'_'+(c[1]|0)+'_'+(c[2]|0);}).join('|');
-  var gen = window._vorGen || 0;
-  var key = (hasImg?'img':'pal')+':'+seeds.length+':'+W+'x'+H+':'+palKey+':'+iMult.toFixed(2)+':'+gen+':'+(window._vorImg?window._vorImg.src.length:0);
+  return [W, H, palKey, (blobOpacityMult||1).toFixed(2),
+          window._vorSeed||1, (window._vorDensity||1).toFixed(2),
+          (window._vorTint!==undefined?window._vorTint:0.45).toFixed(2),
+          window._vorImg ? window._vorImg.src.length : 0].join(':');
+}
 
-  if (!window._vorCache || window._vorCache.width !== W || window._vorCache.height !== H) {
-    window._vorCache = document.createElement('canvas');
-    window._vorCache.width = W; window._vorCache.height = H;
-    window._vorCacheKey = null;
-  }
-  var needRebuild = false;
-  if (hasImg) {
-    needRebuild = (window._vorCacheKey !== key);
+// Show/hide + (re)build the SVG glass layer based on the current animation.
+function updateGlassLayer() {
+  var svg = document.getElementById('glass-svg');
+  if (!svg) return;
+  if (animMode === 'voronoi') {
+    svg.style.display = '';
+    if (window._glassBuiltKey !== _glassKey()) buildGlassSVG();
   } else {
-    // throttle: rebuild ~every 90ms of animation time
-    if (window._vorCacheKey !== key) needRebuild = true;
-    else if ((t - (window._vorLastBuild || -1e9)) > 90) needRebuild = true;
+    svg.style.display = 'none';
+    svg.innerHTML = '';
+    window._glassBuiltKey = null;
   }
-  if (needRebuild) {
-    renderGlass(window._vorCache.getContext('2d'));
-    window._vorCacheKey = key;
-    window._vorLastBuild = t;
-  }
-  ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(window._vorCache, 0, 0);
 }
 
 function drawWallpaper() {
@@ -4567,7 +4396,7 @@ function renderGLCrystals(){ if (glProgCrystals)glRenderFrame(glProgCrystals,glC
 function renderGLGalaxy()  { if (glProgGalaxy)  glRenderFrame(glProgGalaxy,  glGalaxyLocs);       else drawGalaxy(); }
 function renderGLInk()     { if (glProgInk)     glRenderFrame(glProgInk,     glInkLocs);          else { glSupported = false; drawInkWater(); } }
 function renderGLNebula()  { if (glProgNebula)  glRenderFrame(glProgNebula,  glNebLocs, true);    else { glSupported = false; drawNebula(); } }
-function renderGLWave()    { if (glProgWave)    glRenderFrame(glProgWave,    glWaveLocs, true);   else { glSupported = false; drawFlowField(); } }
+function renderGLWave()    { if (glProgWave)    glRenderFrame(glProgWave,    glWaveLocs, true);   else { glSupported = false; drawNebula(); } }
 
 // ── Init on load ──────────────────────────────────────────────────────────
 // initWebGL() is now called from window.load handler above
@@ -5583,7 +5412,7 @@ var _prefsOpen = false; // global flag checked by all key handlers
 
 // Keyboard nav state for prefs panel
 // Row 0 = theme grid (count set after themes load), rows 1-8 = settings, 9 = reset
-var ROW_COLS     = [40, 5, 5, 4, 3, 3, 3, 2, 3, 3, 1];
+var ROW_COLS     = [40, 5, 4, 4, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
@@ -5599,10 +5428,13 @@ function loadPrefs() {
   // Restore any saved custom images (Voronoi source + standalone wallpaper)
   try {
     var vd = localStorage.getItem('xmb-voronoi-img');
-    if (vd) { var vi = new Image(); vi.onload = function(){ window._vorImg = vi; window._vorSampler = null; }; vi.src = vd; }
+    if (vd) { var vi = new Image(); vi.onload = function(){ window._vorImg = vi; window._vorSampler = null; window._glassBuiltKey = null; if (typeof updateGlassLayer==='function') updateGlassLayer(); }; vi.src = vd; }
     var wd = localStorage.getItem('xmb-wallpaper-img');
     if (wd) { var wi = new Image(); wi.onload = function(){ window._wallImg = wi; }; wi.src = wd; }
-  } catch (e) {}
+    var vt = localStorage.getItem('xmb-voronoi-tint');
+    window._vorTint = (vt !== null) ? parseFloat(vt) : 0.45;
+  } catch (e) { window._vorTint = 0.45; }
+  if (!window._vorSeed) window._vorSeed = (Math.random() * 1e9) >>> 0;
   if (typeof applyPrefs === 'function') applyPrefs(userPrefs);
 }
 
@@ -5738,7 +5570,10 @@ document.addEventListener('DOMContentLoaded', function() {
       loadImageScaled(f, 1280, function(dataUrl) {
         if (!setStoredImage(storeKey, dataUrl)) return;
         var im = new Image();
-        im.onload = function() { window[imgProp] = im; refreshLabel(); };
+        im.onload = function() {
+          window[imgProp] = im; refreshLabel();
+          if (imgProp === '_vorImg' && typeof updateGlassLayer === 'function') { window._glassBuiltKey = null; updateGlassLayer(); }
+        };
         im.src = dataUrl;
       });
       file.value = '';
@@ -5746,7 +5581,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (clearBtn) clearBtn.addEventListener('click', function() {
       try { localStorage.removeItem(storeKey); } catch(e) {}
       window[imgProp] = null;
-      if (imgProp === '_vorImg') { window._vorSampler = null; window._vorSamplerImg = null; }
+      if (imgProp === '_vorImg') { window._vorSampler = null; window._vorSamplerImg = null; if (typeof updateGlassLayer === 'function') { window._glassBuiltKey = null; updateGlassLayer(); } }
       refreshLabel();
     });
     refreshLabel();
@@ -5756,11 +5591,28 @@ document.addEventListener('DOMContentLoaded', function() {
   var vorRandBtn = document.getElementById('prefs-voronoi-randomize');
   if (vorRandBtn) {
     vorRandBtn.addEventListener('click', function() {
-      window._vorGen = (window._vorGen || 0) + 1;       // new layout + texture
-      window._vorDensity = 0.55 + Math.random() * 1.05;  // vary cell density
-      window._vorCacheKey = null;                        // force re-render
+      window._vorSeed = (Math.random() * 1e9) >>> 0;       // new layout + texture
+      window._vorDensity = 0.55 + Math.random() * 1.05;     // vary cell density
+      window._glassBuiltKey = null;
+      if (typeof updateGlassLayer === 'function') updateGlassLayer();
     });
   }
+  function syncTintButtons() {
+    var cur = (window._vorTint !== undefined ? window._vorTint : 0.45);
+    document.querySelectorAll('.vor-tint').forEach(function(b){
+      b.classList.toggle('active', Math.abs(parseFloat(b.dataset.tint) - cur) < 0.001);
+    });
+  }
+  document.querySelectorAll('.vor-tint').forEach(function(b){
+    b.addEventListener('click', function(){
+      window._vorTint = parseFloat(b.dataset.tint);
+      try { localStorage.setItem('xmb-voronoi-tint', String(window._vorTint)); } catch(e) {}
+      syncTintButtons();
+      window._glassBuiltKey = null;
+      if (typeof updateGlassLayer === 'function') updateGlassLayer();
+    });
+  });
+  syncTintButtons();
   document.getElementById('prefs-overlay').addEventListener('click', function(e){
     if (e.target === document.getElementById('prefs-overlay')) closePrefs();
   });
@@ -5894,6 +5746,7 @@ function renderPrefsUI() {
     if (btn.id === 'prefs-grass-demo') return; // has its own handler
     if (btn.id === 'prefs-voronoi-img' || btn.id === 'prefs-voronoi-img-clear') return;
     if (btn.id === 'prefs-voronoi-randomize') return;
+    if (btn.classList.contains('vor-tint')) return;
     if (btn.id === 'prefs-wallpaper-img' || btn.id === 'prefs-wallpaper-img-clear') return;
     var pref = btn.dataset.pref;
     btn.classList.toggle('active', btn.dataset.val === userPrefs[pref]);
@@ -5912,7 +5765,7 @@ function renderPrefsUI() {
 
   // ── Show/hide settings based on current animation ─────────
   var anim = userPrefs.animStyle || 'nebula';
-  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','flow','grass','voronoi'].indexOf(anim) >= 0;
+  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','grass','voronoi'].indexOf(anim) >= 0;
   var showParticles = anim === 'bokeh';
   var showRandomize = anim === 'nebula';
 
@@ -7743,6 +7596,13 @@ document.addEventListener('keydown', function(e) {
           <button id="prefs-voronoi-img" class="p-toggle" style="min-width:auto;margin-left:5px">&#x1F5BC; Stained-Glass Image: None</button>
           <button id="prefs-voronoi-img-clear" class="p-toggle" style="min-width:auto;margin-left:5px">Clear</button>
           <input type="file" id="prefs-voronoi-img-file" accept="image/*" style="display:none">
+          <div style="margin-top:8px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <span style="font-size:11px;letter-spacing:1px;opacity:0.6;margin-right:4px">IMAGE TINT</span>
+            <button class="p-toggle vor-tint" data-tint="0"    style="min-width:auto">None</button>
+            <button class="p-toggle vor-tint" data-tint="0.25" style="min-width:auto">Light</button>
+            <button class="p-toggle vor-tint" data-tint="0.45" style="min-width:auto">Medium</button>
+            <button class="p-toggle vor-tint" data-tint="0.7"  style="min-width:auto">Strong</button>
+          </div>
         </div>
         <div style="margin-top:10px" id="prefs-wallpaper-img-wrap">
           <button id="prefs-wallpaper-img" class="p-toggle" style="min-width:auto">&#x1F5BC; Wallpaper Image: None</button>
@@ -7763,12 +7623,11 @@ document.addEventListener('keydown', function(e) {
           </div>
         </div>
         <div class="p-row" data-pref-row="2">
-          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:100%">
+          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;width:100%">
             <button class="p-toggle" data-pref="animStyle" data-val="warp"  data-pref-row="2" data-pref-col="0">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"  data-pref-row="2" data-pref-col="1">XMB Wave</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="flow" data-pref-row="2" data-pref-col="2">Flow</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="voronoi" data-pref-row="2" data-pref-col="3">Stained Glass</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="wallpaper" data-pref-row="2" data-pref-col="4">Wallpaper</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="voronoi" data-pref-row="2" data-pref-col="2">Stained Glass</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="wallpaper" data-pref-row="2" data-pref-col="3">Wallpaper</button>
           </div>
         </div>
         <div class="p-row" data-pref-row="3">
@@ -8194,6 +8053,7 @@ function applyPrefs(prefs) {
     pfParticles = null;
     hexCells = null;
   }
+  if (typeof updateGlassLayer === 'function') updateGlassLayer();
 }
 
 
