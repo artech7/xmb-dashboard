@@ -3118,31 +3118,57 @@ function drawGrassField() {
   ctx.lineWidth = 1;
 }
 
-// Voronoi cell seeds (persistent)
+// ── Voronoi half-plane clipping (Sutherland-Hodgman) ──
+function _vorClip(poly, ax, ay, bx, by) {
+  // Keep the side of the perpendicular bisector of (a,b) nearer to a.
+  var mx = (ax+bx)*0.5, my = (ay+by)*0.5;
+  var nx = bx-ax, ny = by-ay;
+  var out = [];
+  for (var i = 0; i < poly.length; i++) {
+    var cur = poly[i], nxt = poly[(i+1) % poly.length];
+    var dc = (cur.x-mx)*nx + (cur.y-my)*ny;
+    var dn = (nxt.x-mx)*nx + (nxt.y-my)*ny;
+    var ci = dc <= 0, ni = dn <= 0;
+    if (ci) out.push(cur);
+    if (ci !== ni) {
+      var tt = dc/(dc-dn);
+      out.push({ x: cur.x+(nxt.x-cur.x)*tt, y: cur.y+(nxt.y-cur.y)*tt });
+    }
+  }
+  return out;
+}
+
+// Voronoi cell seeds (persistent). Honours density + regen generation so the
+// randomizer can reshuffle layout, density and per-cell glass texture.
 function _voronoiSeeds() {
-  // More cells = finer mosaic. When a stained-glass image is loaded we use a
-  // lot more (and it's static, so the cost is paid once visually) so the photo
-  // reads clearly while keeping the faceted/pixelated look.
   var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
-  var COUNT = hasImg ? (isMobile ? 300 : 680) : (isMobile ? 90 : 200);
-  if (!window._vor || window._vor.length !== COUNT) {
+  var density = window._vorDensity || 1.0;
+  var baseCount = hasImg ? (isMobile ? 300 : 620) : (isMobile ? 90 : 200);
+  var COUNT = Math.max(24, Math.round(baseCount * density));
+  var gen = window._vorGen || 0;
+  if (!window._vor || window._vor.length !== COUNT ||
+      window._vorBuiltGen !== gen || window._vorBuiltImg !== hasImg) {
     window._vor = [];
     for (var i = 0; i < COUNT; i++) {
       window._vor.push({
         x: Math.random(), y: Math.random(),
-        vx: (Math.random()-0.5), vy: (Math.random()-0.5),
         hue: Math.random(),
-        phase: Math.random() * Math.PI * 2
+        phase: Math.random() * Math.PI * 2,
+        // per-cell glass texture params
+        tAng:    Math.random() * Math.PI,          // streak direction
+        tStreak: 2 + (Math.random() * 3 | 0),       // number of streaks
+        tBright: (Math.random() - 0.5) * 0.30,      // brightness offset
+        tSheen:  Math.random() * Math.PI,           // sheen direction
+        tStr:    0.5 + Math.random() * 0.8          // streak strength
       });
     }
+    window._vorBuiltGen = gen;
+    window._vorBuiltImg = hasImg;
   }
   return window._vor;
 }
 
 function drawVoronoi() {
-  // Stained-glass cells filling the screen. If a wallpaper is uploaded for this
-  // mode, cells sample that image (recoloured through the palette) and stay
-  // STATIC; otherwise cells drift slowly and are palette-coloured.
   var pal = themeRgbPalette || [[120,180,255]];
   var iMult = blobOpacityMult || 1.0;
   var spd = animSpeed > 0 ? animSpeed : 0;
@@ -3158,21 +3184,15 @@ function drawVoronoi() {
   }
 
   var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
-  var TT = hasImg ? 0 : t * spd * 0.0002;   // static when using an image
+  var TT = hasImg ? 0 : t * spd * 0.0002;
 
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = 'rgb(' + hexToRgbStr(nebulaBackground[2] || '#05060a') + ')';
-  ctx.fillRect(0, 0, W, H);
-
-  // If an image is loaded, draw it once to a small offscreen canvas so we can
-  // sample average colours per cell cheaply.
+  // Image colour sampler
   var sampler = null;
   if (hasImg) {
     if (!window._vorSampler || window._vorSamplerImg !== window._vorImg) {
       var sc = document.createElement('canvas');
       sc.width = 160; sc.height = 100;
       var sx = sc.getContext('2d');
-      // cover-fit the image
       var iw = window._vorImg.naturalWidth, ih = window._vorImg.naturalHeight;
       var ar = iw/ih, car = sc.width/sc.height;
       var dw, dh, dx, dy;
@@ -3194,87 +3214,178 @@ function drawVoronoi() {
   }
 
   var seeds = _voronoiSeeds();
-  // Current cell positions (drift if no image)
-  var pts = [];
-  for (var i = 0; i < seeds.length; i++) {
-    var s = seeds[i];
-    var cx, cy;
-    if (hasImg) { cx = s.x; cy = s.y; }
-    else {
-      cx = (s.x + Math.sin(TT * 0.6 + s.phase) * 0.05 + s.vx * 0.0) ;
-      cy = (s.y + Math.cos(TT * 0.5 + s.phase) * 0.05);
+
+  // Renders the full stained-glass scene to a target 2D context.
+  function renderGlass(g) {
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgb(' + hexToRgbStr(nebulaBackground[2] || '#05060a') + ')';
+    g.fillRect(0, 0, W, H);
+
+    // Cell positions (drift only if no image)
+    var pts = [];
+    for (var i = 0; i < seeds.length; i++) {
+      var s = seeds[i];
+      var cx = hasImg ? s.x : (s.x + Math.sin(TT*0.6 + s.phase)*0.05);
+      var cy = hasImg ? s.y : (s.y + Math.cos(TT*0.5 + s.phase)*0.05);
+      pts.push({ x: cx*W, y: cy*H, u: cx, v: cy, idx: i });
     }
-    pts.push({ x: cx * W, y: cy * H, u: cx, v: cy, hue: s.hue });
-  }
 
-  // Rasterize Voronoi on a coarse grid (cheap): for each grid cell find nearest
-  // seed, fill that block with the seed's colour. Grid resolution scales with
-  // device. This gives the faceted stained-glass look without per-pixel cost.
-  // ── Static cache: in image mode the cells don't move, so rasterize once to
-  // an offscreen canvas and just blit it each frame. Re-render only when the
-  // image, palette, intensity, seed count, or canvas size changes. ──
-  var palKey = pal.map(function(c){return (c[0]|0)+'_'+(c[1]|0)+'_'+(c[2]|0);}).join('|');
-  var cacheKey = (hasImg ? 'img' : 'pal') + ':' + seeds.length + ':' + W + 'x' + H + ':' + palKey + ':' + iMult.toFixed(2) + ':' + (window._vorImg ? window._vorImg.src.length : 0);
+    // Leading thickness scales down as cells get smaller
+    var leadW = Math.max(1.2, Math.sqrt((W*H)/pts.length) * 0.055);
+    var pad = Math.max(W, H) * 0.08;
+    var K = 18;  // neighbours to clip against (enough for true Voronoi cells)
 
-  function rasterizeVoronoi(target) {
-    var GX = hasImg ? (isMobile ? 130 : 240) : (isMobile ? 70 : 120);
-    var GY = Math.round(GX * (H / W));
-    var cellW = W / GX, cellH = H / GY;
-    var cols = [];
-    for (var k = 0; k < pts.length; k++) {
+    for (var i2 = 0; i2 < pts.length; i2++) {
+      var p = pts[i2];
+      // nearest K neighbours
+      var nb = [];
+      for (var j = 0; j < pts.length; j++) {
+        if (j === i2) continue;
+        var dx = pts[j].x - p.x, dy = pts[j].y - p.y;
+        nb.push({ j: j, d: dx*dx + dy*dy });
+      }
+      nb.sort(function(a,b){ return a.d - b.d; });
+      var kk = Math.min(K, nb.length);
+      // cell polygon = padded screen rect clipped by bisectors
+      var poly = [
+        { x: -pad, y: -pad }, { x: W+pad, y: -pad },
+        { x: W+pad, y: H+pad }, { x: -pad, y: H+pad }
+      ];
+      for (var n = 0; n < kk && poly.length; n++) {
+        var q = pts[nb[n].j];
+        poly = _vorClip(poly, p.x, p.y, q.x, q.y);
+      }
+      if (poly.length < 3) continue;
+
+      var cell = seeds[p.idx];
+      // base colour
       var base;
       if (hasImg) {
-        var sc2 = sampleImg(pts[k].u, pts[k].v);
+        var sc2 = sampleImg(p.u, p.v);
         var lum = (sc2[0]*0.299 + sc2[1]*0.587 + sc2[2]*0.114) / 255;
-        var pcol = palAt(lum * 0.8 + pts[k].hue * 0.2);
+        var pcol = palAt(lum * 0.8 + cell.hue * 0.2);
         base = [sc2[0]*0.58 + pcol[0]*0.42, sc2[1]*0.58 + pcol[1]*0.42, sc2[2]*0.58 + pcol[2]*0.42];
       } else {
-        base = palAt(pts[k].hue + pts[k].u * 0.3 + TT * 0.02);
+        base = palAt(cell.hue + p.u * 0.3 + TT * 0.02);
       }
-      cols.push(base);
-    }
-    for (var gy = 0; gy < GY; gy++) {
-      var py2 = (gy + 0.5) * cellH;
-      for (var gx = 0; gx < GX; gx++) {
-        var px2 = (gx + 0.5) * cellW;
-        var best = 0, bestD = 1e9;
-        for (var n = 0; n < pts.length; n++) {
-          var dx = pts[n].x - px2, dy = pts[n].y - py2;
-          var dd = dx*dx + dy*dy;
-          if (dd < bestD) { bestD = dd; best = n; }
+      // brightness variation per cell
+      var bAdj = 1 + cell.tBright;
+      var R = Math.max(0, Math.min(255, base[0]*bAdj));
+      var G = Math.max(0, Math.min(255, base[1]*bAdj));
+      var B = Math.max(0, Math.min(255, base[2]*bAdj));
+
+      // bbox + centroid of the polygon
+      var minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9,cxs=0,cys=0;
+      for (var v2=0; v2<poly.length; v2++){
+        var pp=poly[v2];
+        if(pp.x<minX)minX=pp.x; if(pp.x>maxX)maxX=pp.x;
+        if(pp.y<minY)minY=pp.y; if(pp.y>maxY)maxY=pp.y;
+        cxs+=pp.x; cys+=pp.y;
+      }
+      cxs/=poly.length; cys/=poly.length;
+      var bw=maxX-minX, bh=maxY-minY, bmax=Math.max(bw,bh);
+
+      // path
+      g.beginPath();
+      g.moveTo(poly[0].x, poly[0].y);
+      for (var v3=1; v3<poly.length; v3++) g.lineTo(poly[v3].x, poly[v3].y);
+      g.closePath();
+
+      // base fill
+      g.fillStyle = 'rgba('+(R|0)+','+(G|0)+','+(B|0)+','+(0.92*iMult).toFixed(3)+')';
+      g.fill();
+
+      // glass texture + sheen, clipped to the cell
+      g.save();
+      g.clip();
+        // soft radial depth (brighter core, settles to base at edges)
+        var rg = g.createRadialGradient(cxs - bw*0.15, cys - bh*0.15, 0, cxs, cys, bmax*0.75);
+        rg.addColorStop(0, 'rgba(255,255,255,'+(0.10*iMult).toFixed(3)+')');
+        rg.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = rg;
+        g.fillRect(minX, minY, bw, bh);
+
+        // streaks — a few soft directional bands (cathedral glass texture)
+        g.globalCompositeOperation = 'lighter';
+        var ca = Math.cos(cell.tAng), sa = Math.sin(cell.tAng);
+        for (var st=0; st<cell.tStreak; st++) {
+          var off = (st/(cell.tStreak)-0.45) * bmax;
+          var ox = cxs + (-sa)*off, oy = cys + (ca)*off;
+          g.strokeStyle = 'rgba(255,255,255,'+(0.05*cell.tStr*iMult).toFixed(3)+')';
+          g.lineWidth = bmax * (0.05 + 0.05*((st*7%3)/3));
+          g.beginPath();
+          g.moveTo(ox - ca*bmax, oy - sa*bmax);
+          g.lineTo(ox + ca*bmax, oy + sa*bmax);
+          g.stroke();
         }
-        var c = cols[best];
-        target.fillStyle = 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (0.9 * iMult).toFixed(3) + ')';
-        target.fillRect(gx*cellW, gy*cellH, cellW+1, cellH+1);
-      }
+        // a couple of darker streaks for contrast
+        g.globalCompositeOperation = 'source-over';
+        for (var st2=0; st2<2; st2++) {
+          var off2 = (st2-0.5) * bmax * 0.5;
+          var ox2 = cxs + (-sa)*off2, oy2 = cys + (ca)*off2;
+          g.strokeStyle = 'rgba(0,0,0,'+(0.045*cell.tStr).toFixed(3)+')';
+          g.lineWidth = bmax * 0.06;
+          g.beginPath();
+          g.moveTo(ox2 - ca*bmax, oy2 - sa*bmax);
+          g.lineTo(ox2 + ca*bmax, oy2 + sa*bmax);
+          g.stroke();
+        }
+        // sheen — diagonal glossy highlight
+        var shc = Math.cos(cell.tSheen), shs = Math.sin(cell.tSheen);
+        var sg = g.createLinearGradient(cxs - shc*bmax*0.6, cys - shs*bmax*0.6,
+                                        cxs + shc*bmax*0.6, cys + shs*bmax*0.6);
+        sg.addColorStop(0.0, 'rgba(255,255,255,0)');
+        sg.addColorStop(0.45,'rgba(255,255,255,0)');
+        sg.addColorStop(0.6, 'rgba(255,255,255,'+(0.09*iMult).toFixed(3)+')');
+        sg.addColorStop(0.75,'rgba(255,255,255,0)');
+        g.globalCompositeOperation = 'lighter';
+        g.fillStyle = sg;
+        g.fillRect(minX, minY, bw, bh);
+        g.globalCompositeOperation = 'source-over';
+      g.restore();
+
+      // dark leading (came) around the cell
+      g.strokeStyle = 'rgba(2,4,8,0.72)';
+      g.lineJoin = 'round';
+      g.lineWidth = leadW;
+      g.stroke();
     }
+
+    // edge vignette
+    var vg = g.createRadialGradient(W/2, H/2, Math.min(W,H)*0.35, W/2, H/2, Math.max(W,H)*0.72);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, W, H);
   }
 
+  // ── Caching: the glass render is expensive, so cache it. Image mode is
+  // static (rebuild only on change). Animated mode drifts slowly, so rebuild
+  // the cache on a throttle (a few times/sec) and blit every frame. ──
+  var palKey = pal.map(function(c){return (c[0]|0)+'_'+(c[1]|0)+'_'+(c[2]|0);}).join('|');
+  var gen = window._vorGen || 0;
+  var key = (hasImg?'img':'pal')+':'+seeds.length+':'+W+'x'+H+':'+palKey+':'+iMult.toFixed(2)+':'+gen+':'+(window._vorImg?window._vorImg.src.length:0);
+
+  if (!window._vorCache || window._vorCache.width !== W || window._vorCache.height !== H) {
+    window._vorCache = document.createElement('canvas');
+    window._vorCache.width = W; window._vorCache.height = H;
+    window._vorCacheKey = null;
+  }
+  var needRebuild = false;
   if (hasImg) {
-    // Static — use the cached render, rebuild only when something changed
-    if (!window._vorCache || window._vorCacheKey !== cacheKey ||
-        window._vorCache.width !== W || window._vorCache.height !== H) {
-      var cc = window._vorCache && window._vorCache.width === W && window._vorCache.height === H
-        ? window._vorCache : document.createElement('canvas');
-      cc.width = W; cc.height = H;
-      var cx2 = cc.getContext('2d');
-      cx2.clearRect(0, 0, W, H);
-      rasterizeVoronoi(cx2);
-      window._vorCache = cc;
-      window._vorCacheKey = cacheKey;
-    }
-    ctx.drawImage(window._vorCache, 0, 0);
+    needRebuild = (window._vorCacheKey !== key);
   } else {
-    // Animated — rasterize straight to the screen each frame
-    rasterizeVoronoi(ctx);
+    // throttle: rebuild ~every 90ms of animation time
+    if (window._vorCacheKey !== key) needRebuild = true;
+    else if ((t - (window._vorLastBuild || -1e9)) > 90) needRebuild = true;
   }
-
-  // Vignette on the edges
-  var vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.35, W/2, H/2, Math.max(W,H)*0.72);
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, W, H);
+  if (needRebuild) {
+    renderGlass(window._vorCache.getContext('2d'));
+    window._vorCacheKey = key;
+    window._vorLastBuild = t;
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(window._vorCache, 0, 0);
 }
 
 function drawWallpaper() {
@@ -5642,6 +5753,14 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   wireImageUpload('prefs-voronoi-img', 'prefs-voronoi-img-file', 'prefs-voronoi-img-clear', 'xmb-voronoi-img', '_vorImg', 'Stained-Glass Image');
   wireImageUpload('prefs-wallpaper-img', 'prefs-wallpaper-img-file', 'prefs-wallpaper-img-clear', 'xmb-wallpaper-img', '_wallImg', 'Wallpaper Image');
+  var vorRandBtn = document.getElementById('prefs-voronoi-randomize');
+  if (vorRandBtn) {
+    vorRandBtn.addEventListener('click', function() {
+      window._vorGen = (window._vorGen || 0) + 1;       // new layout + texture
+      window._vorDensity = 0.55 + Math.random() * 1.05;  // vary cell density
+      window._vorCacheKey = null;                        // force re-render
+    });
+  }
   document.getElementById('prefs-overlay').addEventListener('click', function(e){
     if (e.target === document.getElementById('prefs-overlay')) closePrefs();
   });
@@ -5774,6 +5893,7 @@ function renderPrefsUI() {
     if (btn.id === 'prefs-nebula-randomize') return; // has its own handler
     if (btn.id === 'prefs-grass-demo') return; // has its own handler
     if (btn.id === 'prefs-voronoi-img' || btn.id === 'prefs-voronoi-img-clear') return;
+    if (btn.id === 'prefs-voronoi-randomize') return;
     if (btn.id === 'prefs-wallpaper-img' || btn.id === 'prefs-wallpaper-img-clear') return;
     var pref = btn.dataset.pref;
     btn.classList.toggle('active', btn.dataset.val === userPrefs[pref]);
@@ -7619,7 +7739,8 @@ document.addEventListener('keydown', function(e) {
           <button id="prefs-grass-demo" class="p-toggle" style="min-width:auto">&#x2600; Fast Day Cycle: Off</button>
         </div>
         <div style="margin-top:10px" id="prefs-voronoi-img-wrap">
-          <button id="prefs-voronoi-img" class="p-toggle" style="min-width:auto">&#x1F5BC; Stained-Glass Image: None</button>
+          <button id="prefs-voronoi-randomize" class="p-toggle" style="min-width:auto">&#x21BA; Randomize Pattern</button>
+          <button id="prefs-voronoi-img" class="p-toggle" style="min-width:auto;margin-left:5px">&#x1F5BC; Stained-Glass Image: None</button>
           <button id="prefs-voronoi-img-clear" class="p-toggle" style="min-width:auto;margin-left:5px">Clear</button>
           <input type="file" id="prefs-voronoi-img-file" accept="image/*" style="display:none">
         </div>
