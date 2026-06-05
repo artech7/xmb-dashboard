@@ -3150,14 +3150,13 @@ function buildGlassSVG() {
       var col = palAt(pr*0.85 + (p.x/VW)*0.2);
       content += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([col[0]*bright,col[1]*bright,col[2]*bright])+'" opacity="'+(0.92*iMult).toFixed(3)+'"/>';
     }
-    // per-pane internal streaks — wispy marbled glass texture inside each pane
+    // per-pane internal streaks — dark wispy marbled glass texture only
     var ang = rng()*Math.PI, ca=Math.cos(ang), sa=Math.sin(ang), nS = 3 + (rng()*3|0);
     for (var st=0; st<nS; st++) {
       var off = (st/(nS) - 0.45) * bmax * 1.1;
       var ox = cxs + (-sa)*off, oy = cys + (ca)*off;
-      var streakA = (0.06 + rng()*0.08) * iMult;
-      var dark = rng() < 0.4;   // mix light and dark wisps
-      content += '<line x1="'+(ox-ca*bmax).toFixed(1)+'" y1="'+(oy-sa*bmax).toFixed(1)+'" x2="'+(ox+ca*bmax).toFixed(1)+'" y2="'+(oy+sa*bmax).toFixed(1)+'" stroke="'+(dark?'#000':'#fff')+'" stroke-opacity="'+streakA.toFixed(3)+'" stroke-width="'+(bmax*(0.04+0.07*rng())).toFixed(1)+'" clip-path="url(#'+cid+')" style="mix-blend-mode:'+(dark?'multiply':'screen')+'"/>';
+      var streakA = (0.05 + rng()*0.07) * iMult;
+      content += '<line x1="'+(ox-ca*bmax).toFixed(1)+'" y1="'+(oy-sa*bmax).toFixed(1)+'" x2="'+(ox+ca*bmax).toFixed(1)+'" y2="'+(oy+sa*bmax).toFixed(1)+'" stroke="#000" stroke-opacity="'+streakA.toFixed(3)+'" stroke-width="'+(bmax*(0.04+0.07*rng())).toFixed(1)+'" clip-path="url(#'+cid+')" style="mix-blend-mode:multiply"/>';
     }
     content += '</g>';
 
