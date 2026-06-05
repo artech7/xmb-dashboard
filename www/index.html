@@ -2827,8 +2827,8 @@ function hexToRgbStr(hex) {
 }
 
 function drawGrassField() {
-  // Field of grass blades bending in waves of wind, Flower-style.
-  // Wind = travelling gusts sweeping L->R; color blooms as gusts pass.
+  // Grass field beneath a living sky that tracks real time of day, with a
+  // sun/moon arc, palette-tinted realistic sky, stars at night and horizon haze.
   var pal = themeRgbPalette || [[120,180,255]];
   var iMult = blobOpacityMult || 1.0;
   var spd = animSpeed > 0 ? animSpeed : 0;
@@ -2842,77 +2842,183 @@ function drawGrassField() {
     var a = pal[lo], b = pal[hi];
     return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
   }
+  function mix3(a, b, f) {
+    return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+  }
+  function rgba(c, a) { return 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + a + ')'; }
 
-  // Background — deep theme gradient
-  drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
+  // ── Time of day → dayT in 0..1 (0 = midnight) ──
+  var dayT;
+  if (window._grassDemo) {
+    // Fast demo: full day loops every ~40s
+    dayT = ((t * 0.001) / 40) % 1;
+  } else {
+    var d = new Date();
+    dayT = (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) / 86400;
+  }
 
+  // Sun elevation: peaks at noon (dayT=0.5), below horizon at night.
+  // elev in -1..1 (1 = straight up at noon, negative = below horizon)
+  var sunElev = Math.sin((dayT - 0.25) * Math.PI * 2);   // -1 midnight .. 1 noon
+  var moonElev = -sunElev;                                // opposite
+  var isDay = sunElev > -0.12;
+
+  // Daylight factor 0..1 (with soft dawn/dusk transitions)
+  var light = Math.max(0, Math.min(1, (sunElev + 0.18) / 0.5));
+  // Golden factor — strongest near horizon crossings (dawn/dusk)
+  var golden = Math.max(0, 1 - Math.abs(sunElev) * 3.2) * (sunElev > -0.25 ? 1 : 0);
+
+  // ── Sky palette by phase, then tint toward the theme palette ──
+  // Reference realistic colours per band
+  var night = [8, 10, 28];
+  var dawn  = [232, 120, 96];     // warm horizon
+  var dayHi = [96, 150, 220];     // midday blue (top)
+  var dayLo = [170, 205, 240];    // midday (horizon)
+  var paletteTop = palAt(0.0);
+  var paletteHorizon = palAt(0.4);
+
+  // Build top + horizon sky colours from phase
+  var skyTop, skyHorizon;
+  if (sunElev > 0.15) {
+    // Full day
+    skyTop = dayHi; skyHorizon = dayLo;
+  } else if (sunElev > -0.25) {
+    // Dawn/dusk blend between night and day, with warm horizon
+    var f = (sunElev + 0.25) / 0.40;
+    skyTop = mix3(night, dayHi, f);
+    skyHorizon = mix3(mix3(night, dawn, Math.min(1, f*1.5)), dayLo, Math.max(0, f - 0.4) / 0.6);
+  } else {
+    skyTop = night; skyHorizon = mix3(night, [20, 22, 45], 0.5);
+  }
+  // Tint sky toward the selected palette (keeps realism but themed)
+  skyTop = mix3(skyTop, paletteTop, 0.30);
+  skyHorizon = mix3(skyHorizon, paletteHorizon, 0.28 + golden * 0.15);
+
+  var horizonY = H * 0.72;   // where sky meets grass
+
+  // ── Draw sky gradient ──
+  var sky = ctx.createLinearGradient(0, 0, 0, horizonY);
+  sky.addColorStop(0, rgba(skyTop, 1));
+  sky.addColorStop(1, rgba(skyHorizon, 1));
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, horizonY);
+
+  // ── Stars at night (fade with daylight) ──
+  var starA = Math.max(0, 1 - light * 1.6) * iMult;
+  if (starA > 0.02) {
+    if (!window._gstars) {
+      window._gstars = [];
+      for (var si = 0; si < 90; si++) {
+        window._gstars.push({ x: Math.random(), y: Math.random() * 0.62, r: Math.random()*1.4+0.3, ph: Math.random()*6.28, ts: 1+Math.random()*3 });
+      }
+    }
+    for (var sj = 0; sj < window._gstars.length; sj++) {
+      var st = window._gstars[sj];
+      var tw = 0.6 + 0.4 * Math.sin(t * 0.001 * st.ts + st.ph);
+      ctx.beginPath();
+      ctx.arc(st.x * W, st.y * horizonY, st.r, 0, Math.PI*2);
+      ctx.fillStyle = rgba([255,255,255], (starA * tw).toFixed(3));
+      ctx.fill();
+    }
+  }
+
+  // ── Sun / Moon orb arcing across the sky ──
+  // Horizontal position tracks time (rises east, sets west); vertical from elev.
+  function drawOrb(elev, isSun) {
+    if (elev < -0.10) return;                       // below horizon, hidden
+    var prog = dayT;                                // 0..1 across the day
+    var ox = (isSun ? prog : (prog + 0.5) % 1) * W; // moon offset half day
+    // Map elevation to height above horizon
+    var oy = horizonY - Math.max(0, elev) * (horizonY * 0.85) - horizonY * 0.05;
+    var rad = Math.min(W, H) * (isSun ? 0.055 : 0.042);
+    var col = isSun
+      ? mix3([255, 240, 200], [255, 150, 80], golden)   // warms at horizon
+      : [225, 230, 250];
+    // Glow halo
+    var halo = ctx.createRadialGradient(ox, oy, 0, ox, oy, rad * 4.5);
+    halo.addColorStop(0, rgba(col, (isSun ? 0.5 : 0.30) * iMult));
+    halo.addColorStop(0.4, rgba(col, (isSun ? 0.18 : 0.10) * iMult));
+    halo.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(ox - rad*4.5, oy - rad*4.5, rad*9, rad*9);
+    // Orb body
+    ctx.beginPath();
+    ctx.arc(ox, oy, rad, 0, Math.PI*2);
+    ctx.fillStyle = rgba(col, 0.95);
+    ctx.fill();
+    return { x: ox, y: oy };
+  }
+  var moonPos = !isDay || moonElev > 0 ? drawOrb(moonElev, false) : null;
+  var sunPos  = drawOrb(sunElev, true);
+
+  // ── Horizon haze band (atmospheric glow where sky meets grass) ──
+  var hazeCol = golden > 0.05 ? mix3(skyHorizon, [255, 180, 120], golden * 0.6) : skyHorizon;
+  var haze = ctx.createLinearGradient(0, horizonY - H*0.18, 0, horizonY + H*0.05);
+  haze.addColorStop(0, rgba(hazeCol, 0));
+  haze.addColorStop(1, rgba(hazeCol, (0.35 + golden * 0.35) * iMult));
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, horizonY - H*0.18, W, H*0.23);
+
+  // ── Ground base (dark, lit by sky) below horizon ──
+  var groundCol = mix3([6, 8, 12], palAt(0.6), 0.18);
+  groundCol = mix3(groundCol, skyHorizon, 0.12 + light * 0.10);
+  ctx.fillStyle = rgba(groundCol, 1);
+  ctx.fillRect(0, horizonY, W, H - horizonY);
+
+  // ── Wind field ──
   var TT = t * spd * 0.001;
-
-  // Wind field: base breeze + occasional big rolling gusts travelling across.
-  // Returns a bend strength (-1..~1.4) at horizontal fraction ux, time-varying.
   function windAt(ux) {
-    var breeze = Math.sin(ux * 3.0 - TT * 1.4) * 0.35
-               + Math.sin(ux * 6.0 - TT * 2.1) * 0.15;
-    // Big gusts: a moving gaussian bump sweeping L->R, recurring
-    var gustPos = (TT * 0.18) % 1.6 - 0.3;          // travels across, repeats
-    var g1 = Math.exp(-Math.pow((ux - gustPos) * 3.2, 2.0)) * 1.1;
-    var gustPos2 = (TT * 0.12 + 0.8) % 1.9 - 0.3;
-    var g2 = Math.exp(-Math.pow((ux - gustPos2) * 4.0, 2.0)) * 0.8;
+    var breeze = Math.sin(ux * 3.0 - TT * 1.4) * 0.35 + Math.sin(ux * 6.0 - TT * 2.1) * 0.15;
+    var gp = (TT * 0.18) % 1.6 - 0.3;
+    var g1 = Math.exp(-Math.pow((ux - gp) * 3.2, 2.0)) * 1.1;
+    var gp2 = (TT * 0.12 + 0.8) % 1.9 - 0.3;
+    var g2 = Math.exp(-Math.pow((ux - gp2) * 4.0, 2.0)) * 0.8;
     return breeze + g1 + g2;
   }
 
-  // Init blades once (persistent), arranged in depth layers
+  // ── Grass blades (rooted at horizon, depth layered) ──
   var COUNT = isMobile ? 90 : 220;
   if (!window._grass || window._grass.length !== COUNT) {
     window._grass = [];
     for (var i = 0; i < COUNT; i++) {
-      var depth = Math.random();                  // 0 far .. 1 near
+      var depth = Math.random();
       window._grass.push({
-        x: Math.random(),                         // horizontal fraction
-        depth: depth,
-        h: (0.18 + depth * 0.42) * (0.8 + Math.random() * 0.4), // blade height frac
-        lean: (Math.random() - 0.5) * 0.3,        // resting lean
-        stiff: 0.6 + Math.random() * 0.8,         // how much it resists wind
-        phase: Math.random() * Math.PI * 2,
-        hue: Math.random(),
-        width: 2.0 + depth * 4.0
+        x: Math.random(), depth: depth,
+        h: (0.10 + depth * 0.26) * (0.8 + Math.random()*0.4),
+        lean: (Math.random()-0.5)*0.3, stiff: 0.6+Math.random()*0.8,
+        phase: Math.random()*Math.PI*2, hue: Math.random(),
+        width: 1.5 + depth * 3.5
       });
     }
-    // Sort far->near so near blades draw on top
     window._grass.sort(function(a,b){ return a.depth - b.depth; });
   }
   var blades = window._grass;
 
-  ctx.globalCompositeOperation = 'source-over';
   ctx.lineCap = 'round';
-
+  // Blades darker at night, warm at golden hour, bright at midday
+  var bladeLight = 0.30 + light * 0.55;
   for (var bi = 0; bi < blades.length; bi++) {
     var bl = blades[bi];
     var baseX = bl.x * W;
-    var baseY = H * (1.02 + bl.depth * 0.04);     // rooted near/below bottom
+    var baseY = horizonY + bl.depth * (H - horizonY) * 0.5;
     var bladeH = bl.h * H;
-    // Wind bend at this blade + its own sway
     var wind = windAt(bl.x) / bl.stiff;
     var sway = Math.sin(TT * 2.0 + bl.phase) * 0.06;
     var bend = (bl.lean + wind + sway) * bladeH * 0.8;
-
-    // Gust strength here drives a color "bloom" (brighter + shifts palette)
     var gust = Math.max(0, wind);
-    var bloom = Math.min(1, gust * 0.7);
+    var bloom = Math.min(1, gust * 0.6);
 
-    // Tip position via a quadratic curve (base -> control -> tip)
-    var tipX = baseX + bend;
-    var tipY = baseY - bladeH;
-    var ctrlX = baseX + bend * 0.45;
-    var ctrlY = baseY - bladeH * 0.55;
+    var tipX = baseX + bend, tipY = baseY - bladeH;
+    var ctrlX = baseX + bend * 0.45, ctrlY = baseY - bladeH * 0.55;
 
-    // Color: palette by position + own hue, brightened by bloom
-    var c = palAt(bl.x * 0.6 + bl.hue * 0.4 + TT * 0.02 + bloom * 0.15);
-    var br = 0.45 + bl.depth * 0.35 + bloom * 0.5;  // brightness
-    var R = Math.min(255, c[0] * br + bloom * 80);
-    var G = Math.min(255, c[1] * br + bloom * 80);
-    var B = Math.min(255, c[2] * br + bloom * 80);
-    var alpha = (0.5 + bl.depth * 0.4) * iMult;
+    var c = palAt(bl.x * 0.6 + bl.hue * 0.4 + TT * 0.02 + bloom * 0.12);
+    // Tint blade toward warm at golden hour
+    if (golden > 0.05) c = mix3(c, [255, 170, 90], golden * 0.4);
+    var br = bladeLight + bl.depth * 0.2 + bloom * 0.4;
+    var R = Math.min(255, c[0]*br + bloom*60);
+    var G = Math.min(255, c[1]*br + bloom*60);
+    var B = Math.min(255, c[2]*br + bloom*60);
+    var alpha = (0.55 + bl.depth * 0.4) * iMult;
 
     ctx.strokeStyle = 'rgba(' + (R|0) + ',' + (G|0) + ',' + (B|0) + ',' + alpha.toFixed(3) + ')';
     ctx.lineWidth = bl.width * (isMobile ? 0.8 : 1.0);
@@ -2921,10 +3027,9 @@ function drawGrassField() {
     ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY);
     ctx.stroke();
 
-    // Bright tip dot when blooming (catches the light like Flower)
     if (bloom > 0.15) {
       ctx.beginPath();
-      ctx.arc(tipX, tipY, bl.width * 0.5 * (0.5 + bloom), 0, Math.PI * 2);
+      ctx.arc(tipX, tipY, bl.width * 0.5 * (0.5 + bloom), 0, Math.PI*2);
       ctx.fillStyle = 'rgba(' + (R|0) + ',' + (G|0) + ',' + (B|0) + ',' + (bloom * 0.6 * iMult).toFixed(3) + ')';
       ctx.fill();
     }
@@ -5204,6 +5309,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Also randomize Canvas 2D nebula blob positions (mobile / fallback)
     if (typeof randomizeNebulaBlobs === 'function') randomizeNebulaBlobs();
   });
+  var grassDemoBtn = document.getElementById('prefs-grass-demo');
+  if (grassDemoBtn) {
+    grassDemoBtn.addEventListener('click', function() {
+      window._grassDemo = !window._grassDemo;
+      grassDemoBtn.innerHTML = '\\u2600 Fast Day Cycle: ' + (window._grassDemo ? 'On' : 'Off');
+    });
+  }
   document.getElementById('prefs-overlay').addEventListener('click', function(e){
     if (e.target === document.getElementById('prefs-overlay')) closePrefs();
   });
@@ -5334,6 +5446,7 @@ function renderPrefsUI() {
   // ── Toggle buttons ─────────────────────────────────────────
   document.querySelectorAll('.p-toggle').forEach(function(btn) {
     if (btn.id === 'prefs-nebula-randomize') return; // has its own handler
+    if (btn.id === 'prefs-grass-demo') return; // has its own handler
     var pref = btn.dataset.pref;
     btn.classList.toggle('active', btn.dataset.val === userPrefs[pref]);
     btn.onclick = function() {
@@ -5364,6 +5477,8 @@ function renderPrefsUI() {
   if (intensityRow)  intensityRow.style.display  = showIntensity ? '' : 'none';
   if (particlesRow)  particlesRow.style.display  = showParticles ? '' : 'none';
   if (randomizeWrap) randomizeWrap.style.display = showRandomize ? '' : 'none';
+  var grassDemoWrap = document.getElementById('prefs-grass-demo-wrap');
+  if (grassDemoWrap) grassDemoWrap.style.display = (anim === 'grass') ? '' : 'none';
   // Hide the whole Background section if nothing in it is visible
   if (bgSection) bgSection.style.display = (showIntensity || showParticles) ? '' : 'none';
 
@@ -7167,6 +7282,9 @@ document.addEventListener('keydown', function(e) {
         <div id="theme-swatches"></div>
         <div style="margin-top:10px">
           <button id="prefs-nebula-randomize" class="p-toggle" style="min-width:auto">&#x21BA; Randomize Nebula</button>
+        </div>
+        <div style="margin-top:10px" id="prefs-grass-demo-wrap">
+          <button id="prefs-grass-demo" class="p-toggle" style="min-width:auto">&#x2600; Fast Day Cycle: Off</button>
         </div>
       </div>
 
