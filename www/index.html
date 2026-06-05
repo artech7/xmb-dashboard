@@ -3124,7 +3124,7 @@ function _voronoiSeeds() {
   // lot more (and it's static, so the cost is paid once visually) so the photo
   // reads clearly while keeping the faceted/pixelated look.
   var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
-  var COUNT = hasImg ? (isMobile ? 220 : 480) : (isMobile ? 90 : 200);
+  var COUNT = hasImg ? (isMobile ? 300 : 680) : (isMobile ? 90 : 200);
   if (!window._vor || window._vor.length !== COUNT) {
     window._vor = [];
     for (var i = 0; i < COUNT; i++) {
@@ -3170,7 +3170,7 @@ function drawVoronoi() {
   if (hasImg) {
     if (!window._vorSampler || window._vorSamplerImg !== window._vorImg) {
       var sc = document.createElement('canvas');
-      sc.width = 80; sc.height = 50;
+      sc.width = 160; sc.height = 100;
       var sx = sc.getContext('2d');
       // cover-fit the image
       var iw = window._vorImg.naturalWidth, ih = window._vorImg.naturalHeight;
@@ -3185,7 +3185,7 @@ function drawVoronoi() {
     sampler = window._vorSampler;
   }
   function sampleImg(u, v) {
-    var sw = 80, sh = 50;
+    var sw = 160, sh = 100;
     var px = Math.max(0, Math.min(sw-1, (u*sw)|0));
     var py = Math.max(0, Math.min(sh-1, (v*sh)|0));
     var idx = (py*sw + px) * 4;
@@ -3227,7 +3227,7 @@ function drawVoronoi() {
         var sc2 = sampleImg(pts[k].u, pts[k].v);
         var lum = (sc2[0]*0.299 + sc2[1]*0.587 + sc2[2]*0.114) / 255;
         var pcol = palAt(lum * 0.8 + pts[k].hue * 0.2);
-        base = [sc2[0]*0.45 + pcol[0]*0.55, sc2[1]*0.45 + pcol[1]*0.55, sc2[2]*0.45 + pcol[2]*0.55];
+        base = [sc2[0]*0.58 + pcol[0]*0.42, sc2[1]*0.58 + pcol[1]*0.42, sc2[2]*0.58 + pcol[2]*0.42];
       } else {
         base = palAt(pts[k].hue + pts[k].u * 0.3 + TT * 0.02);
       }
