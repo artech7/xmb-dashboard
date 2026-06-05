@@ -1253,6 +1253,8 @@ function animLoop() {
     case 'lava':      drawWavePS3();                             break;
     case 'flow':      drawFlowField();                           break;
     case 'grass':     drawGrassField();                          break;
+    case 'voronoi':   drawVoronoi();                             break;
+    case 'wallpaper': drawWallpaper();                           break;
     case 'bokeh':     drawParticleFlow();                         break;
     case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
     case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
@@ -3114,6 +3116,161 @@ function drawGrassField() {
   ctx.globalCompositeOperation = 'source-over';
 
   ctx.lineWidth = 1;
+}
+
+// Voronoi cell seeds (persistent)
+function _voronoiSeeds() {
+  var COUNT = isMobile ? 60 : 130;
+  if (!window._vor || window._vor.length !== COUNT) {
+    window._vor = [];
+    for (var i = 0; i < COUNT; i++) {
+      window._vor.push({
+        x: Math.random(), y: Math.random(),
+        vx: (Math.random()-0.5), vy: (Math.random()-0.5),
+        hue: Math.random(),
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+  }
+  return window._vor;
+}
+
+function drawVoronoi() {
+  // Stained-glass cells filling the screen. If a wallpaper is uploaded for this
+  // mode, cells sample that image (recoloured through the palette) and stay
+  // STATIC; otherwise cells drift slowly and are palette-coloured.
+  var pal = themeRgbPalette || [[120,180,255]];
+  var iMult = blobOpacityMult || 1.0;
+  var spd = animSpeed > 0 ? animSpeed : 0;
+
+  function palAt(f) {
+    var n = pal.length;
+    f = f - Math.floor(f);
+    var x = f * (n - 1);
+    var lo = Math.floor(x), hi = Math.min(lo + 1, n - 1);
+    var fr = x - lo;
+    var a = pal[lo], b = pal[hi];
+    return [a[0]+(b[0]-a[0])*fr, a[1]+(b[1]-a[1])*fr, a[2]+(b[2]-a[2])*fr];
+  }
+
+  var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
+  var TT = hasImg ? 0 : t * spd * 0.0002;   // static when using an image
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgb(' + hexToRgbStr(nebulaBackground[2] || '#05060a') + ')';
+  ctx.fillRect(0, 0, W, H);
+
+  // If an image is loaded, draw it once to a small offscreen canvas so we can
+  // sample average colours per cell cheaply.
+  var sampler = null;
+  if (hasImg) {
+    if (!window._vorSampler || window._vorSamplerImg !== window._vorImg) {
+      var sc = document.createElement('canvas');
+      sc.width = 80; sc.height = 50;
+      var sx = sc.getContext('2d');
+      // cover-fit the image
+      var iw = window._vorImg.naturalWidth, ih = window._vorImg.naturalHeight;
+      var ar = iw/ih, car = sc.width/sc.height;
+      var dw, dh, dx, dy;
+      if (ar > car) { dh = sc.height; dw = dh*ar; dx = (sc.width-dw)/2; dy = 0; }
+      else { dw = sc.width; dh = dw/ar; dx = 0; dy = (sc.height-dh)/2; }
+      sx.drawImage(window._vorImg, dx, dy, dw, dh);
+      window._vorSampler = sx.getImageData(0,0,sc.width,sc.height);
+      window._vorSamplerImg = window._vorImg;
+    }
+    sampler = window._vorSampler;
+  }
+  function sampleImg(u, v) {
+    var sw = 80, sh = 50;
+    var px = Math.max(0, Math.min(sw-1, (u*sw)|0));
+    var py = Math.max(0, Math.min(sh-1, (v*sh)|0));
+    var idx = (py*sw + px) * 4;
+    var d = sampler.data;
+    return [d[idx], d[idx+1], d[idx+2]];
+  }
+
+  var seeds = _voronoiSeeds();
+  // Current cell positions (drift if no image)
+  var pts = [];
+  for (var i = 0; i < seeds.length; i++) {
+    var s = seeds[i];
+    var cx, cy;
+    if (hasImg) { cx = s.x; cy = s.y; }
+    else {
+      cx = (s.x + Math.sin(TT * 0.6 + s.phase) * 0.05 + s.vx * 0.0) ;
+      cy = (s.y + Math.cos(TT * 0.5 + s.phase) * 0.05);
+    }
+    pts.push({ x: cx * W, y: cy * H, u: cx, v: cy, hue: s.hue });
+  }
+
+  // Rasterize Voronoi on a coarse grid (cheap): for each grid cell find nearest
+  // seed, fill that block with the seed's colour. Grid resolution scales with
+  // device. This gives the faceted stained-glass look without per-pixel cost.
+  var GX = isMobile ? 64 : 110;
+  var GY = Math.round(GX * (H / W));
+  var cellW = W / GX, cellH = H / GY;
+  // Precompute each seed colour
+  var cols = [];
+  for (var k = 0; k < pts.length; k++) {
+    var base;
+    if (hasImg) {
+      var sc2 = sampleImg(pts[k].u, pts[k].v);
+      // Recolour through palette: blend image colour with a palette tone of
+      // similar brightness so it reads as themed stained glass.
+      var lum = (sc2[0]*0.299 + sc2[1]*0.587 + sc2[2]*0.114) / 255;
+      var pcol = palAt(lum * 0.8 + pts[k].hue * 0.2);
+      base = [sc2[0]*0.45 + pcol[0]*0.55, sc2[1]*0.45 + pcol[1]*0.55, sc2[2]*0.45 + pcol[2]*0.55];
+    } else {
+      base = palAt(pts[k].hue + pts[k].u * 0.3 + TT * 0.02);
+    }
+    cols.push(base);
+  }
+
+  for (var gy = 0; gy < GY; gy++) {
+    var py2 = (gy + 0.5) * cellH;
+    for (var gx = 0; gx < GX; gx++) {
+      var px2 = (gx + 0.5) * cellW;
+      // nearest seed
+      var best = 0, bestD = 1e9;
+      for (var n = 0; n < pts.length; n++) {
+        var dx = pts[n].x - px2, dy = pts[n].y - py2;
+        var dd = dx*dx + dy*dy;
+        if (dd < bestD) { bestD = dd; best = n; }
+      }
+      var c = cols[best];
+      ctx.fillStyle = 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (0.9 * iMult).toFixed(3) + ')';
+      ctx.fillRect(gx*cellW, gy*cellH, cellW+1, cellH+1);
+    }
+  }
+
+  // Vignette on the edges
+  var vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.35, W/2, H/2, Math.max(W,H)*0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawWallpaper() {
+  // Standalone custom wallpaper: just the user's uploaded image, cover-fit,
+  // no animation. Falls back to the theme background if none uploaded.
+  ctx.clearRect(0, 0, W, H);
+  var img = window._wallImg;
+  if (img && img.complete && img.naturalWidth) {
+    var iw = img.naturalWidth, ih = img.naturalHeight;
+    var ar = iw/ih, car = W/H;
+    var dw, dh, dx, dy;
+    if (ar > car) { dh = H; dw = dh*ar; dx = (W-dw)/2; dy = 0; }
+    else { dw = W; dh = dw/ar; dx = 0; dy = (H-dh)/2; }
+    ctx.drawImage(img, dx, dy, dw, dh);
+  } else {
+    drawBg(nebulaBackground[0], nebulaBackground[1], nebulaBackground[2]);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '600 ' + Math.round(Math.min(W,H)*0.025) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Upload a wallpaper in Preferences', W/2, H/2);
+    ctx.textAlign = 'left';
+  }
 }
 function initBokeh() {
   var count = Math.max(40, Math.floor(W * H / 18000));
@@ -5289,7 +5446,7 @@ var _prefsOpen = false; // global flag checked by all key handlers
 
 // Keyboard nav state for prefs panel
 // Row 0 = theme grid (count set after themes load), rows 1-8 = settings, 9 = reset
-var ROW_COLS     = [40, 5, 3, 4, 3, 3, 3, 2, 3, 3, 1];
+var ROW_COLS     = [40, 5, 5, 4, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
@@ -5302,6 +5459,13 @@ function loadPrefs() {
   }
   // Guard: if saved theme no longer exists, fall back to default
   if (!NEBULA_THEMES[userPrefs.theme]) userPrefs.theme = DEFAULT_PREFS.theme;
+  // Restore any saved custom images (Voronoi source + standalone wallpaper)
+  try {
+    var vd = localStorage.getItem('xmb-voronoi-img');
+    if (vd) { var vi = new Image(); vi.onload = function(){ window._vorImg = vi; window._vorSampler = null; }; vi.src = vd; }
+    var wd = localStorage.getItem('xmb-wallpaper-img');
+    if (wd) { var wi = new Image(); wi.onload = function(){ window._wallImg = wi; }; wi.src = wd; }
+  } catch (e) {}
   if (typeof applyPrefs === 'function') applyPrefs(userPrefs);
 }
 
@@ -5394,6 +5558,64 @@ document.addEventListener('DOMContentLoaded', function() {
       grassDemoBtn.innerHTML = '&#x2600; Fast Day Cycle: ' + (window._grassDemo ? 'On' : 'Off');
     });
   }
+  // ── Custom image uploads (Voronoi source + standalone Wallpaper) ──
+  // Downscale + JPEG-encode so the data URL fits comfortably in localStorage.
+  function loadImageScaled(file, maxW, cb) {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var im = new Image();
+      im.onload = function() {
+        var scale = Math.min(1, maxW / im.naturalWidth);
+        var cw = Math.round(im.naturalWidth * scale);
+        var ch = Math.round(im.naturalHeight * scale);
+        var cv = document.createElement('canvas');
+        cv.width = cw; cv.height = ch;
+        cv.getContext('2d').drawImage(im, 0, 0, cw, ch);
+        var dataUrl;
+        try { dataUrl = cv.toDataURL('image/jpeg', 0.82); }
+        catch(e) { dataUrl = ev.target.result; }
+        cb(dataUrl);
+      };
+      im.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function setStoredImage(key, dataUrl) {
+    try { localStorage.setItem(key, dataUrl); }
+    catch(e) { alert('Image too large to save. Try a smaller image.'); return false; }
+    return true;
+  }
+
+  function wireImageUpload(btnId, fileId, clearId, storeKey, imgProp, labelPrefix) {
+    var btn = document.getElementById(btnId);
+    var file = document.getElementById(fileId);
+    var clearBtn = document.getElementById(clearId);
+    if (!btn || !file) return;
+    function refreshLabel() {
+      btn.innerHTML = '&#x1F5BC; ' + labelPrefix + ': ' + (window[imgProp] ? 'Loaded' : 'None');
+    }
+    btn.addEventListener('click', function() { file.click(); });
+    file.addEventListener('change', function(e) {
+      var f = e.target.files[0];
+      if (!f) return;
+      loadImageScaled(f, 1280, function(dataUrl) {
+        if (!setStoredImage(storeKey, dataUrl)) return;
+        var im = new Image();
+        im.onload = function() { window[imgProp] = im; refreshLabel(); };
+        im.src = dataUrl;
+      });
+      file.value = '';
+    });
+    if (clearBtn) clearBtn.addEventListener('click', function() {
+      try { localStorage.removeItem(storeKey); } catch(e) {}
+      window[imgProp] = null;
+      if (imgProp === '_vorImg') { window._vorSampler = null; window._vorSamplerImg = null; }
+      refreshLabel();
+    });
+    refreshLabel();
+  }
+  wireImageUpload('prefs-voronoi-img', 'prefs-voronoi-img-file', 'prefs-voronoi-img-clear', 'xmb-voronoi-img', '_vorImg', 'Stained-Glass Image');
+  wireImageUpload('prefs-wallpaper-img', 'prefs-wallpaper-img-file', 'prefs-wallpaper-img-clear', 'xmb-wallpaper-img', '_wallImg', 'Wallpaper Image');
   document.getElementById('prefs-overlay').addEventListener('click', function(e){
     if (e.target === document.getElementById('prefs-overlay')) closePrefs();
   });
@@ -5525,6 +5747,8 @@ function renderPrefsUI() {
   document.querySelectorAll('.p-toggle').forEach(function(btn) {
     if (btn.id === 'prefs-nebula-randomize') return; // has its own handler
     if (btn.id === 'prefs-grass-demo') return; // has its own handler
+    if (btn.id === 'prefs-voronoi-img' || btn.id === 'prefs-voronoi-img-clear') return;
+    if (btn.id === 'prefs-wallpaper-img' || btn.id === 'prefs-wallpaper-img-clear') return;
     var pref = btn.dataset.pref;
     btn.classList.toggle('active', btn.dataset.val === userPrefs[pref]);
     btn.onclick = function() {
@@ -5542,7 +5766,7 @@ function renderPrefsUI() {
 
   // ── Show/hide settings based on current animation ─────────
   var anim = userPrefs.animStyle || 'nebula';
-  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','flow','grass'].indexOf(anim) >= 0;
+  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','flow','grass','voronoi'].indexOf(anim) >= 0;
   var showParticles = anim === 'bokeh';
   var showRandomize = anim === 'nebula';
 
@@ -5557,6 +5781,10 @@ function renderPrefsUI() {
   if (randomizeWrap) randomizeWrap.style.display = showRandomize ? '' : 'none';
   var grassDemoWrap = document.getElementById('prefs-grass-demo-wrap');
   if (grassDemoWrap) grassDemoWrap.style.display = (anim === 'grass') ? '' : 'none';
+  var vorImgWrap = document.getElementById('prefs-voronoi-img-wrap');
+  if (vorImgWrap) vorImgWrap.style.display = (anim === 'voronoi') ? '' : 'none';
+  var wallImgWrap = document.getElementById('prefs-wallpaper-img-wrap');
+  if (wallImgWrap) wallImgWrap.style.display = (anim === 'wallpaper') ? '' : 'none';
   // Hide the whole Background section if nothing in it is visible
   if (bgSection) bgSection.style.display = (showIntensity || showParticles) ? '' : 'none';
 
@@ -7364,6 +7592,16 @@ document.addEventListener('keydown', function(e) {
         <div style="margin-top:10px" id="prefs-grass-demo-wrap">
           <button id="prefs-grass-demo" class="p-toggle" style="min-width:auto">&#x2600; Fast Day Cycle: Off</button>
         </div>
+        <div style="margin-top:10px" id="prefs-voronoi-img-wrap">
+          <button id="prefs-voronoi-img" class="p-toggle" style="min-width:auto">&#x1F5BC; Stained-Glass Image: None</button>
+          <button id="prefs-voronoi-img-clear" class="p-toggle" style="min-width:auto;margin-left:5px">Clear</button>
+          <input type="file" id="prefs-voronoi-img-file" accept="image/*" style="display:none">
+        </div>
+        <div style="margin-top:10px" id="prefs-wallpaper-img-wrap">
+          <button id="prefs-wallpaper-img" class="p-toggle" style="min-width:auto">&#x1F5BC; Wallpaper Image: None</button>
+          <button id="prefs-wallpaper-img-clear" class="p-toggle" style="min-width:auto;margin-left:5px">Clear</button>
+          <input type="file" id="prefs-wallpaper-img-file" accept="image/*" style="display:none">
+        </div>
       </div>
 
       <div class="p-section">
@@ -7378,10 +7616,12 @@ document.addEventListener('keydown', function(e) {
           </div>
         </div>
         <div class="p-row" data-pref-row="2">
-          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:100%">
+          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:100%">
             <button class="p-toggle" data-pref="animStyle" data-val="warp"  data-pref-row="2" data-pref-col="0">Flames</button>
             <button class="p-toggle" data-pref="animStyle" data-val="lava"  data-pref-row="2" data-pref-col="1">XMB Wave</button>
             <button class="p-toggle" data-pref="animStyle" data-val="flow" data-pref-row="2" data-pref-col="2">Flow</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="voronoi" data-pref-row="2" data-pref-col="3">Stained Glass</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="wallpaper" data-pref-row="2" data-pref-col="4">Wallpaper</button>
           </div>
         </div>
         <div class="p-row" data-pref-row="3">
