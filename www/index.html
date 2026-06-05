@@ -3070,14 +3070,19 @@ function buildGlassSVG() {
 
   var VW = W, VH = H;
   var hasImg = !!(window._vorImg && window._vorImg.complete && window._vorImg.naturalWidth);
-  var tint = (window._vorTint !== undefined ? window._vorTint : 0.45); // image recolour strength
+  var tint = (window._vorTint !== undefined ? window._vorTint : 0.45);
   var seed = (window._vorSeed || 1) >>> 0;
   var rng = _glassRng(seed);
 
-  // ── Generate points with Lloyd relaxation (a couple passes) so panes are
-  //    even and natural — avoids tiny slivers. Density from randomizer. ──
+  // ── Tunable glass-material knobs (moderate defaults) ──
+  var WARP    = window._glassWarp    !== undefined ? window._glassWarp    : Math.max(5, Math.min(W,H)*0.010); // refraction/waviness
+  var DIFFUSE = window._glassDiffuse !== undefined ? window._glassDiffuse : 0.6;   // light diffusion blur
+  var MARBLE  = window._glassMarble  !== undefined ? window._glassMarble  : 0.16;  // marbled texture opacity
+  var BEVEL   = window._glassBevel   !== undefined ? window._glassBevel   : 1.0;   // edge/lead bevel strength
+
+  // ── Voronoi points + Lloyd relaxation (even, natural panes) ──
   var density = window._vorDensity || 1.0;
-  var COUNT = Math.max(24, Math.round((isMobile ? 120 : 240) * density));
+  var COUNT = Math.max(24, Math.round((isMobile ? 110 : 220) * density));
   var pad = Math.max(VW, VH) * 0.08;
   var pts = [];
   for (var i = 0; i < COUNT; i++) pts.push({ x: rng()*VW, y: rng()*VH });
@@ -3095,99 +3100,112 @@ function buildGlassSVG() {
     for (var n = 0; n < kk && poly.length; n++) poly = _glassClip(poly, p.x, p.y, nb[n].q.x, nb[n].q.y);
     return poly;
   }
-  // Lloyd relaxation: move each point to its cell centroid
   for (var pass = 0; pass < 2; pass++) {
     for (var a = 0; a < pts.length; a++) {
-      var poly = cellPoly(pts[a], pts);
-      if (poly.length < 3) continue;
-      var cx=0, cy=0;
-      for (var v=0; v<poly.length; v++){ cx+=poly[v].x; cy+=poly[v].y; }
-      // clamp centroid to screen so points stay on-canvas
-      pts[a].x = Math.max(0, Math.min(VW, cx/poly.length));
-      pts[a].y = Math.max(0, Math.min(VH, cy/poly.length));
+      var poly0 = cellPoly(pts[a], pts);
+      if (poly0.length < 3) continue;
+      var cx0=0, cy0=0;
+      for (var v=0; v<poly0.length; v++){ cx0+=poly0[v].x; cy0+=poly0[v].y; }
+      pts[a].x = Math.max(0, Math.min(VW, cx0/poly0.length));
+      pts[a].y = Math.max(0, Math.min(VH, cy0/poly0.length));
     }
   }
 
-  // Lead-came thickness scales with pane size
-  var leadW = Math.max(1.5, Math.sqrt((VW*VH)/pts.length) * 0.06);
-
-  // ── Build SVG markup ──
-  var defs = '';
-  var body = '';
-  // continuous wallpaper image (one element, referenced via clip per pane)
+  var leadW = Math.max(1.6, Math.sqrt((VW*VH)/pts.length) * 0.065);
   var imgHref = hasImg ? window._vorImg.src : null;
+
+  // ── Build content: per-pane colour/tint + clip, plus came paths ──
+  var defs = '';
+  var content = '';   // the wavy glass "pigment" layer (gets the surface filter)
+  var came = '';      // dark lead lines (crisp, on top)
 
   for (var c = 0; c < pts.length; c++) {
     var p = pts[c];
     var poly = cellPoly(p, pts);
     if (poly.length < 3) continue;
     var dpath = 'M' + poly.map(function(pt){ return pt.x.toFixed(1)+','+pt.y.toFixed(1); }).join('L') + 'Z';
+
     // centroid + bbox
     var minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9,cxs=0,cys=0;
     for (var w=0; w<poly.length; w++){ var pp=poly[w]; if(pp.x<minX)minX=pp.x; if(pp.x>maxX)maxX=pp.x; if(pp.y<minY)minY=pp.y; if(pp.y>maxY)maxY=pp.y; cxs+=pp.x; cys+=pp.y; }
     cxs/=poly.length; cys/=poly.length;
-    var bw=maxX-minX, bh=maxY-minY, bmax=Math.max(bw,bh);
+    var bw=Math.max(1,maxX-minX), bh=Math.max(1,maxY-minY), bmax=Math.max(bw,bh);
 
-    // pane colour
-    var pr = rng(), pg = rng();
-    var bright = 1 + (rng()-0.5)*0.30;
-    var col = palAt(pr*0.85 + (p.x/VW)*0.2);
-    var R = Math.max(0,Math.min(255,col[0]*bright));
-    var G = Math.max(0,Math.min(255,col[1]*bright));
-    var B = Math.max(0,Math.min(255,col[2]*bright));
-
+    var bright = 1 + (rng()-0.5)*0.34;          // pane brightness variation
+    var pr = rng();
     var cid = 'gc'+c;
     defs += '<clipPath id="'+cid+'"><path d="'+dpath+'"/></clipPath>';
 
-    body += '<g clip-path="url(#'+cid+')">';
+    content += '<g clip-path="url(#'+cid+')">';
     if (hasImg) {
-      // continuous image across panes + palette tint overlay
-      body += '<image href="'+imgHref+'" x="0" y="0" width="'+VW+'" height="'+VH+'" preserveAspectRatio="xMidYMid slice"/>';
-      if (tint > 0.001) body += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([R,G,B])+'" opacity="'+(tint*0.85).toFixed(3)+'" style="mix-blend-mode:overlay"/>';
+      // continuous image (same geometry for every pane) → coherent picture
+      content += '<image href="'+imgHref+'" x="0" y="0" width="'+VW+'" height="'+VH+'" preserveAspectRatio="xMidYMid slice"/>';
+      // pigment pooling: per-pane palette tint, brightness-varied, overlay-blended
+      if (tint > 0.001) {
+        var tcol = palAt(pr*0.85 + (p.x/VW)*0.2);
+        content += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([tcol[0]*bright,tcol[1]*bright,tcol[2]*bright])+'" opacity="'+(tint*0.9).toFixed(3)+'" style="mix-blend-mode:overlay"/>';
+      }
     } else {
-      body += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([R,G,B])+'" opacity="'+(0.9*iMult).toFixed(3)+'"/>';
+      var col = palAt(pr*0.85 + (p.x/VW)*0.2);
+      content += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([col[0]*bright,col[1]*bright,col[2]*bright])+'" opacity="'+(0.92*iMult).toFixed(3)+'"/>';
     }
-    // glass texture: soft radial depth + a few directional streaks
-    var gid = 'gr'+c;
-    defs += '<radialGradient id="'+gid+'" cx="'+(((cxs-bw*0.15)-minX)/Math.max(1,bw)).toFixed(3)+'" cy="'+(((cys-bh*0.15)-minY)/Math.max(1,bh)).toFixed(3)+'" r="0.75">'
-          + '<stop offset="0" stop-color="#fff" stop-opacity="'+(0.12*iMult).toFixed(3)+'"/>'
-          + '<stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>';
-    body += '<rect x="'+minX.toFixed(1)+'" y="'+minY.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="url(#'+gid+')"/>';
-    // streaks
-    var ang = rng()*Math.PI;
-    var nStreak = 2 + (rng()*3|0);
-    var ca = Math.cos(ang), sa = Math.sin(ang);
-    for (var st=0; st<nStreak; st++) {
-      var off = (st/nStreak - 0.45) * bmax;
+    // per-pane internal streaks (a couple) for localized texture variation
+    var ang = rng()*Math.PI, ca=Math.cos(ang), sa=Math.sin(ang), nS = 1 + (rng()*2|0);
+    for (var st=0; st<nS; st++) {
+      var off = (st/(nS+0.5) - 0.3) * bmax;
       var ox = cxs + (-sa)*off, oy = cys + (ca)*off;
-      var sw2 = (bmax*(0.04 + 0.05*rng())).toFixed(1);
-      body += '<line x1="'+(ox-ca*bmax).toFixed(1)+'" y1="'+(oy-sa*bmax).toFixed(1)+'" x2="'+(ox+ca*bmax).toFixed(1)+'" y2="'+(oy+sa*bmax).toFixed(1)+'" stroke="#fff" stroke-opacity="'+(0.05*iMult).toFixed(3)+'" stroke-width="'+sw2+'" style="mix-blend-mode:screen"/>';
+      content += '<line x1="'+(ox-ca*bmax).toFixed(1)+'" y1="'+(oy-sa*bmax).toFixed(1)+'" x2="'+(ox+ca*bmax).toFixed(1)+'" y2="'+(oy+sa*bmax).toFixed(1)+'" stroke="#fff" stroke-opacity="'+(0.045*iMult).toFixed(3)+'" stroke-width="'+(bmax*(0.05+0.05*rng())).toFixed(1)+'" clip-path="url(#'+cid+')" style="mix-blend-mode:screen"/>';
     }
-    // sheen: diagonal highlight
-    var shAng = rng()*Math.PI, shc=Math.cos(shAng), shs=Math.sin(shAng);
-    var lgid = 'gs'+c;
-    defs += '<linearGradient id="'+lgid+'" x1="'+((0.5-shc*0.5)).toFixed(3)+'" y1="'+((0.5-shs*0.5)).toFixed(3)+'" x2="'+((0.5+shc*0.5)).toFixed(3)+'" y2="'+((0.5+shs*0.5)).toFixed(3)+'">'
-          + '<stop offset="0" stop-color="#fff" stop-opacity="0"/>'
-          + '<stop offset="0.5" stop-color="#fff" stop-opacity="0"/>'
-          + '<stop offset="0.62" stop-color="#fff" stop-opacity="'+(0.10*iMult).toFixed(3)+'"/>'
-          + '<stop offset="0.74" stop-color="#fff" stop-opacity="0"/></linearGradient>';
-    body += '<rect x="'+minX.toFixed(1)+'" y="'+minY.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="url(#'+lgid+')" style="mix-blend-mode:screen"/>';
-    body += '</g>';
-    // lead came (stroke the pane outline, drawn over the fill)
-    body += '<path d="'+dpath+'" fill="none" stroke="rgba(2,4,8,0.78)" stroke-width="'+leadW.toFixed(2)+'" stroke-linejoin="round"/>';
+    content += '</g>';
+
+    // lead came (crisp, drawn over everything)
+    came += '<path d="'+dpath+'" fill="none" stroke="rgba(3,5,9,0.82)" stroke-width="'+leadW.toFixed(2)+'" stroke-linejoin="round"/>';
   }
 
-  // edge vignette overlay
+  // ── Filters ──
+  // Continuous glass surface: turbulence-driven refraction + light diffusion.
+  defs += '<filter id="gGlass" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB">'
+        + '<feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="2" seed="'+(seed%1000)+'" result="warp"/>'
+        + '<feDisplacementMap in="SourceGraphic" in2="warp" scale="'+WARP.toFixed(1)+'" xChannelSelector="R" yChannelSelector="G" result="disp"/>'
+        + (DIFFUSE>0.01 ? '<feGaussianBlur in="disp" stdDeviation="'+DIFFUSE.toFixed(2)+'"/>' : '')
+        + '</filter>';
+  // Marbling: anisotropic turbulence → cloudy streaks across the whole sheet.
+  defs += '<filter id="gMarble" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">'
+        + '<feTurbulence type="fractalNoise" baseFrequency="0.006 0.05" numOctaves="3" seed="'+((seed+37)%1000)+'" result="m"/>'
+        + '<feColorMatrix in="m" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.1 -0.45"/>'
+        + '</filter>';
+  // Bevel: blur the came alpha and specular-light it → raised glossy lead.
+  defs += '<filter id="gBevel" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB">'
+        + '<feGaussianBlur in="SourceAlpha" stdDeviation="'+(leadW*0.9).toFixed(2)+'" result="b"/>'
+        + '<feSpecularLighting in="b" surfaceScale="'+(2.4*BEVEL).toFixed(2)+'" specularConstant="0.95" specularExponent="16" lighting-color="#ffffff" result="s">'
+        + '<feDistantLight azimuth="235" elevation="58"/></feSpecularLighting>'
+        + '<feComposite in="s" in2="SourceAlpha" operator="in"/>'
+        + '</filter>';
+  // Big soft surface reflections (glass catching light)
+  defs += '<linearGradient id="gRefl" x1="0" y1="0" x2="1" y2="1">'
+        + '<stop offset="0" stop-color="#fff" stop-opacity="0"/>'
+        + '<stop offset="0.42" stop-color="#fff" stop-opacity="0"/>'
+        + '<stop offset="0.5" stop-color="#fff" stop-opacity="'+(0.06*iMult).toFixed(3)+'"/>'
+        + '<stop offset="0.58" stop-color="#fff" stop-opacity="0"/></linearGradient>';
   defs += '<radialGradient id="gvig" cx="0.5" cy="0.5" r="0.72">'
         + '<stop offset="0.45" stop-color="#000" stop-opacity="0"/>'
         + '<stop offset="1" stop-color="#000" stop-opacity="0.5"/></radialGradient>';
 
   svg.setAttribute('viewBox', '0 0 '+VW+' '+VH);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
-  // dark base so any anti-alias gaps read as lead, not background
   svg.innerHTML = '<defs>'+defs+'</defs>'
     + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="rgb('+hexToRgbStr(nebulaBackground[2]||'#05060a')+')"/>'
-    + body
+    // continuous wavy pigment layer (the image/colour becomes the glass)
+    + '<g filter="url(#gGlass)">' + content + '</g>'
+    // marbled cloudy texture over the whole sheet
+    + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" filter="url(#gMarble)" opacity="'+MARBLE.toFixed(3)+'" style="mix-blend-mode:screen"/>'
+    // big diagonal surface reflection
+    + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="url(#gRefl)" style="mix-blend-mode:screen"/>'
+    // lead came (crisp)
+    + '<g>' + came + '</g>'
+    // bevel: glossy raised lead highlight (from came alpha)
+    + (BEVEL>0.01 ? '<g filter="url(#gBevel)" style="mix-blend-mode:screen">' + came + '</g>' : '')
+    // edge vignette
     + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="url(#gvig)"/>';
 
   window._glassBuiltKey = _glassKey();
@@ -3200,6 +3218,9 @@ function _glassKey() {
   return [W, H, palKey, (blobOpacityMult||1).toFixed(2),
           window._vorSeed||1, (window._vorDensity||1).toFixed(2),
           (window._vorTint!==undefined?window._vorTint:0.45).toFixed(2),
+          (window._glassWarp!==undefined?window._glassWarp:'d'),
+          (window._glassMarble!==undefined?window._glassMarble:'d'),
+          (window._glassBevel!==undefined?window._glassBevel:'d'),
           window._vorImg ? window._vorImg.src.length : 0].join(':');
 }
 
