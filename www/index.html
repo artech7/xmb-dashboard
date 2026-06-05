@@ -3075,10 +3075,11 @@ function buildGlassSVG() {
   var rng = _glassRng(seed);
 
   // ── Tunable glass-material knobs (moderate defaults) ──
-  var WARP    = window._glassWarp    !== undefined ? window._glassWarp    : Math.max(5, Math.min(W,H)*0.010); // refraction/waviness
+  var WARP    = window._glassWarp    !== undefined ? window._glassWarp    : Math.max(5, Math.min(W,H)*0.012); // refraction/waviness
   var DIFFUSE = window._glassDiffuse !== undefined ? window._glassDiffuse : 0.6;   // light diffusion blur
-  var MARBLE  = window._glassMarble  !== undefined ? window._glassMarble  : 0.16;  // marbled texture opacity
-  var BEVEL   = window._glassBevel   !== undefined ? window._glassBevel   : 1.0;   // edge/lead bevel strength
+  var MARBLE  = window._glassMarble  !== undefined ? window._glassMarble  : 0.38;  // marbled texture opacity
+  var BEVEL   = window._glassBevel   !== undefined ? window._glassBevel   : 0.0;   // edge/lead bevel (off by default)
+  var LEAD    = window._glassLead    !== undefined ? window._glassLead    : 1.0;   // lead thickness multiplier
 
   // ── Voronoi points + Lloyd relaxation (even, natural panes) ──
   var density = window._vorDensity || 1.0;
@@ -3111,7 +3112,7 @@ function buildGlassSVG() {
     }
   }
 
-  var leadW = Math.max(1.6, Math.sqrt((VW*VH)/pts.length) * 0.065);
+  var leadW = Math.max(1.0, Math.sqrt((VW*VH)/pts.length) * 0.040) * LEAD;
   var imgHref = hasImg ? window._vorImg.src : null;
 
   // ── Build content: per-pane colour/tint + clip, plus came paths ──
@@ -3149,12 +3150,14 @@ function buildGlassSVG() {
       var col = palAt(pr*0.85 + (p.x/VW)*0.2);
       content += '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="'+rgb([col[0]*bright,col[1]*bright,col[2]*bright])+'" opacity="'+(0.92*iMult).toFixed(3)+'"/>';
     }
-    // per-pane internal streaks (a couple) for localized texture variation
-    var ang = rng()*Math.PI, ca=Math.cos(ang), sa=Math.sin(ang), nS = 1 + (rng()*2|0);
+    // per-pane internal streaks — wispy marbled glass texture inside each pane
+    var ang = rng()*Math.PI, ca=Math.cos(ang), sa=Math.sin(ang), nS = 3 + (rng()*3|0);
     for (var st=0; st<nS; st++) {
-      var off = (st/(nS+0.5) - 0.3) * bmax;
+      var off = (st/(nS) - 0.45) * bmax * 1.1;
       var ox = cxs + (-sa)*off, oy = cys + (ca)*off;
-      content += '<line x1="'+(ox-ca*bmax).toFixed(1)+'" y1="'+(oy-sa*bmax).toFixed(1)+'" x2="'+(ox+ca*bmax).toFixed(1)+'" y2="'+(oy+sa*bmax).toFixed(1)+'" stroke="#fff" stroke-opacity="'+(0.045*iMult).toFixed(3)+'" stroke-width="'+(bmax*(0.05+0.05*rng())).toFixed(1)+'" clip-path="url(#'+cid+')" style="mix-blend-mode:screen"/>';
+      var streakA = (0.06 + rng()*0.08) * iMult;
+      var dark = rng() < 0.4;   // mix light and dark wisps
+      content += '<line x1="'+(ox-ca*bmax).toFixed(1)+'" y1="'+(oy-sa*bmax).toFixed(1)+'" x2="'+(ox+ca*bmax).toFixed(1)+'" y2="'+(oy+sa*bmax).toFixed(1)+'" stroke="'+(dark?'#000':'#fff')+'" stroke-opacity="'+streakA.toFixed(3)+'" stroke-width="'+(bmax*(0.04+0.07*rng())).toFixed(1)+'" clip-path="url(#'+cid+')" style="mix-blend-mode:'+(dark?'multiply':'screen')+'"/>';
     }
     content += '</g>';
 
@@ -3169,10 +3172,10 @@ function buildGlassSVG() {
         + '<feDisplacementMap in="SourceGraphic" in2="warp" scale="'+WARP.toFixed(1)+'" xChannelSelector="R" yChannelSelector="G" result="disp"/>'
         + (DIFFUSE>0.01 ? '<feGaussianBlur in="disp" stdDeviation="'+DIFFUSE.toFixed(2)+'"/>' : '')
         + '</filter>';
-  // Marbling: anisotropic turbulence → cloudy streaks across the whole sheet.
+  // Marbling: anisotropic fractal turbulence → cloudy glass streaks (light+dark).
   defs += '<filter id="gMarble" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">'
-        + '<feTurbulence type="fractalNoise" baseFrequency="0.006 0.05" numOctaves="3" seed="'+((seed+37)%1000)+'" result="m"/>'
-        + '<feColorMatrix in="m" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.1 -0.45"/>'
+        + '<feTurbulence type="fractalNoise" baseFrequency="0.008 0.04" numOctaves="3" seed="'+((seed+37)%1000)+'" result="m"/>'
+        + '<feColorMatrix in="m" type="matrix" values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 1.4 -0.7"/>'
         + '</filter>';
   // Bevel: blur the came alpha and specular-light it → raised glossy lead.
   defs += '<filter id="gBevel" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB">'
@@ -3198,7 +3201,7 @@ function buildGlassSVG() {
     // continuous wavy pigment layer (the image/colour becomes the glass)
     + '<g filter="url(#gGlass)">' + content + '</g>'
     // marbled cloudy texture over the whole sheet
-    + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" filter="url(#gMarble)" opacity="'+MARBLE.toFixed(3)+'" style="mix-blend-mode:screen"/>'
+    + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" filter="url(#gMarble)" opacity="'+MARBLE.toFixed(3)+'" style="mix-blend-mode:overlay"/>'
     // big diagonal surface reflection
     + '<rect x="0" y="0" width="'+VW+'" height="'+VH+'" fill="url(#gRefl)" style="mix-blend-mode:screen"/>'
     // lead came (crisp)
@@ -3221,6 +3224,7 @@ function _glassKey() {
           (window._glassWarp!==undefined?window._glassWarp:'d'),
           (window._glassMarble!==undefined?window._glassMarble:'d'),
           (window._glassBevel!==undefined?window._glassBevel:'d'),
+          (window._glassLead!==undefined?window._glassLead:'d'),
           window._vorImg ? window._vorImg.src.length : 0].join(':');
 }
 
@@ -5454,6 +5458,10 @@ function loadPrefs() {
     if (wd) { var wi = new Image(); wi.onload = function(){ window._wallImg = wi; }; wi.src = wd; }
     var vt = localStorage.getItem('xmb-voronoi-tint');
     window._vorTint = (vt !== null) ? parseFloat(vt) : 0.45;
+    var gl = localStorage.getItem('xmb-glass-lead');    if (gl !== null) window._glassLead = parseFloat(gl);
+    var gw = localStorage.getItem('xmb-glass-warp');    if (gw !== null) window._glassWarp = parseFloat(gw);
+    var gm = localStorage.getItem('xmb-glass-marble');  if (gm !== null) window._glassMarble = parseFloat(gm);
+    var gd = localStorage.getItem('xmb-glass-diffuse'); if (gd !== null) window._glassDiffuse = parseFloat(gd);
   } catch (e) { window._vorTint = 0.45; }
   if (!window._vorSeed) window._vorSeed = (Math.random() * 1e9) >>> 0;
   if (typeof applyPrefs === 'function') applyPrefs(userPrefs);
@@ -5634,6 +5642,32 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   syncTintButtons();
+  // Glass tuning sliders → window knobs (persisted, debounced rebuild)
+  var glassSliderMap = {
+    'gs-lead':    { prop: '_glassLead',    key: 'xmb-glass-lead' },
+    'gs-warp':    { prop: '_glassWarp',    key: 'xmb-glass-warp' },
+    'gs-marble':  { prop: '_glassMarble',  key: 'xmb-glass-marble' },
+    'gs-diffuse': { prop: '_glassDiffuse', key: 'xmb-glass-diffuse' }
+  };
+  var glassRebuildTimer = null;
+  Object.keys(glassSliderMap).forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    var m = glassSliderMap[id];
+    // restore saved value
+    var saved = null;
+    try { saved = localStorage.getItem(m.key); } catch(e) {}
+    if (saved !== null) { el.value = saved; window[m.prop] = parseFloat(saved); }
+    el.addEventListener('input', function(){
+      window[m.prop] = parseFloat(el.value);
+      try { localStorage.setItem(m.key, el.value); } catch(e) {}
+      clearTimeout(glassRebuildTimer);
+      glassRebuildTimer = setTimeout(function(){
+        window._glassBuiltKey = null;
+        if (typeof updateGlassLayer === 'function') updateGlassLayer();
+      }, 120);
+    });
+  });
   document.getElementById('prefs-overlay').addEventListener('click', function(e){
     if (e.target === document.getElementById('prefs-overlay')) closePrefs();
   });
@@ -7623,6 +7657,16 @@ document.addEventListener('keydown', function(e) {
             <button class="p-toggle vor-tint" data-tint="0.25" style="min-width:auto">Light</button>
             <button class="p-toggle vor-tint" data-tint="0.45" style="min-width:auto">Medium</button>
             <button class="p-toggle vor-tint" data-tint="0.7"  style="min-width:auto">Strong</button>
+          </div>
+          <div style="margin-top:10px;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;max-width:340px">
+            <span style="font-size:11px;letter-spacing:1px;opacity:0.6">LEAD</span>
+            <input type="range" class="glass-slider" id="gs-lead" min="0.2" max="3" step="0.1" value="1">
+            <span style="font-size:11px;letter-spacing:1px;opacity:0.6">WAVINESS</span>
+            <input type="range" class="glass-slider" id="gs-warp" min="0" max="30" step="1" value="10">
+            <span style="font-size:11px;letter-spacing:1px;opacity:0.6">TEXTURE</span>
+            <input type="range" class="glass-slider" id="gs-marble" min="0" max="0.9" step="0.02" value="0.38">
+            <span style="font-size:11px;letter-spacing:1px;opacity:0.6">DIFFUSION</span>
+            <input type="range" class="glass-slider" id="gs-diffuse" min="0" max="3" step="0.1" value="0.6">
           </div>
         </div>
         <div style="margin-top:10px" id="prefs-wallpaper-img-wrap">
