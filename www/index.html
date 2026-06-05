@@ -2959,15 +2959,18 @@ function drawGrassField() {
   ctx.fillStyle = haze;
   ctx.fillRect(0, H * 0.6, W, H * 0.4);
 
-  // ── Wind field ──
+  // ── Wind: gentle ambient sway + occasional mild breeze swells ──
+  // No hard gusts. A soft global breeze that slowly waxes and wanes, plus each
+  // blade adds its own small jitter (handled per-blade below).
   var TT = t * spd * 0.001;
+  // Breeze strength oscillates slowly; occasionally a bit stronger but never wild.
+  var breezeStrength = 0.18
+    + 0.10 * Math.sin(TT * 0.35)
+    + 0.08 * Math.max(0, Math.sin(TT * 0.13 + 1.0));   // occasional gentle swell
   function windAt(ux) {
-    var breeze = Math.sin(ux * 3.0 - TT * 1.4) * 0.35 + Math.sin(ux * 6.0 - TT * 2.1) * 0.15;
-    var gp = (TT * 0.18) % 1.6 - 0.3;
-    var g1 = Math.exp(-Math.pow((ux - gp) * 3.2, 2.0)) * 1.1;
-    var gp2 = (TT * 0.12 + 0.8) % 1.9 - 0.3;
-    var g2 = Math.exp(-Math.pow((ux - gp2) * 4.0, 2.0)) * 0.8;
-    return breeze + g1 + g2;
+    // Smooth left-to-right travelling ripple, small amplitude
+    return (Math.sin(ux * 2.2 - TT * 1.1) * 0.6
+          + Math.sin(ux * 4.5 - TT * 1.7) * 0.4) * breezeStrength;
   }
 
   // ── Grass blades (rooted at horizon, depth layered) ──
@@ -3000,10 +3003,13 @@ function drawGrassField() {
     var baseY = H + bl.root * H * 0.04;
     var bladeH = bl.h * H * 1.9;   // taller so they reach well up the frame
     var wind = windAt(bl.x) / bl.stiff;
-    var sway = Math.sin(TT * 2.0 + bl.phase) * 0.06;
-    var bend = (bl.lean + wind + sway) * bladeH * 0.8;
-    var gust = Math.max(0, wind);
-    var bloom = Math.min(1, gust * 0.5);
+    // Per-blade jitter: small, fast, unique to each blade so the field shimmers
+    var jitter = Math.sin(TT * 3.2 + bl.phase) * 0.05
+               + Math.sin(TT * 5.1 + bl.phase * 2.3) * 0.03;
+    var sway = Math.sin(TT * 1.4 + bl.phase) * 0.04;
+    var bend = (bl.lean * 0.5 + wind + sway + jitter) * bladeH * 0.45;
+    // Gentle bloom only on the stronger breeze swells, capped low
+    var bloom = Math.min(0.5, Math.max(0, breezeStrength - 0.22) * 1.5);
 
     var tipX = baseX + bend, tipY = baseY - bladeH;
     var ctrlX = baseX + bend * 0.45, ctrlY = baseY - bladeH * 0.55;
