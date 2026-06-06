@@ -2214,26 +2214,27 @@ function drawUnderwater() {
     }
   }
 
-  // ── Light rays filtering down (perspective — converge to a high
-  //    vanishing point and fan out as they descend, for depth) ──
-  var vpx = W * (0.5 + Math.sin(t * 0.0001 * spd) * 0.06);
+  // ── Light rays filtering down (side-on: near-vertical shafts dropping
+  //    from the surface, fading as they sink into the depths) ──
   for (var ray = 0; ray < 7; ray++) {
-    var ang   = (ray / 6 - 0.5);
-    var sway  = Math.sin(t * 0.00018 * spd + ray * 1.1) * 0.04 * W;
-    var topX  = vpx + ang * 0.10 * W + sway;          // near vanishing point
-    var botX  = vpx + ang * 0.95 * W + sway;          // fanned out at depth
-    var ra    = (0.014 + ray % 2 * 0.006) + Math.sin(t * 0.0004 * spd + ray * 0.8) * 0.008;
-    var halfTop = 14, halfBot = 70;
-    var rg2 = ctx.createLinearGradient(0, 0, 0, H * 0.9);
-    rg2.addColorStop(0,   'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',0)');
-    rg2.addColorStop(0.25,'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + (ra * 0.5) + ')');
-    rg2.addColorStop(1,   'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + ra + ')');
+    var rx    = W * (0.10 + ray * 0.135);
+    var drift = Math.sin(t * 0.00016 * spd + ray * 1.3) * 0.018 * W;
+    var lean  = Math.sin(t * 0.0001 * spd + ray) * 0.05 * W;
+    var topX  = rx + drift;
+    var botX  = rx + drift + lean;                    // slight diagonal lean
+    var ra    = (0.020 + ray % 2 * 0.006) + Math.sin(t * 0.0004 * spd + ray * 0.8) * 0.008;
+    var halfTop = 16 + ray * 1.5, halfBot = halfTop + 30;
+    var rg2 = ctx.createLinearGradient(0, 0, 0, H);
+    rg2.addColorStop(0,    'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',0)');
+    rg2.addColorStop(0.10, 'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + ra + ')');
+    rg2.addColorStop(0.55, 'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + (ra * 0.35) + ')');
+    rg2.addColorStop(1,    'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',0)');
     ctx.fillStyle = rg2;
     ctx.beginPath();
     ctx.moveTo(topX - halfTop, 0);
     ctx.lineTo(topX + halfTop, 0);
-    ctx.lineTo(botX + halfBot, H * 0.9);
-    ctx.lineTo(botX - halfBot, H * 0.9);
+    ctx.lineTo(botX + halfBot, H);
+    ctx.lineTo(botX - halfBot, H);
     ctx.fill();
   }
 
@@ -2273,13 +2274,14 @@ function drawUnderwater() {
     ctx.fill();
   });
 
-  // ── Depth fog — murk thickens toward the top (far) so the scene
-  //    recedes into hazy distance, giving a sense of water volume ──
+  // ── Depth — the deep below darkens into murk, so the water recedes
+  //    downward into the depths (surface bright, deep dark) ──
   var fog = ctx.createLinearGradient(0, 0, 0, H);
-  var fc0 = c2, fc1 = c1;
-  fog.addColorStop(0,    'rgba(' + ((fc0[0]+fc1[0])>>1) + ',' + ((fc0[1]+fc1[1])>>1) + ',' + ((fc0[2]+fc1[2])>>1) + ',0.22)');
-  fog.addColorStop(0.45, 'rgba(' + ((fc0[0]+fc1[0])>>1) + ',' + ((fc0[1]+fc1[1])>>1) + ',' + ((fc0[2]+fc1[2])>>1) + ',0.06)');
-  fog.addColorStop(1,    'rgba(0,0,0,0)');
+  var fcol = nebulaBackground[2];
+  var fr = parseInt(fcol.slice(1,3),16)||5, fg = parseInt(fcol.slice(3,5),16)||8, fb = parseInt(fcol.slice(5,7),16)||14;
+  fog.addColorStop(0,    'rgba(' + fr + ',' + fg + ',' + fb + ',0)');
+  fog.addColorStop(0.55, 'rgba(' + fr + ',' + fg + ',' + fb + ',0.10)');
+  fog.addColorStop(1,    'rgba(' + fr + ',' + fg + ',' + fb + ',0.5)');
   ctx.fillStyle = fog;
   ctx.fillRect(0, 0, W, H);
 
@@ -3743,48 +3745,39 @@ var GL_DEEPSEA_FRAG = [
   '  vec3 causticCol=mix(mix(u_c0,u_c1,smoothstep(0.0,0.5,cx)),mix(u_c2,u_c3,smoothstep(0.5,1.0,cx)),smoothstep(0.25,0.75,cx));',
   '  col+=causticCol*caust*0.30*u_intensity;',
   '  col+=mix(u_c3,u_c4,smoothstep(0.0,1.0,uv.x))*caust2*0.18*u_intensity;',
-  // God rays with perspective — shafts converge toward a high vanishing
-  // point and fan out as they descend, so they read as receding into depth.
-  // A near (bright/wide) set and a far (faint/thin) set build volume.
-  '  float vpx=0.5+sin(t*0.10)*0.06;',          // vanishing point x (drifts)
+  // God rays — side-on view: near-vertical shafts dropping DOWN from the
+  // bright surface band at the top, fading and softening as they sink into
+  // the depths below. (No vanishing-point fan — this reads as calm light
+  // filtering down through water seen from the side.)
+  '  float depthDown=smoothstep(0.05,0.95,1.0-uv.y);',   // 0 at top, 1 at bottom
   '  for(int ri=0;ri<7;ri++){',
   '    float rf=float(ri);',
-  '    float ang=(rf/6.0-0.5);',                 // ray angle spread from VP
-  '    float sway=sin(t*0.18+rf*1.1)*0.04;',
-  // Depth factor: 0 at top (far), 1 at bottom (near). Rays fan from the VP.
-  '    float depth=clamp(uv.y,0.0,1.0);',
-  '    float spread=0.10+depth*0.85;',           // narrow at top, wide low
-  '    float rayCenter=vpx+(ang+sway)*spread;',
-  '    float rayX=uv.x-rayCenter;',
-  '    float rayW=(0.006+depth*0.020)+sin(t*0.4+rf*0.7)*0.004;', // widen w/ depth
+  '    float rx=0.10+rf*0.135;',                          // evenly spread across
+  '    float drift=sin(t*0.16+rf*1.3)*0.018;',            // gentle sway
+  '    float lean=sin(t*0.10+rf)*0.05;',                  // slight diagonal lean
+  '    float rayCenter=rx+drift+lean*(1.0-uv.y);',
+  '    float rayX=(uv.x-rayCenter)*asp;',
+  '    float rayW=0.014+rf*0.0016+(1.0-uv.y)*0.010;',     // widen a touch as it sinks
   '    float ray=exp(-rayX*rayX/(rayW*rayW))',
-  '             *smoothstep(0.0,0.35,uv.y)',      // fade in below the surface
-  '             *(0.42+0.40*sin(t*0.9+rf*0.8))',
-  '             *(0.35+depth*0.85);',             // brighter as it nears viewer
+  '             *smoothstep(0.02,0.40,1.0-uv.y)',          // start just under surface
+  '             *(1.0-depthDown*0.85)',                    // fade out with depth
+  '             *(0.55+0.45*sin(t*0.8+rf*0.9));',
   '    vec3 rCol=rf<1.0?u_c0:rf<2.0?u_c1:rf<3.0?u_c2:rf<4.0?u_c3:rf<5.0?u_c4:u_c5;',
-  '    col+=rCol*ray*0.16*u_intensity;',
+  '    col+=mix(rCol,vec3(1.0),0.35)*ray*0.17*u_intensity;',
   '  }',
-  // Far, faint shaft layer — thinner, dimmer, tighter to the VP (distance).
-  '  for(int rj=0;rj<5;rj++){',
-  '    float rg=float(rj);',
-  '    float angF=(rg/4.0-0.5);',
-  '    float depthF=clamp(uv.y,0.0,1.0);',
-  '    float rayCF=vpx+(angF+sin(t*0.13+rg*1.7)*0.03)*(0.05+depthF*0.40);',
-  '    float rxF=uv.x-rayCF;',
-  '    float rwF=0.0035+depthF*0.008;',
-  '    float rayF=exp(-rxF*rxF/(rwF*rwF))*smoothstep(0.0,0.5,uv.y)*(0.4+0.3*sin(t*0.7+rg))*depthF;',
-  '    col+=mix(u_c1,u_c4,uv.y)*rayF*0.07*u_intensity;',
-  '  }',
+  // Bright surface glow band along the very top (where light enters).
+  '  float surfGlow=smoothstep(0.78,1.0,uv.y);',
+  '  col+=mix(u_c1,vec3(1.0),0.5)*surfGlow*surfGlow*0.20*u_intensity;',
   '  float haze=fbm(uv*vec2(asp,1.0)*2.5+vec2(t*0.12,t*0.08))*0.5+0.5;',
   // Haze shifts color across screen depth
   '  vec3 hazeCol=mix(u_c4,u_c5,uv.y);',
   '  col+=hazeCol*haze*0.06*(1.0-uv.y)*u_intensity;',
-  // Volumetric depth fog — a soft murk that thickens toward the top (far),
-  // so the scene recedes into hazy distance and reads as a deep volume.
-  '  float depthFog=smoothstep(0.15,0.95,1.0-uv.y);',
+  // Volumetric depth — the deep below darkens into murk, so the water
+  // reads as receding downward into the depths (surface bright, deep dark).
+  '  float deepMurk=smoothstep(0.15,0.95,1.0-uv.y);',
   '  float fogTex=fbm(uv*vec2(asp,1.0)*1.6+vec2(t*0.05,-t*0.03))*0.4+0.6;',
-  '  vec3 fogCol=mix(u_bg1,mix(u_c2,u_c4,0.5)*0.6,0.5);',
-  '  col=mix(col,fogCol*fogTex,depthFog*0.32);',
+  '  vec3 deepCol=mix(u_bg2*0.7,u_bg1,0.4);',
+  '  col=mix(col,deepCol*fogTex,deepMurk*0.45);',
   '  float bio=0.0;',
   '  bio+=bioPart(uv,vec2(0.13,0.27),t);',
   '  bio+=bioPart(uv,vec2(0.72,0.54),t);',
