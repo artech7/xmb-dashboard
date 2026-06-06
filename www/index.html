@@ -1246,20 +1246,27 @@ function animLoop() {
     glCanvas.height = H;
     if (gl) gl.viewport(0, 0, W, H);
   }
-  switch(animMode) {
-    case 'galaxy':    drawGalaxy();                              break;
-    case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
-    case 'matrix':    drawMatrix();                              break;
-    case 'warp':      drawFlames();                              break;
-    case 'lava':      drawWavePS3();                             break;
-    case 'grass':     drawGrassField();                          break;
-    case 'voronoi':   ctx.clearRect(0,0,W,H);                    break;
-    case 'wallpaper': drawWallpaper();                           break;
-    case 'bokeh':     drawParticleFlow();                         break;
-    case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
-    case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
-    case 'hex':        drawHexGrid();                             break;
-    default:          drawNebula();                              break;
+  try {
+    switch(animMode) {
+      case 'galaxy':    drawGalaxy();                              break;
+      case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
+      case 'matrix':    drawMatrix();                              break;
+      case 'warp':      drawFlames();                              break;
+      case 'lava':      drawWavePS3();                             break;
+      case 'grass':     drawGrassField();                          break;
+      case 'voronoi':   ctx.clearRect(0,0,W,H);                    break;
+      case 'wallpaper': drawWallpaper();                           break;
+      case 'bokeh':     drawParticleFlow();                         break;
+      case 'ink':       useGL ? renderGLInk()   : drawInkWater(); break;
+      case 'nebula':    useGL ? renderGLNebula() : drawNebula();   break;
+      case 'hex':        drawHexGrid();                             break;
+      default:          drawNebula();                              break;
+    }
+  } catch (err) {
+    // A thrown frame must never kill the animation loop permanently (that
+    // would freeze the background until a page refresh). Log once and keep
+    // the rAF chain alive so the next frame can recover.
+    if (!window._animErrLogged) { console.error('animLoop frame error:', err); window._animErrLogged = true; }
   }
   requestAnimationFrame(animLoop);
 }
