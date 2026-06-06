@@ -2039,7 +2039,58 @@ function drawGalaxy() {
 // ── 2. DEEP SEA BIOLUMINESCENCE ───────────────────────────────
 var deepSeaParticles = null;
 var deepSeaMotes     = null;
+var deepSeaDetritus  = null;
 var causticNodes     = null;
+
+// Slow-falling detritus ("marine snow") — drifts down from the top.
+function newDetritus(randomPos) {
+  return {
+    x:    Math.random(),
+    y:    randomPos ? Math.random() : -0.03,
+    vy:   0.00010 + Math.random() * 0.00022,   // gentle downward fall
+    vx:   (Math.random() - 0.5) * 0.00006,     // slight horizontal drift
+    size: (0.0006 + Math.random() * 0.0022) * Math.min(W, H),
+    alpha: 0.10 + Math.random() * 0.30,
+    phase: Math.random() * Math.PI * 2,
+    swaySpd:  0.004 + Math.random() * 0.010,    // sway oscillation speed
+    swayAmp:  0.0004 + Math.random() * 0.0010,  // sway width
+    spin:  Math.random() * Math.PI,
+  };
+}
+
+function initDeepSeaDetritus() {
+  deepSeaDetritus = [];
+  var count = Math.round((isMobile ? 50 : 90) * (window.particleMult || 1.0));
+  for (var d = 0; d < count; d++) deepSeaDetritus.push(newDetritus(true));
+}
+
+// Draw + advance the falling detritus onto the 2D canvas. Shared by the GL
+// (desktop) and Canvas (mobile) deep-sea paths so both look the same.
+function drawDeepSeaDetritus() {
+  if (!deepSeaDetritus) initDeepSeaDetritus();
+  var spd = animSpeed > 0 ? animSpeed : 0;
+  var c2 = (themeRgbPalette && themeRgbPalette[2]) || [180, 200, 210];
+  for (var i = 0; i < deepSeaDetritus.length; i++) {
+    var p = deepSeaDetritus[i];
+    p.y     += p.vy * spd;
+    p.phase += p.swaySpd * spd;
+    var dx = p.x + Math.sin(p.phase) * p.swayAmp * 30; // sway around base x
+    p.x     += p.vx * spd;
+    if (p.y > 1.05) { deepSeaDetritus[i] = newDetritus(false); continue; }
+    var a = p.alpha * (0.6 + Math.sin(p.phase * 0.7) * 0.4);
+    var px = dx * W, py = p.y * H;
+    // soft irregular speck (slightly elongated, faintly tinted by theme)
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(p.spin + p.phase * 0.2);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, p.size, p.size * 0.7, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + ((c2[0]+200)>>1) + ',' + ((c2[1]+210)>>1) + ',' + ((c2[2]+215)>>1) + ',' + a.toFixed(3) + ')';
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 
 function initDeepSea() {
   var U = Math.min(W, H);
@@ -2216,6 +2267,7 @@ function drawUnderwater() {
     ctx.fill();
   });
 
+  drawDeepSeaDetritus();
   drawVignette();
 }
 
@@ -4223,7 +4275,7 @@ function glRenderFrame(prog, locs, useAccentForC0) {
   ctx.drawImage(glCanvas, 0, 0, W, H);
 }
 
-function renderGLDeepSea() { if (glProgDeepSea) glRenderFrame(glProgDeepSea, glDeepSeaLocs);      else { glSupported = false; drawUnderwater(); } }
+function renderGLDeepSea() { if (glProgDeepSea) { glRenderFrame(glProgDeepSea, glDeepSeaLocs); drawDeepSeaDetritus(); } else { glSupported = false; drawUnderwater(); } }
 function renderGLCrystals(){ if (glProgCrystals)glRenderFrame(glProgCrystals,glCrystalLocs);      else drawBokeh(); }
 function renderGLGalaxy()  { if (glProgGalaxy)  glRenderFrame(glProgGalaxy,  glGalaxyLocs);       else drawGalaxy(); }
 function renderGLInk()     { if (glProgInk)     glRenderFrame(glProgInk,     glInkLocs);          else { glSupported = false; drawInkWater(); } }
@@ -7891,6 +7943,12 @@ function applyPrefs(prefs) {
     if (!deepSeaMotes || deepSeaMotes.length !== newDmc) {
       deepSeaMotes = [];
       for (var dmi=0; dmi<newDmc; dmi++) deepSeaMotes.push(newMote(true));
+    }
+    var ddc = {off:0, normal:90, dense:160};
+    var newDdc = Math.round(((prefs.particles && ddc[prefs.particles] !== undefined) ? ddc[prefs.particles] : 90) * (isMobile ? 0.55 : 1.0));
+    if (!deepSeaDetritus || deepSeaDetritus.length !== newDdc) {
+      deepSeaDetritus = [];
+      for (var ddi=0; ddi<newDdc; ddi++) deepSeaDetritus.push(newDetritus(true));
     }
   }
 
