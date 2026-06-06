@@ -1124,6 +1124,8 @@ var nebulaCloudCacheFrame = 0;
 
 function drawNebula() {
   ctx.clearRect(0, 0, W, H);
+  // Soften high intensities so the vivid setting is less hot (matches GL path)
+  var nebInten = blobOpacityMult <= 1.0 ? blobOpacityMult : (1.0 + (blobOpacityMult - 1.0) * 0.45);
 
   // Deep space background
   const bg = ctx.createRadialGradient(W * 0.38, H * 0.38, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.95);
@@ -1164,7 +1166,7 @@ function drawNebula() {
       var cx = (blob.x + Math.sin(d + i * 1.37) * 0.055) * W;
       var cy = (blob.y + Math.cos(d * 0.72 + i * 1.09) * 0.048) * H;
       var br = blob.r * Math.min(W, H);
-      var a  = blob.a * blobOpacityMult * 1.25; // lowered to reduce hot spots
+      var a  = blob.a * nebInten * 1.25; // lowered to reduce hot spots
 
       // Main lobe — softer
       softCloud(cx, cy, br, blob.rgb, a * 0.5);
@@ -3551,6 +3553,9 @@ var GL_NEBULA_FRAG = [
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
   '  float t=u_time*0.000104;',
+  // Soften high intensities so the vivid setting is less hot (dim/normal
+  // unchanged: <=1.0 passes through, above 1.0 is compressed).
+  '  float inten = u_intensity<=1.0 ? u_intensity : (1.0 + (u_intensity-1.0)*0.45);',
   '  float asp=u_res.x/u_res.y;',
   '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
   '  float p=0.88+0.12*sin(u_time*0.00022);',
@@ -3563,18 +3568,18 @@ var GL_NEBULA_FRAG = [
   '  float g4=cloudBlob(uv,vec2(0.82+sin(t*0.55+ph+3.1)*0.07,0.68+cos(t*0.39+ph+3.1)*0.06),0.52,asp,0.12)*0.32;',
   '  float g5=cloudBlob(uv,vec2(0.40+sin(t*0.30+ph+1.8)*0.07,0.42+cos(t*0.21+ph+1.8)*0.06),0.68,asp,0.08)*0.20;',
   '  float density=g0+g1+g2+g3+g4+g5;',
-  '  col+=u_c0*g0*p*u_intensity;',
-  '  col+=u_c1*g1*p*u_intensity;',
-  '  col+=u_c2*g2*p*u_intensity;',
-  '  col+=u_c3*g3*p*u_intensity;',
-  '  col+=u_c4*g4*p*u_intensity;',
-  '  col+=u_c5*g5*p*u_intensity;',
+  '  col+=u_c0*g0*p*inten;',
+  '  col+=u_c1*g1*p*inten;',
+  '  col+=u_c2*g2*p*inten;',
+  '  col+=u_c3*g3*p*inten;',
+  '  col+=u_c4*g4*p*inten;',
+  '  col+=u_c5*g5*p*inten;',
   '  float wt=u_time*0.000055;',  // wisps slightly faster
   '  vec2 wuv=uv*2.8+vec2(wt+u_seed,wt*0.7);',  // seed offsets wisp pattern
   '  vec2 wq=vec2(fbm(wuv+vec2(1.7,9.2)),fbm(wuv+vec2(9.2,1.7)));',
   '  float wisp=max(0.0,fbm(wuv+2.5*wq)-0.42)*density*1.8;',
-  '  col+=mix(mix(u_c0,u_c2,0.4),u_c4,0.3)*wisp*0.35*u_intensity;',
-  '  col+=u_c0*exp(-dot(uv-0.5,uv-0.5)*3.2)*0.06*u_intensity;',
+  '  col+=mix(mix(u_c0,u_c2,0.4),u_c4,0.3)*wisp*0.35*inten;',
+  '  col+=u_c0*exp(-dot(uv-0.5,uv-0.5)*3.2)*0.06*inten;',
   '  col+=sf(uv,280.0,vec2(u_seed*17.3,u_seed*31.7))*0.60;',
   '  col+=sf(uv,160.0,vec2(57.3+u_seed*11.1,83.7))*0.75;',
   '  col+=sf(uv,90.0,vec2(31.1,47.9+u_seed*23.4))*0.90;',
