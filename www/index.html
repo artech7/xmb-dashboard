@@ -2213,6 +2213,10 @@ function drawUnderwater() {
 
 
 // ── 3. AURORA BOREALIS ─────────────────────────────────────
+var matrixCols = null;
+// Character set for the Matrix rain (katakana + digits + a few symbols)
+var matrixChars = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾚﾛﾜﾝ0123456789:.=*+-<>'.split('');
+
 function initMatrix() {
   var csize = Math.max(12, Math.min(24, Math.round(H * 0.018)));
   var cols = Math.floor(W / csize);
