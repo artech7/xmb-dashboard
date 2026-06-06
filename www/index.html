@@ -3590,28 +3590,25 @@ var GL_AURORA_FRAG = [
   // One vertical aurora curtain. cx = horizontal centre (0..1), driven by
   // slow travelling folds so the sheet ripples side to side. Returns glow.
   'float curtain(vec2 uv,float t,float seed,float cxBase,float wide,out vec3 rayMod){',
-  // Horizontal position of this curtain column, rippling over height + time.
-  // Folds travel DOWN the curtain (depend on uv.y) so it waves like fabric.
-  '  float fold = sin(uv.y*2.2 + t*0.6 + seed*6.28)*0.045',
-  '             + sin(uv.y*4.7 - t*0.9 + seed*3.1)*0.022',
-  '             + sin(uv.y*1.1 + t*0.35)*0.030;',
-  '  float cx = cxBase + fold;',
+  // Whole-curtain horizontal sway + travelling folds — this is the DOMINANT
+  // motion so the aurora visibly ripples and drifts side to side.
+  '  float sway = sin(t*0.5 + seed*6.28)*0.10 + sin(t*0.27 + seed*2.0)*0.06;',
+  '  float fold = sin(uv.y*2.2 + t*1.1 + seed*6.28)*0.075',
+  '             + sin(uv.y*4.7 - t*1.6 + seed*3.1)*0.040',
+  '             + sin(uv.y*1.1 + t*0.7)*0.045;',
+  '  float cx = cxBase + sway + fold;',
   '  float dx = (uv.x - cx);',
   // Curtain body: gaussian across width, soft feathered edges.
   '  float body = exp(-dx*dx/(wide*wide));',
-  // Vertical falloff: bright glowing base (lower), fading up to wispy tips.
-  '  float top = 0.10 + 0.08*sin(t*0.3+seed*5.0);',          // where it starts
-  '  float baseY = 0.74 + 0.05*sin(t*0.25+seed*2.0);',       // glowing hem line
+  // Vertical falloff: wispy tips up top, soft glowing hem lower (no hot spike).
+  '  float top = 0.10 + 0.08*sin(t*0.3+seed*5.0);',
+  '  float baseY = 0.74 + 0.05*sin(t*0.25+seed*2.0);',
   '  float vert = smoothstep(top, baseY, uv.y) * smoothstep(0.96, baseY, uv.y);',
-  // Brighten strongly toward the hem.
-  '  vert += smoothstep(top, baseY, uv.y) * pow(smoothstep(top,baseY,uv.y),2.0)*0.3;',
-  // Vertical ray striations — thin light rays running down the curtain.
-  '  float rays = fbm(vec2((uv.x)*55.0 + seed*20.0, uv.y*6.0 + t*0.15));',
-  '  rays = 0.55 + rays*0.9;',
-  // Shimmer up/down the rays.
-  '  float shim = 0.8 + 0.2*sin(uv.y*30.0 - t*3.0 + dx*20.0 + seed*4.0);',
-  '  rayMod = vec3(rays*shim);',
-  '  return body * vert * rays * shim;',
+  // Ray striations move WITH the curtain (follow cx) — no vertical scroll.
+  '  float rays = fbm(vec2((uv.x - cx)*48.0 + seed*20.0, uv.y*5.0));',
+  '  rays = 0.72 + rays*0.45;',
+  '  rayMod = vec3(rays);',
+  '  return body * vert * rays;',
   '}',
 
   'void main(){',
@@ -3634,38 +3631,38 @@ var GL_AURORA_FRAG = [
   '  g=curtain(uv,t,0.12,0.22,0.16,rm);',
   '  vec3 cA=mix(u_c0,u_c1,smoothstep(0.1,0.7,uv.y));',
   '  cA=mix(cA,u_c2,smoothstep(0.5,0.95,uv.y));',
-  '  col+=cA*g*0.72*u_intensity;',
+  '  col+=cA*g*0.58*u_intensity;',
 
   '  g=curtain(uv,t*1.07,0.55,0.50,0.20,rm);',
   '  vec3 cB=mix(u_c2,u_c3,smoothstep(0.1,0.7,uv.y));',
   '  cB=mix(cB,u_c4,smoothstep(0.5,0.95,uv.y));',
-  '  col+=cB*g*0.66*u_intensity;',
+  '  col+=cB*g*0.54*u_intensity;',
 
   '  g=curtain(uv,t*0.93,0.81,0.76,0.17,rm);',
   '  vec3 cC=mix(u_c4,u_c5,smoothstep(0.1,0.7,uv.y));',
   '  cC=mix(cC,u_c1,smoothstep(0.5,0.95,uv.y));',
-  '  col+=cC*g*0.70*u_intensity;',
+  '  col+=cC*g*0.56*u_intensity;',
 
   // Two extra mid curtains so all six colours appear and overlap.
   '  g=curtain(uv,t*1.18,0.40,0.36,0.15,rm);',
   '  vec3 cD=mix(u_c1,u_c3,uv.y);',
-  '  col+=cD*g*0.60*u_intensity;',
+  '  col+=cD*g*0.48*u_intensity;',
 
   '  g=curtain(uv,t*0.86,0.68,0.63,0.15,rm);',
   '  vec3 cE=mix(u_c5,u_c0,uv.y);',
-  '  col+=cE*g*0.60*u_intensity;',
+  '  col+=cE*g*0.48*u_intensity;',
 
   // A wide faint back-curtain for depth (sweeps palette across x).
   '  g=curtain(uv,t*0.8,0.33,0.45,0.34,rm)*0.5;',
   '  vec3 cBack=mix(u_c0,u_c2,uv.x); cBack=mix(cBack,u_c4,smoothstep(0.5,1.0,uv.x));',
-  '  col+=cBack*g*0.5*u_intensity;',
+  '  col+=cBack*g*0.42*u_intensity;',
 
   // Soft sky glow rising from the hem region.
   '  float hemGlow=smoothstep(0.85,0.55,uv.y)*smoothstep(0.30,0.62,uv.y);',
-  '  col+=mix(u_c2,u_c0,uv.x)*hemGlow*0.06*u_intensity;',
+  '  col+=mix(u_c2,u_c0,uv.x)*hemGlow*0.05*u_intensity;',
 
   // Strong soft highlight roll-off so overlaps keep palette colour, no white.
-  '  col=col/(1.0+max(vec3(0.0),col-0.85)*1.6);',
+  '  col=col/(1.0+max(vec3(0.0),col-0.72)*2.2);',
 
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(0.80,1.0),vc*vec2(0.80,1.0))*1.10;',
