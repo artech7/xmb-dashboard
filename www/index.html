@@ -1093,7 +1093,7 @@ function resize() {
   }
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
-  auroraCurtains = null; bokehCircles = null; inkBlobs = null;
+  bokehCircles = null; inkBlobs = null;
   hexGridCanvas = null; hexCells = null; pfParticles = null;
   if (typeof updateGlassLayer === 'function') { window._glassBuiltKey = null; updateGlassLayer(); }
 }
@@ -1237,7 +1237,7 @@ function animLoop() {
   if (animSpeed > 0) t += animSpeed;
   // On mobile, use Canvas 2D nebula (real cloud structure) instead of flat GL gradient
   var nebulaUsesGL = !isMobile;
-  var useGL = glSupported && (animMode === 'solarwind' || animMode === 'ink' || (animMode === 'nebula' && nebulaUsesGL) || animMode === 'underwater');
+  var useGL = glSupported && (animMode === 'ink' || (animMode === 'nebula' && nebulaUsesGL) || animMode === 'underwater');
   // glCanvas is always offscreen — GL renders there then gets composited
   // onto the single visible 2D canvas via ctx.drawImage() in glRenderFrame
   // No canvas switching needed — eliminates all Windows bleed-through issues
@@ -1249,7 +1249,6 @@ function animLoop() {
   switch(animMode) {
     case 'galaxy':    drawGalaxy();                              break;
     case 'underwater':useGL ? renderGLDeepSea() : drawUnderwater(); break;
-    case 'solarwind': useGL ? renderGLAurora() : drawSolarWind();break;
     case 'matrix':    drawMatrix();                              break;
     case 'warp':      drawFlames();                              break;
     case 'lava':      drawWavePS3();                             break;
@@ -2207,135 +2206,6 @@ function drawUnderwater() {
 
 
 // ── 3. AURORA BOREALIS ─────────────────────────────────────
-var auroraCurtains = null;
-
-function initAurora() {
-  auroraCurtains = [];
-  for (var i = 0; i < 6; i++) {
-    auroraCurtains.push({
-      x:         0.05 + i * 0.16 + (Math.random() - 0.5) * 0.08,
-      width:     0.10 + Math.random() * 0.16,
-      height:    0.35 + Math.random() * 0.35,   // fraction of H
-      yTop:      0.02 + Math.random() * 0.15,
-      speed:     0.0020 + Math.random() * 0.0022,
-      phase:     Math.random() * Math.PI * 2,
-      waveFreq:  0.8 + Math.random() * 1.2,
-      waveAmp:   0.015 + Math.random() * 0.025,
-      shimmer:   Math.random() * Math.PI * 2,
-      shimSpd:   0.090 + Math.random() * 0.110,
-      drift:     (Math.random() - 0.5) * 0.00090,
-      palIdx:    i % 6,
-      palIdx2:   (i + 3) % 6,
-    });
-  }
-}
-
-function drawSolarWind() {
-  if (!auroraCurtains) initAurora();
-  ctx.clearRect(0, 0, W, H);
-
-  var spd = animSpeed > 0 ? animSpeed : 0;
-  var [ar, ag, ab] = accentRgb;
-
-  // ── Night sky background ──────────────────────────────────
-  var sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0,   nebulaBackground[0]);
-  sky.addColorStop(0.6, nebulaBackground[1]);
-  sky.addColorStop(1,   nebulaBackground[2]);
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, H);
-
-  // ── Stars behind aurora ───────────────────────────────────
-  stars.forEach(function(s) {
-    var sa = s.baseAlpha * (0.5 + Math.sin(t * s.twinkleSpeed + s.phase) * 0.3) * 0.7;
-    ctx.beginPath();
-    ctx.arc(s.x * W, s.y * H, s.size * 0.8, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,' + sa + ')';
-    ctx.fill();
-  });
-
-  // ── Aurora curtains ───────────────────────────────────────
-  ctx.globalCompositeOperation = 'lighter';
-  auroraCurtains.forEach(function(c) {
-    c.phase   += c.speed * spd;
-    c.shimmer += c.shimSpd * spd;
-    c.x       += c.drift * spd;
-    if (c.x < -0.1) c.x = 1.05;
-    if (c.x >  1.1) c.x = -0.05;
-
-    var cx = c.x * W;
-    var cw = c.width * W;
-    var ch = c.height * H;
-    var yTop = c.yTop * H;
-    var yBot = yTop + ch;
-
-    // Shimmer alpha — curtains breathe in and out
-    var shimAlpha = 0.55 + Math.sin(c.shimmer) * 0.30 + Math.sin(c.shimmer * 0.4) * 0.15;
-
-    // Color from theme palette
-    var col  = themeRgbPalette[c.palIdx]  || [ar, ag, ab];
-    var col2 = themeRgbPalette[c.palIdx2] || [ar, ag, ab];
-
-    // Number of vertical strips — each wiggles independently for curtain wave
-    var strips = 20;
-    for (var s2 = 0; s2 <= strips; s2++) {
-      var sf  = s2 / strips;
-      // Horizontal wave displacement — folds travel DOWN the curtain over time
-      // so the sheet ripples like hanging fabric, and sways side to side.
-      var wx  = Math.sin(sf * c.waveFreq * Math.PI * 2.0 + c.phase) * c.waveAmp * W
-              + Math.sin(sf * c.waveFreq * 3.3 * Math.PI - c.phase * 1.3) * c.waveAmp * 0.45 * W
-              + Math.sin(c.phase * 0.6 + c.shimmer * 0.3) * c.waveAmp * 0.6 * W;
-      var sx2 = cx - cw * 0.5 + sf * cw + wx;
-
-      // Strip alpha tapers at edges; subtle per-strip ray brightness variation
-      var edgeFade = Math.sin(sf * Math.PI);      // 0 at edges, 1 at centre
-      var rayVar = 0.7 + 0.3 * Math.sin(sf * 22.0 + c.shimmer * 1.5 + c.phase);
-      var sa2 = shimAlpha * edgeFade * rayVar;
-
-      // Blend between two palette colors across the curtain width
-      var r = Math.round(col[0]  + (col2[0]-col[0])  * sf);
-      var g = Math.round(col[1]  + (col2[1]-col[1])  * sf);
-      var b = Math.round(col[2]  + (col2[2]-col[2])  * sf);
-
-      // Vertical gradient: wispy faint tips at top → bright glowing hem lower
-      var grad = ctx.createLinearGradient(sx2, yTop, sx2, yBot);
-      grad.addColorStop(0,    'rgba(' + r + ',' + g + ',' + b + ',0)');
-      grad.addColorStop(0.15, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.28) + ')');
-      grad.addColorStop(0.45, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.7) + ')');
-      grad.addColorStop(0.72, 'rgba(' + r + ',' + g + ',' + b + ',' + sa2 + ')');
-      grad.addColorStop(0.90, 'rgba(' + r + ',' + g + ',' + b + ',' + (sa2 * 0.6) + ')');
-      grad.addColorStop(1,    'rgba(' + r + ',' + g + ',' + b + ',0)');
-
-      var stripW = cw / strips * 1.6;
-      ctx.fillStyle = grad;
-      ctx.fillRect(sx2 - stripW * 0.5, yTop, stripW, ch);
-    }
-
-    // Bright lower hem — the glowing base of the curtain
-    var hemY = yTop + ch * 0.70;
-    var hem  = ctx.createLinearGradient(cx, hemY - 4, cx, hemY + H * 0.06);
-    hem.addColorStop(0,   'rgba(255,255,255,' + (shimAlpha * 0.25) + ')');
-    hem.addColorStop(0.3, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (shimAlpha * 0.18) + ')');
-    hem.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = hem;
-    ctx.fillRect(cx - cw * 0.55, hemY - 4, cw * 1.1, H * 0.06);
-  });
-  ctx.globalCompositeOperation = 'source-over';
-
-  // ── Ground glow reflection ────────────────────────────────
-  var gnd = ctx.createLinearGradient(0, H * 0.85, 0, H);
-  gnd.addColorStop(0,   'rgba(0,0,0,0)');
-  gnd.addColorStop(0.5, 'rgba(' + ar + ',' + ag + ',' + ab + ',0.04)');
-  gnd.addColorStop(1,   'rgba(' + ar + ',' + ag + ',' + ab + ',0.08)');
-  ctx.fillStyle = gnd;
-  ctx.fillRect(0, H * 0.85, W, H * 0.15);
-
-  drawVignette();
-}
-
-// ── 4. MATRIX RAIN ────────────────────────────────────────
-var matrixCols = null;
-var matrixChars = '日ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ012345789Z:·';
 function initMatrix() {
   var csize = Math.max(12, Math.min(24, Math.round(H * 0.018)));
   var cols = Math.floor(W / csize);
@@ -3535,7 +3405,7 @@ function drawInkWater() {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WEBGL RENDERER — Aurora Borealis + Ink in Water
+// WEBGL RENDERER — Ink in Water
 // Falls back to Canvas 2D if WebGL unavailable
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -3543,7 +3413,6 @@ var glCanvas    = document.getElementById('gl-canvas');
 var gl          = null;
 var glSupported = false;
 var glLastW = 0, glLastH = 0; // track last GL viewport size
-var glProgAurora  = null;
 var glProgInk     = null;
 var glProgNebula  = null;
 var glProgDeepSea    = null;
@@ -3556,7 +3425,6 @@ var glWaveLocs       = {};
 var glCrystalLocs    = {};
 var glNebLocs     = {};
 var glNebulaSeed  = Math.random(); // randomizes blob positions on each load
-var glAuroraLocs = {};
 var glInkLocs    = {};
 var glQuadBuf    = null;
 
@@ -3564,110 +3432,6 @@ var glQuadBuf    = null;
 var GL_VERT = [
   'attribute vec2 a_pos;',
   'void main(){gl_Position=vec4(a_pos,0.0,1.0);}'
-].join('\n');
-
-// ── Aurora Borealis fragment shader ───────────────────────────────────────
-var GL_AURORA_FRAG = [
-  'precision mediump float;',
-  'uniform float u_time;',
-  'uniform vec2  u_res;',
-  'uniform float u_intensity;',
-  'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
-  'uniform vec3  u_bg0,u_bg1,u_bg2;',
-
-  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-  'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
-  '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
-  'float fbm(vec2 p){float v=0.0,a=0.5;for(int k=0;k<4;k++){v+=a*vnoise(p);p*=2.02;a*=0.5;}return v;}',
-
-  'float starField(vec2 uv,float sc,vec2 off){',
-  '  vec2 g=floor(uv*sc+off);float v=h2(g);if(v<0.988)return 0.0;',
-  '  float sz=0.05+h2(g+vec2(41.2,73.1))*0.08;',
-  '  float d=length(fract(uv*sc+off)-0.5)*2.0;',
-  '  float shim=0.84+0.12*sin(u_time*0.0016*(0.5+v)+v*43.7);',
-  '  return (1.0-smoothstep(0.0,sz,d))*(0.40+v*0.55)*shim;}',
-
-  // One vertical aurora curtain. cx = horizontal centre (0..1), driven by
-  // slow travelling folds so the sheet ripples side to side. Returns glow.
-  'float curtain(vec2 uv,float t,float seed,float cxBase,float wide,out vec3 rayMod){',
-  // Whole-curtain horizontal sway + travelling folds — this is the DOMINANT
-  // motion so the aurora visibly ripples and drifts side to side.
-  '  float sway = sin(t*0.5 + seed*6.28)*0.10 + sin(t*0.27 + seed*2.0)*0.06;',
-  '  float fold = sin(uv.y*2.2 + t*1.1 + seed*6.28)*0.075',
-  '             + sin(uv.y*4.7 - t*1.6 + seed*3.1)*0.040',
-  '             + sin(uv.y*1.1 + t*0.7)*0.045;',
-  '  float cx = cxBase + sway + fold;',
-  '  float dx = (uv.x - cx);',
-  // Curtain body: gaussian across width, soft feathered edges.
-  '  float body = exp(-dx*dx/(wide*wide));',
-  // Vertical falloff: wispy tips up top, soft glowing hem lower (no hot spike).
-  '  float top = 0.10 + 0.08*sin(t*0.3+seed*5.0);',
-  '  float baseY = 0.74 + 0.05*sin(t*0.25+seed*2.0);',
-  '  float vert = smoothstep(top, baseY, uv.y) * smoothstep(0.96, baseY, uv.y);',
-  // Ray striations move WITH the curtain (follow cx) — no vertical scroll.
-  '  float rays = fbm(vec2((uv.x - cx)*48.0 + seed*20.0, uv.y*5.0));',
-  '  rays = 0.72 + rays*0.45;',
-  '  rayMod = vec3(rays);',
-  '  return body * vert * rays;',
-  '}',
-
-  'void main(){',
-  '  vec2 uv=gl_FragCoord.xy/u_res;',
-  '  float t=u_time*0.00240;',
-
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y*1.2),uv.y*0.65+0.35);',
-
-  // Stars
-  '  col+=starField(uv,280.0,vec2(0.0,0.0))*0.60;',
-  '  col+=starField(uv,160.0,vec2(57.3,83.7))*0.75;',
-  '  col+=starField(uv,90.0,vec2(31.1,47.9))*0.90;',
-
-  // Several overlapping vertical curtains at different x, width, speed, colour.
-  '  vec3 rm;',
-  '  float g;',
-
-  // Each curtain sweeps through several palette colours along its height and
-  // by screen position, so the whole spectrum reads across the aurora.
-  '  g=curtain(uv,t,0.12,0.22,0.16,rm);',
-  '  vec3 cA=mix(u_c0,u_c1,smoothstep(0.1,0.7,uv.y));',
-  '  cA=mix(cA,u_c2,smoothstep(0.5,0.95,uv.y));',
-  '  col+=cA*g*0.58*u_intensity;',
-
-  '  g=curtain(uv,t*1.07,0.55,0.50,0.20,rm);',
-  '  vec3 cB=mix(u_c2,u_c3,smoothstep(0.1,0.7,uv.y));',
-  '  cB=mix(cB,u_c4,smoothstep(0.5,0.95,uv.y));',
-  '  col+=cB*g*0.54*u_intensity;',
-
-  '  g=curtain(uv,t*0.93,0.81,0.76,0.17,rm);',
-  '  vec3 cC=mix(u_c4,u_c5,smoothstep(0.1,0.7,uv.y));',
-  '  cC=mix(cC,u_c1,smoothstep(0.5,0.95,uv.y));',
-  '  col+=cC*g*0.56*u_intensity;',
-
-  // Two extra mid curtains so all six colours appear and overlap.
-  '  g=curtain(uv,t*1.18,0.40,0.36,0.15,rm);',
-  '  vec3 cD=mix(u_c1,u_c3,uv.y);',
-  '  col+=cD*g*0.48*u_intensity;',
-
-  '  g=curtain(uv,t*0.86,0.68,0.63,0.15,rm);',
-  '  vec3 cE=mix(u_c5,u_c0,uv.y);',
-  '  col+=cE*g*0.48*u_intensity;',
-
-  // A wide faint back-curtain for depth (sweeps palette across x).
-  '  g=curtain(uv,t*0.8,0.33,0.45,0.34,rm)*0.5;',
-  '  vec3 cBack=mix(u_c0,u_c2,uv.x); cBack=mix(cBack,u_c4,smoothstep(0.5,1.0,uv.x));',
-  '  col+=cBack*g*0.42*u_intensity;',
-
-  // Soft sky glow rising from the hem region.
-  '  float hemGlow=smoothstep(0.85,0.55,uv.y)*smoothstep(0.30,0.62,uv.y);',
-  '  col+=mix(u_c2,u_c0,uv.x)*hemGlow*0.05*u_intensity;',
-
-  // Strong soft highlight roll-off so overlaps keep palette colour, no white.
-  '  col=col/(1.0+max(vec3(0.0),col-0.72)*2.2);',
-
-  '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(0.80,1.0),vc*vec2(0.80,1.0))*1.10;',
-  '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
-  '}'
 ].join('\n');
 
 // ── SMOKE fragment shader ────────────────────────────────────────────────────
@@ -4328,7 +4092,6 @@ function initWebGL() {
       gl.STATIC_DRAW
     );
 
-    glProgAurora  = glCompileProgram(GL_VERT, GL_AURORA_FRAG);
     glProgInk     = glCompileProgram(GL_VERT, GL_INK_FRAG);
     glProgNebula  = glCompileProgram(GL_VERT, GL_NEBULA_FRAG);
     glProgDeepSea   = glCompileProgram(GL_VERT, GL_DEEPSEA_FRAG);
@@ -4337,11 +4100,9 @@ function initWebGL() {
     glProgWave      = glCompileProgram(GL_VERT, GL_WAVE_FRAG);
 
     // Independent failures — one bad shader doesn't kill the rest
-    if (!glProgAurora && !glProgInk && !glProgNebula && !glProgDeepSea) { gl = null; return false; }
-    if (!glProgAurora) console.warn('Aurora shader failed');
+    if (!glProgInk && !glProgNebula && !glProgDeepSea) { gl = null; return false; }
     if (!glProgNebula) console.warn('Nebula shader failed');
 
-    glAuroraLocs  = glCacheUniforms(glProgAurora);
     glInkLocs     = glCacheUniforms(glProgInk);
     glNebLocs     = glCacheUniforms(glProgNebula);
     if (glProgDeepSea)   glDeepSeaLocs   = glCacheUniforms(glProgDeepSea);
@@ -4426,7 +4187,6 @@ function glRenderFrame(prog, locs, useAccentForC0) {
   ctx.drawImage(glCanvas, 0, 0, W, H);
 }
 
-function renderGLAurora()  { if (glProgAurora)  glRenderFrame(glProgAurora,  glAuroraLocs);       else { glSupported = false; drawSolarWind(); } }
 function renderGLDeepSea() { if (glProgDeepSea) glRenderFrame(glProgDeepSea, glDeepSeaLocs);      else { glSupported = false; drawUnderwater(); } }
 function renderGLCrystals(){ if (glProgCrystals)glRenderFrame(glProgCrystals,glCrystalLocs);      else drawBokeh(); }
 function renderGLGalaxy()  { if (glProgGalaxy)  glRenderFrame(glProgGalaxy,  glGalaxyLocs);       else drawGalaxy(); }
@@ -5448,7 +5208,7 @@ var _prefsOpen = false; // global flag checked by all key handlers
 
 // Keyboard nav state for prefs panel
 // Row 0 = theme grid (count set after themes load), rows 1-8 = settings, 9 = reset
-var ROW_COLS     = [40, 5, 4, 4, 3, 3, 3, 2, 3, 3, 1];
+var ROW_COLS     = [40, 4, 4, 4, 3, 3, 3, 2, 3, 3, 1];
 var prefFocusRow = 0;
 var prefFocusCol = 0;
 
@@ -5831,7 +5591,7 @@ function renderPrefsUI() {
 
   // ── Show/hide settings based on current animation ─────────
   var anim = userPrefs.animStyle || 'nebula';
-  var showIntensity = ['nebula','galaxy','underwater','solarwind','bokeh','ink','grass','voronoi'].indexOf(anim) >= 0;
+  var showIntensity = ['nebula','galaxy','underwater','bokeh','ink','grass','voronoi'].indexOf(anim) >= 0;
   var showParticles = anim === 'bokeh';
   var showRandomize = anim === 'nebula';
 
@@ -7690,12 +7450,11 @@ document.addEventListener('keydown', function(e) {
       <div class="p-section">
         <div class="p-section-label">Background Style</div>
         <div class="p-row" data-pref-row="1">
-          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:100%">
+          <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;width:100%">
             <button class="p-toggle" data-pref="animStyle" data-val="nebula"     data-pref-row="1" data-pref-col="0">Nebula</button>
             <button class="p-toggle" data-pref="animStyle" data-val="galaxy"     data-pref-row="1" data-pref-col="1">Galaxy</button>
             <button class="p-toggle" data-pref="animStyle" data-val="underwater" data-pref-row="1" data-pref-col="2">Deep Sea</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="solarwind"  data-pref-row="1" data-pref-col="3">Aurora</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="4">Matrix</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="matrix"     data-pref-row="1" data-pref-col="3">Matrix</button>
           </div>
         </div>
         <div class="p-row" data-pref-row="2">
@@ -8121,11 +7880,15 @@ function applyPrefs(prefs) {
   var mm = {normal:1,reduced:0.25,off:0}; animSpeed = mm[prefs.motion]!==undefined?mm[prefs.motion]:1;
   // Set animation mode — reset mode-specific state on change
   var newMode = prefs.animStyle || 'nebula';
+  // Guard: if a removed animation (e.g. the old 'solarwind' aurora) is still
+  // saved in prefs, fall back to nebula so the background isn't blank.
+  var VALID_ANIMS = ['nebula','galaxy','underwater','matrix','warp','lava','voronoi','wallpaper','bokeh','ink','hex','grass'];
+  if (VALID_ANIMS.indexOf(newMode) < 0) newMode = 'nebula';
   if (newMode !== animMode) {
     animMode = newMode;
     galaxyStars = null; causticPoints = null; solarParticles = null;
     matrixCols = null; flameParticles = null; flameEmbers = null;
-    auroraCurtains = null; bokehCircles = null; inkBlobs = null;
+    bokehCircles = null; inkBlobs = null;
     pfParticles = null;
     hexCells = null;
   }
