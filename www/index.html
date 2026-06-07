@@ -3781,34 +3781,39 @@ var GL_DEEPSEA_FRAG = [
   '  vec3 causticCol=mix(mix(u_c0,u_c1,smoothstep(0.0,0.5,cx)),mix(u_c2,u_c3,smoothstep(0.5,1.0,cx)),smoothstep(0.25,0.75,cx));',
   '  col += causticCol*(caustA*0.34 + caustB*0.18)*caustFade*u_intensity;',
 
-  // ── God-ray shafts: volumetric beams pouring DOWN from the surface above
-  //    into the scene. They tilt toward the far distance (matching the floor's
-  //    perspective), so near beams are steep/foreground and far beams compress
-  //    toward the top. Brightest where they strike the lit caustic floor. ──
-  // Floor highlight that the shafts land on (shares the caustic projection).
+  // ── God-ray shafts: thin, crisp light beams angling DOWN from the surface.
+  //    They are the SAME refracted light as the floor caustics, so their
+  //    horizontal positions are driven by the caustic field — where the floor
+  //    is bright, a shaft comes down to it. Light diffuses in the water, so
+  //    the beams fade out in the mid-water before reaching the floor. ──
   '  float floorLight = max(caustA, caustB*1.3);',
-  '  for(int ri=0;ri<7;ri++){',
+  // Sample the caustic field at a shallower "mid-water" slice to place beams,
+  // so beams sit above the bright floor patches they correspond to.
+  '  vec2 beamUV = vec2((uv.x-0.5)*(0.5+dist*0.30)+0.5, dist*0.22 - t*0.08);',
+  '  float beamField = caustic(beamUV, t*0.9);',
+  '  for(int ri=0;ri<9;ri++){',
   '    float rf=float(ri);',
-  // Each beam enters the surface at sx and lands on the floor further back.
-  '    float sx=0.06+rf*0.135;',                          // surface entry x
-  '    float drift=sin(t*0.45+rf*1.3)*0.05;',
-  '    float waver=sin(uv.y*6.0 - t*1.6 + rf*2.0)*0.018',
-  '              + sin(uv.y*11.0 - t*2.4 + rf*1.1)*0.009;',
-  // Beam center moves toward screen-centre with distance (converges to the far
-  // vanishing region up top) — uv.y high (far) pulls toward 0.5.
-  '    float conv=mix(sx, 0.5, uv.y*0.55);',
+  '    float sx=0.045+rf*0.108;',                          // surface entry x
+  '    float drift=sin(t*0.4+rf*1.3)*0.035;',
+  '    float waver=sin(uv.y*5.0 - t*1.4 + rf*2.0)*0.012;', // subtle, keeps it straight
+  // Converge gently toward the vanishing region up top (perspective).
+  '    float conv=mix(sx, 0.5, uv.y*0.45);',
   '    float beamX=conv+drift+waver;',
   '    float rayX=(uv.x-beamX)*asp;',
-  '    float rayW=0.010+rf*0.0012+(1.0-uv.y)*0.018;',     // wide near, narrow far
-  '    float beam=exp(-rayX*rayX/(rayW*rayW));',
-  // Vertical presence: full down the column, but strongest mid-scene and
-  // fading into the far murk up top and softening at the very bottom.
-  '    float vpres=smoothstep(0.02,0.30,uv.y)*(1.0-depth*0.5)*(0.55+0.45*sin(t*1.3+rf*0.9));',
-  '    float ray=beam*vpres;',
-  // Brighten the beam where it lands on a lit caustic patch on the floor.
-  '    ray*=0.7+floorLight*1.1;',
-  '    vec3 rCol=rf<1.0?u_c0:rf<2.0?u_c1:rf<3.0?u_c2:rf<4.0?u_c3:rf<5.0?u_c4:u_c5;',
-  '    col+=mix(rCol,vec3(1.0),0.4)*ray*0.14*u_intensity;',
+  // Thin crisp beam: sharp narrow core + a faint wider glow. Stays narrow.
+  '    float rayW=0.0045+rf*0.0006;',
+  '    float core=exp(-rayX*rayX/(rayW*rayW));',
+  '    float glow=exp(-rayX*rayX/(rayW*rayW*7.0))*0.30;',
+  '    float beam=core+glow;',
+  // Vertical band: enters near the surface (top), shafts through the upper/mid
+  // water, then DIFFUSES OUT before the floor (fade toward the bottom).
+  '    float vband=smoothstep(0.40,0.92,uv.y)*smoothstep(0.05,0.40,uv.y);',
+  '    float flick=0.5+0.5*sin(t*1.2+rf*0.9+uv.y*4.0);',
+  '    float ray=beam*vband*flick*(0.6+0.4*depth);',
+  // Sync to the light pattern — only shafts where the refracted field is bright.
+  '    ray*=0.35+max(beamField,floorLight)*1.4;',
+  '    vec3 rCol=rf<1.0?u_c0:rf<2.0?u_c1:rf<3.0?u_c2:rf<4.0?u_c3:rf<5.0?u_c4:rf<7.0?u_c0:u_c2;',
+  '    col+=mix(rCol,vec3(1.0),0.55)*ray*0.13*u_intensity;',
   '  }',
 
   // ── Exponential depth fog: clear front blends to dark murk in the back ──
