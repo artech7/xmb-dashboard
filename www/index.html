@@ -3775,11 +3775,30 @@ var GL_DEEPSEA_FRAG = [
   '  vec2 cuv = vec2((uv.x-0.5)*(0.5+dist*0.45)+0.5, dist*0.42 - t*0.10);',
   '  float caustA = caustic(cuv, t);',
   '  float caustB = caustic(cuv+vec2(0.3,0.1), t*0.85+1.5)*0.55;',
-  // Caustics strongest in the clear foreground, fade into the far murk.
   '  float caustFade = (1.0-fog)*(0.5+0.5*depth);',       // dim very front + far
+  '  float caust = (caustA*0.34 + caustB*0.18);',
+
+  // ── Sand floor: fine grain + ripple bands, sharing the floor projection so
+  //    it lives in the same perspective space. Caustics then light it up. ──
+  // Static sand UV (no time scroll) so the seabed stays put while light moves.
+  '  vec2 suv = vec2((uv.x-0.5)*(0.5+dist*0.45)+0.5, dist*0.42);',
+  '  float grain = fbm(suv*38.0)*0.6 + fbm(suv*90.0)*0.4;',     // fine sand grain
+  '  float ripple = sin((suv.y*26.0) + fbm(suv*6.0)*4.0)*0.5+0.5;', // dune ripples
+  '  ripple = pow(ripple, 1.6);',
+  '  float sand = grain*0.55 + ripple*0.45;',
+  // Sand colour: warm muted tan derived from the palette so it fits any theme.
+  '  vec3 sandBase = mix(u_bg1, mix(u_c4,vec3(0.85,0.78,0.62),0.5), 0.55);',
+  '  vec3 sandCol = sandBase*(0.45 + sand*0.55);',
+  // Only show sand on the floor (foreground/clear zone), fading into far murk.
+  '  float floorVis = (1.0-fog)*smoothstep(0.0,0.25,1.0-uv.y);',
+  '  col = mix(col, sandCol, floorVis*0.7);',
+
+  // Caustics interact with the sand: brighten grains/ripples where light lands
+  // (multiplicative pooling) plus the coloured caustic glow on top.
   '  float cx=uv.x;',
   '  vec3 causticCol=mix(mix(u_c0,u_c1,smoothstep(0.0,0.5,cx)),mix(u_c2,u_c3,smoothstep(0.5,1.0,cx)),smoothstep(0.25,0.75,cx));',
-  '  col += causticCol*(caustA*0.34 + caustB*0.18)*caustFade*u_intensity;',
+  '  col += sandCol * caust * (0.6+sand*0.8) * floorVis * 1.3 * u_intensity;',   // light pools on sand
+  '  col += causticCol*caust*caustFade*u_intensity;',                            // coloured glow
 
   // ── God-ray shafts: thin, crisp light beams angling DOWN from the surface.
   //    They are the SAME refracted light as the floor caustics, so their
@@ -3791,9 +3810,9 @@ var GL_DEEPSEA_FRAG = [
   // so beams sit above the bright floor patches they correspond to.
   '  vec2 beamUV = vec2((uv.x-0.5)*(0.5+dist*0.30)+0.5, dist*0.22 - t*0.08);',
   '  float beamField = caustic(beamUV, t*0.9);',
-  '  for(int ri=0;ri<24;ri++){',
+  '  for(int ri=0;ri<32;ri++){',
   '    float rf=float(ri);',
-  '    float sx=0.01+rf*0.0425;',                          // entry x spread full width
+  '    float sx=0.008+rf*0.0317;',                          // entry x spread full width
   '    float drift=sin(t*0.4+rf*1.3)*0.026;',
   '    float waver=sin(uv.y*5.0 - t*1.4 + rf*2.0)*0.010;', // subtle, keeps it straight
   // Gentle perspective convergence (kept mild so shafts stay spread across).
@@ -3812,7 +3831,7 @@ var GL_DEEPSEA_FRAG = [
   '    float ray=beam*vband*flick*(0.6+0.4*depth);',
   // Sync to the light pattern — only shafts where the refracted field is bright.
   '    ray*=0.35+max(beamField,floorLight)*1.4;',
-  '    vec3 rCol=rf<4.0?u_c0:rf<8.0?u_c1:rf<12.0?u_c2:rf<16.0?u_c3:rf<20.0?u_c4:u_c5;',
+  '    vec3 rCol=rf<5.0?u_c0:rf<11.0?u_c1:rf<16.0?u_c2:rf<21.0?u_c3:rf<27.0?u_c4:u_c5;',
   '    col+=mix(rCol,vec3(1.0),0.55)*ray*0.12*u_intensity;',
   '  }',
 
