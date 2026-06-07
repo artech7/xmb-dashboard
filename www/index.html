@@ -3787,9 +3787,19 @@ var GL_DEEPSEA_FRAG = [
   '  float ripple = sin((suv.y*26.0) + fbm(suv*6.0)*4.0)*0.5+0.5;', // dune ripples
   '  ripple = pow(ripple, 1.6);',
   '  float sand = grain*0.55 + ripple*0.45;',
-  // Natural warm tan, tinted toward the light-role colour by u_sandTint pref.
+  // Natural warm tan. The tint pref blends it toward the palette: Subtle adds
+  // a light wash of the light-role colour; Themed paints the full palette
+  // spread across the floor (multiple colours, like the real palette).
   '  vec3 naturalSand = vec3(0.76,0.69,0.54);',
-  '  vec3 sandBase = mix(naturalSand, naturalSand*0.5+u_light*0.6, clamp(u_sandTint,0.0,1.0));',
+  '  float st=clamp(u_sandTint,0.0,1.0);',
+  // Full palette spread across the floor (x + ripple variation), used at high tint.
+  '  vec3 palSpread = mix(mix(u_c0,u_c2,smoothstep(0.0,0.5,suv.x)), mix(u_c3,u_c4,smoothstep(0.5,1.0,suv.x)), smoothstep(0.2,0.8,suv.x));',
+  '  palSpread = mix(palSpread, u_c5, ripple*0.4);',
+  // Low-tint target = sand lightly washed with the light colour; high-tint
+  // target = sand carrying the palette spread itself.
+  '  vec3 tintLo = mix(naturalSand, naturalSand*0.6+u_light*0.5, 0.5);',
+  '  vec3 tintHi = mix(naturalSand*0.5, palSpread*0.9, 0.7);',
+  '  vec3 sandBase = mix(naturalSand, mix(tintLo, tintHi, smoothstep(0.5,1.0,st)), smoothstep(0.0,1.0,st));',
   '  vec3 sandCol = sandBase*(0.45 + sand*0.55);',
   '  float floorVis = (1.0-fog)*smoothstep(0.0,0.25,1.0-uv.y);',
   '  col = mix(col, sandCol, floorVis*0.7);',
@@ -4374,7 +4384,7 @@ function glSetUniforms(locs, useAccentForC0) {
     gl.uniform3f(locs.u_accent, accent[0]/255,    accent[1]/255,    accent[2]/255);
   }
   if (locs.u_sandTint !== undefined && locs.u_sandTint !== null)
-    gl.uniform1f(locs.u_sandTint, window._seaSandTint !== undefined ? window._seaSandTint : 0.5);
+    gl.uniform1f(locs.u_sandTint, window._seaSandTint !== undefined ? window._seaSandTint : 0.4);
 }
 
 // ── Render one frame with a GL program ───────────────────────────────────
@@ -5447,7 +5457,7 @@ function loadPrefs() {
     var gw = localStorage.getItem('xmb-glass-warp');    if (gw !== null) window._glassWarp = parseFloat(gw);
     var gm = localStorage.getItem('xmb-glass-marble');  if (gm !== null) window._glassMarble = parseFloat(gm);
     var gd = localStorage.getItem('xmb-glass-diffuse'); if (gd !== null) window._glassDiffuse = parseFloat(gd);
-    var sst = localStorage.getItem('xmb-sea-sand-tint'); window._seaSandTint = (sst !== null) ? parseFloat(sst) : 0.5;
+    var sst = localStorage.getItem('xmb-sea-sand-tint'); window._seaSandTint = (sst !== null) ? parseFloat(sst) : 0.4;
   } catch (e) { window._vorTint = 0.45; }
   if (!window._vorSeed) window._vorSeed = (Math.random() * 1e9) >>> 0;
   if (typeof applyPrefs === 'function') applyPrefs(userPrefs);
@@ -5543,7 +5553,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   function syncSeaSand() {
-    var cur = (window._seaSandTint !== undefined ? window._seaSandTint : 0.5);
+    var cur = (window._seaSandTint !== undefined ? window._seaSandTint : 0.4);
     document.querySelectorAll('.sea-sand').forEach(function(b){
       b.classList.toggle('active', Math.abs(parseFloat(b.dataset.tint) - cur) < 0.01);
     });
@@ -7653,8 +7663,8 @@ document.addEventListener('keydown', function(e) {
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
             <span style="font-size:11px;letter-spacing:1px;opacity:0.6;margin-right:4px">SAND TINT</span>
             <button class="p-toggle sea-sand" data-tint="0"    style="min-width:auto">Natural</button>
-            <button class="p-toggle sea-sand" data-tint="0.5"  style="min-width:auto">Subtle</button>
-            <button class="p-toggle sea-sand" data-tint="0.85" style="min-width:auto">Themed</button>
+            <button class="p-toggle sea-sand" data-tint="0.4"  style="min-width:auto">Subtle</button>
+            <button class="p-toggle sea-sand" data-tint="1.0"  style="min-width:auto">Themed</button>
           </div>
         </div>
         <div style="margin-top:10px" id="prefs-voronoi-img-wrap">
