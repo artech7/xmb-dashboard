@@ -3719,6 +3719,7 @@ var GL_DEEPSEA_FRAG = [
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
   'uniform vec3  u_water,u_light,u_accent;',
+  'uniform vec3  u_caustic,u_sand,u_deep;',
   'uniform float u_sandTint;',
   'uniform float u_particles;',
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
@@ -3767,9 +3768,9 @@ var GL_DEEPSEA_FRAG = [
   '  float depth = clamp(dist/7.0, 0.0, 1.0);',           // 0..1 normalized
   '  float fog  = 1.0 - exp(-dist*0.62);',                // 0 front -> ~1 back
 
-  // Base water: clear near, deep dark distance — tinted by the water-role hue.
-  '  vec3 nearWater = mix(u_bg0, u_water*0.6, 0.45);',
-  '  vec3 farWater  = mix(u_bg2, u_water, 0.25)*0.40;',
+  // Base water: clear near, deep dark distance — water + deep palette roles.
+  '  vec3 nearWater = mix(u_bg0, u_water*0.6, 0.5);',
+  '  vec3 farWater  = mix(u_bg2, u_deep, 0.35)*0.42;',
   '  vec3 col = mix(nearWater, farWater, depth);',
 
   // ── Caustics projected on the receding floor (perspective compression) ──
@@ -3787,28 +3788,24 @@ var GL_DEEPSEA_FRAG = [
   '  float ripple = sin((suv.y*26.0) + fbm(suv*6.0)*4.0)*0.5+0.5;', // dune ripples
   '  ripple = pow(ripple, 1.6);',
   '  float sand = grain*0.55 + ripple*0.45;',
-  // Natural warm tan. The tint pref blends it toward the palette: Subtle adds
-  // a light wash of the light-role colour; Themed paints the full palette
-  // spread across the floor (multiple colours, like the real palette).
+  // Natural=pure tan; Subtle=light wash of the sand role; Themed=sand role
+  // fully colours the floor. Clear separation between the three levels.
   '  vec3 naturalSand = vec3(0.76,0.69,0.54);',
   '  float st=clamp(u_sandTint,0.0,1.0);',
-  // Full palette spread across the floor (x + ripple variation), used at high tint.
-  '  vec3 palSpread = mix(mix(u_c0,u_c2,smoothstep(0.0,0.5,suv.x)), mix(u_c3,u_c4,smoothstep(0.5,1.0,suv.x)), smoothstep(0.2,0.8,suv.x));',
-  '  palSpread = mix(palSpread, u_c5, ripple*0.4);',
-  // Low-tint target = sand lightly washed with the light colour; high-tint
-  // target = sand carrying the palette spread itself.
-  '  vec3 tintLo = mix(naturalSand, naturalSand*0.6+u_light*0.5, 0.5);',
-  '  vec3 tintHi = mix(naturalSand*0.5, palSpread*0.9, 0.7);',
-  '  vec3 sandBase = mix(naturalSand, mix(tintLo, tintHi, smoothstep(0.5,1.0,st)), smoothstep(0.0,1.0,st));',
+  '  vec3 sandTinted = mix(naturalSand*0.55, u_sand*0.95, 0.75);', // strong palette sand
+  '  vec3 sandWash   = mix(naturalSand, u_sand*0.7+naturalSand*0.4, 0.5);', // light wash
+  // 0 -> natural, 0..0.5 -> toward wash, 0.5..1 -> wash toward full tinted.
+  '  vec3 sandBase = mix(naturalSand, sandWash, smoothstep(0.0,0.5,st));',
+  '  sandBase = mix(sandBase, sandTinted, smoothstep(0.5,1.0,st));',
   '  vec3 sandCol = sandBase*(0.45 + sand*0.55);',
   '  float floorVis = (1.0-fog)*smoothstep(0.0,0.25,1.0-uv.y);',
   '  col = mix(col, sandCol, floorVis*0.7);',
 
-  // Caustics interact with the sand: light pools on grains/ripples (the light
-  // colour) plus a subtle accent-tinted glow.
-  '  vec3 lightCol = mix(u_light, vec3(1.0), 0.25);',
+  // Caustics interact with the sand: light pools on grains/ripples using the
+  // caustic palette role, plus a brighter highlight of the same hue.
+  '  vec3 caustGlow = mix(u_caustic, vec3(1.0), 0.30);',
   '  col += sandCol * caust * (0.6+sand*0.8) * floorVis * 1.3 * u_intensity;',
-  '  col += lightCol * caust * caustFade * u_intensity;',
+  '  col += caustGlow * caust * caustFade * u_intensity;',
 
   // ── God-ray shafts: thin, crisp light beams angling DOWN from the surface.
   //    They are the SAME refracted light as the floor caustics, so their
@@ -4021,7 +4018,7 @@ function glCompileProgram(vsrc, fsrc) {
 }
 
 function glCacheUniforms(prog) {
-  var names = ['u_time','u_res','u_intensity','u_seed','u_particles','u_c0','u_c1','u_c2','u_c3','u_c4','u_c5','u_bg0','u_bg1','u_bg2','u_water','u_light','u_accent','u_sandTint'];
+  var names = ['u_time','u_res','u_intensity','u_seed','u_particles','u_c0','u_c1','u_c2','u_c3','u_c4','u_c5','u_bg0','u_bg1','u_bg2','u_water','u_light','u_accent','u_caustic','u_sand','u_deep','u_sandTint'];
   var locs = {};
   names.forEach(function(n){ locs[n] = gl.getUniformLocation(prog, n); });
   return locs;
@@ -4361,27 +4358,22 @@ function glSetUniforms(locs, useAccentForC0) {
   gl.uniform3fv(locs.u_bg2, bg2);
 
   // ── Role-based palette colours (used by Deep Sea) ──
-  // Derive consistent roles from the palette so every theme reads right:
-  //   water  = darkest, most-saturated colour (the volume hue)
-  //   light  = brightest colour (sun through the surface; shafts + caustics)
-  //   accent = a vivid mid colour (bio particles / glow)
+  // Sort the palette by brightness and assign elements by luminance, so each
+  // part of the scene gets a genuinely different colour:
+  //   brightest -> light/shafts, next -> caustics, next -> sand,
+  //   next -> detritus/accent, darker -> water, darkest -> deep.
   if (locs.u_water !== undefined && locs.u_water !== null) {
-    var pal = themeRgbPalette || [[40,90,140]];
+    var pal = (themeRgbPalette || [[40,90,140]]).slice();
     function lum(c){ return c[0]*0.299 + c[1]*0.587 + c[2]*0.114; }
-    function sat(c){ var mx=Math.max(c[0],c[1],c[2]), mn=Math.min(c[0],c[1],c[2]); return mx<=0?0:(mx-mn)/mx; }
-    var darkest = pal[0], brightest = pal[0], accent = pal[0];
-    var dScore=1e9, bScore=-1e9, aScore=-1e9;
-    for (var pi=0; pi<pal.length; pi++) {
-      var c = pal[pi], L = lum(c), S = sat(c);
-      var ds = L - S*60;           // dark + saturated -> water
-      if (ds < dScore) { dScore = ds; darkest = c; }
-      if (L > bScore)  { bScore = L; brightest = c; }
-      var as = S*255 + L*0.3;      // vivid -> accent
-      if (as > aScore) { aScore = as; accent = c; }
-    }
-    gl.uniform3f(locs.u_water,  darkest[0]/255,   darkest[1]/255,   darkest[2]/255);
-    gl.uniform3f(locs.u_light,  brightest[0]/255, brightest[1]/255, brightest[2]/255);
-    gl.uniform3f(locs.u_accent, accent[0]/255,    accent[1]/255,    accent[2]/255);
+    var ranked = pal.slice().sort(function(a,b){ return lum(b) - lum(a); }); // bright -> dark
+    function pick(idx){ return ranked[Math.min(idx, ranked.length-1)]; }
+    function setU(name, c){ if (locs[name]!==undefined && locs[name]!==null) gl.uniform3f(locs[name], c[0]/255, c[1]/255, c[2]/255); }
+    setU('u_light',   pick(0));   // brightest -> sun / shafts
+    setU('u_caustic', pick(1));   // 2nd -> caustic light on the floor
+    setU('u_sand',    pick(2));   // 3rd -> sand tint
+    setU('u_accent',  pick(3));   // 4th -> detritus / motes
+    setU('u_water',   pick(Math.max(0, ranked.length-2))); // 2nd darkest -> water volume
+    setU('u_deep',    pick(ranked.length-1));              // darkest -> deep distance
   }
   if (locs.u_sandTint !== undefined && locs.u_sandTint !== null)
     gl.uniform1f(locs.u_sandTint, window._seaSandTint !== undefined ? window._seaSandTint : 0.4);
