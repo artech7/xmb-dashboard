@@ -2044,23 +2044,49 @@ var causticNodes     = null;
 
 // Slow-falling detritus ("marine snow") — drifts down from the top.
 function newDetritus(randomPos) {
+  var mn = Math.min(W, H);
+  // Tiered sizes: mostly small, some medium, few large. Capped so even the
+  // large ones stay crisp specks (never smears/blobs).
+  var roll = Math.random();
+  var tier, size, alpha, vy, sharp;
+  if (roll < 0.62) {            // SMALL — far, faint, slow, numerous
+    tier = 0;
+    size  = (0.0005 + Math.random() * 0.0009) * mn;
+    alpha = 0.08 + Math.random() * 0.16;
+    vy    = 0.00008 + Math.random() * 0.00014;
+    sharp = 0.65;               // rounder/softer (distant)
+  } else if (roll < 0.90) {     // MEDIUM
+    tier = 1;
+    size  = (0.0014 + Math.random() * 0.0014) * mn;
+    alpha = 0.14 + Math.random() * 0.22;
+    vy    = 0.00012 + Math.random() * 0.00020;
+    sharp = 0.78;
+  } else {                      // LARGE — near, brighter, faster, rare (capped)
+    tier = 2;
+    size  = (0.0030 + Math.random() * 0.0020) * mn;
+    alpha = 0.20 + Math.random() * 0.26;
+    vy    = 0.00018 + Math.random() * 0.00028;
+    sharp = 0.92;               // sharper/more defined (closer)
+  }
   return {
     x:    Math.random(),
     y:    randomPos ? Math.random() : -0.03,
-    vy:   0.00010 + Math.random() * 0.00022,   // gentle downward fall
-    vx:   (Math.random() - 0.5) * 0.00006,     // slight horizontal drift
-    size: (0.0006 + Math.random() * 0.0022) * Math.min(W, H),
-    alpha: 0.10 + Math.random() * 0.30,
+    vy:   vy,
+    vx:   (Math.random() - 0.5) * 0.00006,
+    size: size,
+    aspect: sharp,              // ellipse minor/major (closer = rounder->crisper)
+    alpha: alpha,
+    tier: tier,
     phase: Math.random() * Math.PI * 2,
-    swaySpd:  0.004 + Math.random() * 0.010,    // sway oscillation speed
-    swayAmp:  0.0004 + Math.random() * 0.0010,  // sway width
+    swaySpd:  0.004 + Math.random() * 0.010,
+    swayAmp:  (0.0004 + Math.random() * 0.0010) * (tier === 2 ? 0.6 : 1.0),
     spin:  Math.random() * Math.PI,
   };
 }
 
 function initDeepSeaDetritus() {
   deepSeaDetritus = [];
-  var count = Math.round((isMobile ? 50 : 90) * (window.particleMult || 1.0));
+  var count = Math.round((isMobile ? 90 : 170) * (window.particleMult || 1.0));
   for (var d = 0; d < count; d++) deepSeaDetritus.push(newDetritus(true));
 }
 
@@ -2079,12 +2105,12 @@ function drawDeepSeaDetritus() {
     if (p.y > 1.05) { deepSeaDetritus[i] = newDetritus(false); continue; }
     var a = p.alpha * (0.6 + Math.sin(p.phase * 0.7) * 0.4);
     var px = dx * W, py = p.y * H;
-    // soft irregular speck (slightly elongated, faintly tinted by theme)
+    // crisp speck — slightly irregular but kept small/defined (no blobs)
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(p.spin + p.phase * 0.2);
     ctx.beginPath();
-    ctx.ellipse(0, 0, p.size, p.size * 0.7, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, p.size, p.size * p.aspect, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(' + ((c2[0]+200)>>1) + ',' + ((c2[1]+210)>>1) + ',' + ((c2[2]+215)>>1) + ',' + a.toFixed(3) + ')';
     ctx.fill();
     ctx.restore();
@@ -7988,8 +8014,8 @@ function applyPrefs(prefs) {
       deepSeaMotes = [];
       for (var dmi=0; dmi<newDmc; dmi++) deepSeaMotes.push(newMote(true));
     }
-    var ddc = {off:0, normal:90, dense:160};
-    var newDdc = Math.round(((prefs.particles && ddc[prefs.particles] !== undefined) ? ddc[prefs.particles] : 90) * (isMobile ? 0.55 : 1.0));
+    var ddc = {off:0, normal:170, dense:280};
+    var newDdc = Math.round(((prefs.particles && ddc[prefs.particles] !== undefined) ? ddc[prefs.particles] : 170) * (isMobile ? 0.55 : 1.0));
     if (!deepSeaDetritus || deepSeaDetritus.length !== newDdc) {
       deepSeaDetritus = [];
       for (var ddi=0; ddi<newDdc; ddi++) deepSeaDetritus.push(newDetritus(true));
