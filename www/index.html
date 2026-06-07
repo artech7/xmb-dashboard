@@ -3718,6 +3718,8 @@ var GL_DEEPSEA_FRAG = [
   'uniform float u_intensity;',
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
+  'uniform vec3  u_water,u_light,u_accent;',
+  'uniform float u_sandTint;',
   'uniform float u_particles;',
   'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
@@ -3765,9 +3767,9 @@ var GL_DEEPSEA_FRAG = [
   '  float depth = clamp(dist/7.0, 0.0, 1.0);',           // 0..1 normalized
   '  float fog  = 1.0 - exp(-dist*0.62);',                // 0 front -> ~1 back
 
-  // Base water: clear blue-green up front, deep dark in the distance.
-  '  vec3 nearWater = mix(u_bg0, mix(u_c2,u_c4,0.5)*0.5, 0.35);',
-  '  vec3 farWater  = u_bg2*0.40;',
+  // Base water: clear near, deep dark distance — tinted by the water-role hue.
+  '  vec3 nearWater = mix(u_bg0, u_water*0.6, 0.45);',
+  '  vec3 farWater  = mix(u_bg2, u_water, 0.25)*0.40;',
   '  vec3 col = mix(nearWater, farWater, depth);',
 
   // ── Caustics projected on the receding floor (perspective compression) ──
@@ -3780,25 +3782,23 @@ var GL_DEEPSEA_FRAG = [
 
   // ── Sand floor: fine grain + ripple bands, sharing the floor projection so
   //    it lives in the same perspective space. Caustics then light it up. ──
-  // Static sand UV (no time scroll) so the seabed stays put while light moves.
   '  vec2 suv = vec2((uv.x-0.5)*(0.5+dist*0.45)+0.5, dist*0.42);',
   '  float grain = fbm(suv*38.0)*0.6 + fbm(suv*90.0)*0.4;',     // fine sand grain
   '  float ripple = sin((suv.y*26.0) + fbm(suv*6.0)*4.0)*0.5+0.5;', // dune ripples
   '  ripple = pow(ripple, 1.6);',
   '  float sand = grain*0.55 + ripple*0.45;',
-  // Sand colour: warm muted tan derived from the palette so it fits any theme.
-  '  vec3 sandBase = mix(u_bg1, mix(u_c4,vec3(0.85,0.78,0.62),0.5), 0.55);',
+  // Natural warm tan, tinted toward the light-role colour by u_sandTint pref.
+  '  vec3 naturalSand = vec3(0.76,0.69,0.54);',
+  '  vec3 sandBase = mix(naturalSand, naturalSand*0.5+u_light*0.6, clamp(u_sandTint,0.0,1.0));',
   '  vec3 sandCol = sandBase*(0.45 + sand*0.55);',
-  // Only show sand on the floor (foreground/clear zone), fading into far murk.
   '  float floorVis = (1.0-fog)*smoothstep(0.0,0.25,1.0-uv.y);',
   '  col = mix(col, sandCol, floorVis*0.7);',
 
-  // Caustics interact with the sand: brighten grains/ripples where light lands
-  // (multiplicative pooling) plus the coloured caustic glow on top.
-  '  float cx=uv.x;',
-  '  vec3 causticCol=mix(mix(u_c0,u_c1,smoothstep(0.0,0.5,cx)),mix(u_c2,u_c3,smoothstep(0.5,1.0,cx)),smoothstep(0.25,0.75,cx));',
-  '  col += sandCol * caust * (0.6+sand*0.8) * floorVis * 1.3 * u_intensity;',   // light pools on sand
-  '  col += causticCol*caust*caustFade*u_intensity;',                            // coloured glow
+  // Caustics interact with the sand: light pools on grains/ripples (the light
+  // colour) plus a subtle accent-tinted glow.
+  '  vec3 lightCol = mix(u_light, vec3(1.0), 0.25);',
+  '  col += sandCol * caust * (0.6+sand*0.8) * floorVis * 1.3 * u_intensity;',
+  '  col += lightCol * caust * caustFade * u_intensity;',
 
   // ── God-ray shafts: thin, crisp light beams angling DOWN from the surface.
   //    They are the SAME refracted light as the floor caustics, so their
@@ -3831,7 +3831,7 @@ var GL_DEEPSEA_FRAG = [
   '    float ray=beam*vband*flick*(0.6+0.4*depth);',
   // Sync to the light pattern — only shafts where the refracted field is bright.
   '    ray*=0.35+max(beamField,floorLight)*1.4;',
-  '    vec3 rCol=rf<5.0?u_c0:rf<11.0?u_c1:rf<16.0?u_c2:rf<21.0?u_c3:rf<27.0?u_c4:u_c5;',
+  '    vec3 rCol=mix(u_light, u_accent, fract(rf*0.37));',
   '    col+=mix(rCol,vec3(1.0),0.55)*ray*0.12*u_intensity;',
   '  }',
 
@@ -3842,7 +3842,7 @@ var GL_DEEPSEA_FRAG = [
 
   // Faint far-distance glow band at the top (light filtering from afar).
   '  float farGlow=smoothstep(0.80,1.0,uv.y);',
-  '  col+=mix(u_c1,vec3(1.0),0.4)*farGlow*0.06*u_intensity;',
+  '  col+=mix(u_light,vec3(1.0),0.4)*farGlow*0.06*u_intensity;',
 
   // ── Bioluminescent particles (not depth-scaled, per request) ──
   '  float bio=0.0;',
@@ -3864,7 +3864,7 @@ var GL_DEEPSEA_FRAG = [
   '  bio+=bioPart(uv,vec2(0.52,0.87),t);',
   '  bio+=bioPart(uv,vec2(0.76,0.63),t);',
   '  bio+=bioPart(uv,vec2(0.04,0.48),t);',
-  '  vec3 bioCol=mix(mix(u_c0,u_c2,0.5),mix(u_c4,u_c5,0.5),uv.x);',
+  '  vec3 bioCol=mix(u_accent, u_light, uv.x*0.5);',
   '  col+=mix(bioCol,vec3(1.0),0.4)*bio*u_intensity*u_particles;',
   '  float mote=0.0;',
   '  mote+=bioPart(uv,vec2(0.31,0.73),t*0.6);',
@@ -3872,7 +3872,7 @@ var GL_DEEPSEA_FRAG = [
   '  mote+=bioPart(uv,vec2(0.77,0.88),t*0.7);',
   '  mote+=bioPart(uv,vec2(0.14,0.55),t*0.55);',
   '  mote+=bioPart(uv,vec2(0.44,0.41),t*0.65);',
-  '  col+=mix(u_c1,u_c3,uv.y)*mote*0.5*u_intensity*u_particles;',
+  '  col+=mix(u_accent,u_light,uv.y)*mote*0.5*u_intensity*u_particles;',
 
   '  vec2 vc=uv-0.5;',
   '  col*=1.0-dot(vc*vec2(0.7,0.9),vc*vec2(0.7,0.9))*1.1;',
@@ -4011,7 +4011,7 @@ function glCompileProgram(vsrc, fsrc) {
 }
 
 function glCacheUniforms(prog) {
-  var names = ['u_time','u_res','u_intensity','u_seed','u_c0','u_c1','u_c2','u_c3','u_c4','u_c5','u_bg0','u_bg1','u_bg2'];
+  var names = ['u_time','u_res','u_intensity','u_seed','u_particles','u_c0','u_c1','u_c2','u_c3','u_c4','u_c5','u_bg0','u_bg1','u_bg2','u_water','u_light','u_accent','u_sandTint'];
   var locs = {};
   names.forEach(function(n){ locs[n] = gl.getUniformLocation(prog, n); });
   return locs;
@@ -4349,6 +4349,32 @@ function glSetUniforms(locs, useAccentForC0) {
   gl.uniform3fv(locs.u_bg0, bg0);
   gl.uniform3fv(locs.u_bg1, bg1);
   gl.uniform3fv(locs.u_bg2, bg2);
+
+  // ── Role-based palette colours (used by Deep Sea) ──
+  // Derive consistent roles from the palette so every theme reads right:
+  //   water  = darkest, most-saturated colour (the volume hue)
+  //   light  = brightest colour (sun through the surface; shafts + caustics)
+  //   accent = a vivid mid colour (bio particles / glow)
+  if (locs.u_water !== undefined && locs.u_water !== null) {
+    var pal = themeRgbPalette || [[40,90,140]];
+    function lum(c){ return c[0]*0.299 + c[1]*0.587 + c[2]*0.114; }
+    function sat(c){ var mx=Math.max(c[0],c[1],c[2]), mn=Math.min(c[0],c[1],c[2]); return mx<=0?0:(mx-mn)/mx; }
+    var darkest = pal[0], brightest = pal[0], accent = pal[0];
+    var dScore=1e9, bScore=-1e9, aScore=-1e9;
+    for (var pi=0; pi<pal.length; pi++) {
+      var c = pal[pi], L = lum(c), S = sat(c);
+      var ds = L - S*60;           // dark + saturated -> water
+      if (ds < dScore) { dScore = ds; darkest = c; }
+      if (L > bScore)  { bScore = L; brightest = c; }
+      var as = S*255 + L*0.3;      // vivid -> accent
+      if (as > aScore) { aScore = as; accent = c; }
+    }
+    gl.uniform3f(locs.u_water,  darkest[0]/255,   darkest[1]/255,   darkest[2]/255);
+    gl.uniform3f(locs.u_light,  brightest[0]/255, brightest[1]/255, brightest[2]/255);
+    gl.uniform3f(locs.u_accent, accent[0]/255,    accent[1]/255,    accent[2]/255);
+  }
+  if (locs.u_sandTint !== undefined && locs.u_sandTint !== null)
+    gl.uniform1f(locs.u_sandTint, window._seaSandTint !== undefined ? window._seaSandTint : 0.5);
 }
 
 // ── Render one frame with a GL program ───────────────────────────────────
@@ -5421,6 +5447,7 @@ function loadPrefs() {
     var gw = localStorage.getItem('xmb-glass-warp');    if (gw !== null) window._glassWarp = parseFloat(gw);
     var gm = localStorage.getItem('xmb-glass-marble');  if (gm !== null) window._glassMarble = parseFloat(gm);
     var gd = localStorage.getItem('xmb-glass-diffuse'); if (gd !== null) window._glassDiffuse = parseFloat(gd);
+    var sst = localStorage.getItem('xmb-sea-sand-tint'); window._seaSandTint = (sst !== null) ? parseFloat(sst) : 0.5;
   } catch (e) { window._vorTint = 0.45; }
   if (!window._vorSeed) window._vorSeed = (Math.random() * 1e9) >>> 0;
   if (typeof applyPrefs === 'function') applyPrefs(userPrefs);
@@ -5515,6 +5542,20 @@ document.addEventListener('DOMContentLoaded', function() {
       grassDemoBtn.innerHTML = '&#x2600; Fast Day Cycle: ' + (window._grassDemo ? 'On' : 'Off');
     });
   }
+  function syncSeaSand() {
+    var cur = (window._seaSandTint !== undefined ? window._seaSandTint : 0.5);
+    document.querySelectorAll('.sea-sand').forEach(function(b){
+      b.classList.toggle('active', Math.abs(parseFloat(b.dataset.tint) - cur) < 0.01);
+    });
+  }
+  document.querySelectorAll('.sea-sand').forEach(function(b){
+    b.addEventListener('click', function(){
+      window._seaSandTint = parseFloat(b.dataset.tint);
+      try { localStorage.setItem('xmb-sea-sand-tint', String(window._seaSandTint)); } catch(e) {}
+      syncSeaSand();
+    });
+  });
+  syncSeaSand();
   // ── Custom image uploads (Voronoi source + standalone Wallpaper) ──
   // Downscale + JPEG-encode so the data URL fits comfortably in localStorage.
   function loadImageScaled(file, maxW, cb) {
@@ -5757,6 +5798,7 @@ function renderPrefsUI() {
   // ── Toggle buttons ─────────────────────────────────────────
   document.querySelectorAll('.p-toggle').forEach(function(btn) {
     if (btn.id === 'prefs-nebula-randomize') return; // has its own handler
+    if (btn.classList.contains('sea-sand')) return;  // own handler
     if (btn.id === 'prefs-grass-demo') return; // has its own handler
     if (btn.id === 'prefs-voronoi-img' || btn.id === 'prefs-voronoi-img-clear') return;
     if (btn.id === 'prefs-voronoi-randomize') return;
@@ -5794,6 +5836,8 @@ function renderPrefsUI() {
   if (randomizeWrap) randomizeWrap.style.display = showRandomize ? '' : 'none';
   var grassDemoWrap = document.getElementById('prefs-grass-demo-wrap');
   if (grassDemoWrap) grassDemoWrap.style.display = (anim === 'grass') ? '' : 'none';
+  var seaSandWrap = document.getElementById('prefs-sea-sand-wrap');
+  if (seaSandWrap) seaSandWrap.style.display = (anim === 'underwater') ? '' : 'none';
   var vorImgWrap = document.getElementById('prefs-voronoi-img-wrap');
   if (vorImgWrap) vorImgWrap.style.display = (anim === 'voronoi') ? '' : 'none';
   var wallImgWrap = document.getElementById('prefs-wallpaper-img-wrap');
@@ -7604,6 +7648,14 @@ document.addEventListener('keydown', function(e) {
         </div>
         <div style="margin-top:10px" id="prefs-grass-demo-wrap">
           <button id="prefs-grass-demo" class="p-toggle" style="min-width:auto">&#x2600; Fast Day Cycle: Off</button>
+        </div>
+        <div style="margin-top:10px" id="prefs-sea-sand-wrap">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <span style="font-size:11px;letter-spacing:1px;opacity:0.6;margin-right:4px">SAND TINT</span>
+            <button class="p-toggle sea-sand" data-tint="0"    style="min-width:auto">Natural</button>
+            <button class="p-toggle sea-sand" data-tint="0.5"  style="min-width:auto">Subtle</button>
+            <button class="p-toggle sea-sand" data-tint="0.85" style="min-width:auto">Themed</button>
+          </div>
         </div>
         <div style="margin-top:10px" id="prefs-voronoi-img-wrap">
           <button id="prefs-voronoi-randomize" class="p-toggle" style="min-width:auto">&#x21BA; Randomize Pattern</button>
