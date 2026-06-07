@@ -528,6 +528,7 @@ body {
     gap: 0; padding: 2px 0;
     transform: none !important;      /* disable JS translateY on mobile */
     transition: none !important;
+    will-change: auto !important;    /* will-change:transform breaks child backdrop-filter */
   }
 
   /* ── Item cards ── */
