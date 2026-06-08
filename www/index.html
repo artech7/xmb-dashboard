@@ -1099,7 +1099,7 @@ function resize() {
   }
   galaxyStars = null; causticPoints = null; solarParticles = null;
   matrixCols = null; flameParticles = null; flameEmbers = null;
-  bokehCircles = null; inkBlobs = null;
+  bokehCircles = null; hazeBanks = null;
   hexGridCanvas = null; hexCells = null; pfParticles = null;
   if (typeof updateGlassLayer === 'function') { window._glassBuiltKey = null; updateGlassLayer(); }
 }
@@ -3362,179 +3362,78 @@ function drawBokeh() {
 // Each ink cloud expands slowly, has irregular noisy edges driven by overlapping
 // sine fields, and slowly mixes with neighbours using additive blending.
 
-var inkBlobs = null;
-var inkAge   = 0;
+var hazeBanks = null;
+var hazeTime  = 0;
 
-function initInk() {
-  inkBlobs = [];
-  inkAge   = 0;
-  // Seed several clouds spread across the canvas
-  for (var i = 0; i < 9; i++) {
-    inkBlobs.push(newInkBlob(true));
+function initHaze() {
+  hazeBanks = [];
+  // A handful of broad soft fog banks drifting at different depths/speeds.
+  var n = isMobile ? 5 : 7;
+  for (var i = 0; i < n; i++) {
+    hazeBanks.push({
+      x:     Math.random(),
+      y:     0.2 + Math.random() * 0.7,
+      // big soft radii relative to screen
+      r:     (0.35 + Math.random() * 0.45),
+      vx:    (Math.random() - 0.5) * 0.000045,
+      vy:    (Math.random() - 0.5) * 0.000022,
+      drift: Math.random() * Math.PI * 2,
+      driftS:(0.00018 + Math.random() * 0.00022) * (Math.random() < 0.5 ? 1 : -1),
+      amp:   0.04 + Math.random() * 0.06,
+      palIdx:Math.floor(Math.random() * 6),
+      base:  0.10 + Math.random() * 0.16,   // per-bank opacity
+      puff:  0.6 + Math.random() * 0.8,     // breathing speed
+      phase: Math.random() * Math.PI * 2,
+    });
   }
 }
 
-function newInkBlob(randomAge) {
-  var U   = Math.min(W, H);
-  var ml  = 8 + Math.random() * 10;  // clouds live a long time
-  var pal = Math.floor(Math.random() * 6);
-  return {
-    x:        0.10 + Math.random() * 0.80,
-    y:        0.10 + Math.random() * 0.80,
-    // Very slow drift — ink in water barely moves
-    vx:       (Math.random() - 0.5) * 0.000055,
-    vy:       (Math.random() - 0.5) * 0.000040,
-    // Current radius and target max radius
-    r:        (0.005 + Math.random() * 0.015) * U,
-    maxR:     (0.14 + Math.random() * 0.22) * U,
-    // Expansion speed — slows as it approaches maxR
-    vr:       (0.0018 + Math.random() * 0.0022) * U,
-    age:      randomAge ? Math.random() * ml * 0.6 : 0,
-    maxAge:   ml,
-    palIdx:   pal,
-    // Noise field parameters for irregular cloud edge
-    // 8 sine wave overlays at different frequencies and phases
-    noiseFreqs:  [0.8, 1.4, 2.1, 3.3, 5.0, 7.2, 11.0, 16.0].map(function(f) {
-      return f * (0.85 + Math.random() * 0.30);
-    }),
-    noiseAmps:   [0.28, 0.20, 0.14, 0.10, 0.07, 0.045, 0.025, 0.012],
-    noisePhases: Array.from({length: 8}, function() { return Math.random() * Math.PI * 2; }),
-    noiseSpeeds: Array.from({length: 8}, function() { return (Math.random() - 0.5) * 0.0018; }),
-    // Slow rotation of the whole noise field
-    rot:      Math.random() * Math.PI * 2,
-    rotSpd:   (Math.random() - 0.5) * 0.0012,
-    // Peak opacity
-    peakAlpha: 0.55 + Math.random() * 0.35,
-  };
-}
-
-function drawInkWater() {
-  if (!inkBlobs) initInk();
+function drawInkWater() {   // hazy atmosphere (Canvas fallback)
+  if (!hazeBanks) initHaze();
+  var spd = animSpeed > 0 ? animSpeed : 0;
   ctx.clearRect(0, 0, W, H);
 
-  var spd = animSpeed > 0 ? animSpeed : 0;
-  var [ar, ag, ab] = accentRgb;
-
-  // ── Deep water background ─────────────────────────────────
-  var bg = ctx.createRadialGradient(W*0.5, H*0.45, 0, W*0.5, H*0.5, Math.max(W,H)*0.9);
+  // Ambient vertical backdrop from the theme bg colours.
+  var bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0,   nebulaBackground[0]);
-  bg.addColorStop(0.6, nebulaBackground[1]);
+  bg.addColorStop(0.55,nebulaBackground[1]);
   bg.addColorStop(1,   nebulaBackground[2]);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  inkAge += 0.006 * spd;
+  hazeTime += 0.016 * spd;
+  var U = Math.max(W, H);
 
-  // Periodically spawn a new cloud
-  if (spd > 0 && Math.random() < 0.006 * spd && inkBlobs.length < 16) {
-    inkBlobs.push(newInkBlob(false));
-  }
-  // Remove fully faded blobs
-  inkBlobs = inkBlobs.filter(function(b) { return b.age < b.maxAge + 1.0; });
+  ctx.globalCompositeOperation = 'lighter';
+  hazeBanks.forEach(function(b) {
+    b.x     += b.vx * spd;
+    b.y     += b.vy * spd;
+    b.drift += b.driftS * spd;
+    // wrap horizontally so the haze keeps drifting
+    if (b.x < -0.3) b.x += 1.6; else if (b.x > 1.3) b.x -= 1.6;
 
-  // Draw each ink cloud
-  inkBlobs.forEach(function(blob) {
-    blob.age  += 0.005 * spd;
-    blob.rot  += blob.rotSpd * spd;
-    blob.x    += blob.vx * spd;
-    blob.y    += blob.vy * spd;
-    blob.noisePhases = blob.noisePhases.map(function(p, i) {
-      return p + blob.noiseSpeeds[i] * spd;
-    });
+    var cx = (b.x + Math.sin(b.drift) * b.amp) * W;
+    var cy = (b.y + Math.cos(b.drift * 0.7) * b.amp * 0.5) * H;
+    var breathe = 0.85 + 0.15 * Math.sin(hazeTime * b.puff + b.phase);
+    var rad = b.r * U * breathe;
+    var col = themeRgbPalette[b.palIdx] || accentRgb;
+    // denser low, thinner high
+    var vGrad = 0.7 + 0.3 * Math.min(1, b.y / 0.6);
+    var a = b.base * vGrad * (blobOpacityMult || 1.0);
 
-    // Expand radius — ease out as it approaches maxR
-    var growth = Math.max(0, 1 - blob.r / blob.maxR);
-    blob.r += blob.vr * growth * spd;
-
-    var ageFrac = blob.age / blob.maxAge;
-    if (ageFrac >= 1) return;
-
-    // Fade envelope: quick bloom in, slow hold, gentle fade out
-    var fadeIn  = Math.min(1, ageFrac * 5);
-    var fadeOut = Math.max(0, 1 - Math.pow(Math.max(0, ageFrac - 0.5) / 0.5, 1.5));
-    var alpha   = blob.peakAlpha * fadeIn * fadeOut;
-    if (alpha < 0.01) return;
-
-    var cx  = blob.x * W;
-    var cy  = blob.y * H;
-    var r   = blob.r;
-    var col = themeRgbPalette[blob.palIdx] || [ar, ag, ab];
-
-    // ── Render as a polygon with noisy radius ───────────────
-    // Sample the cloud edge in angular steps, displacing by noise
-    var steps   = 72;
-    var angleStep = (Math.PI * 2) / steps;
-
-    // Draw multiple layers from outermost (transparent) to core (opaque)
-    var layers = [
-      { rMult: 1.80, aMult: 0.04 },  // very outer diffuse haze
-      { rMult: 1.40, aMult: 0.10 },  // outer glow
-      { rMult: 1.10, aMult: 0.28 },  // main cloud body
-      { rMult: 0.72, aMult: 0.55 },  // dense core
-      { rMult: 0.38, aMult: 0.80 },  // bright centre
-    ];
-
-    layers.forEach(function(lyr) {
-      var layerR  = r * lyr.rMult;
-      var layerA  = alpha * lyr.aMult;
-
-      ctx.beginPath();
-      for (var s = 0; s <= steps; s++) {
-        var angle    = s * angleStep + blob.rot;
-        // Noise displacement: sum of sine waves at increasing frequencies
-        var disp = 0;
-        for (var n = 0; n < blob.noiseFreqs.length; n++) {
-          disp += Math.sin(angle * blob.noiseFreqs[n] + blob.noisePhases[n]) * blob.noiseAmps[n];
-        }
-        // disp is in range roughly -0.5 to +0.5 — scale by layer radius
-        var rad  = layerR * (1 + disp * (0.45 - lyr.rMult * 0.10));
-        var px   = cx + Math.cos(angle) * rad;
-        var py   = cy + Math.sin(angle) * rad;
-        if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-
-      // Fill with radial gradient so edges of the noisy poly are softer
-      var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, layerR * 1.1);
-      grad.addColorStop(0,    'rgba('+col[0]+','+col[1]+','+col[2]+','+layerA+')');
-      grad.addColorStop(0.55, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(layerA*0.75)+')');
-      grad.addColorStop(1,    'rgba('+col[0]+','+col[1]+','+col[2]+',0)');
-      ctx.fillStyle = grad;
-      ctx.fill();
-    });
-
-    // ── Bright pigment core flash on fresh blobs ────────────
-    if (ageFrac < 0.15) {
-      var flashA = alpha * (1 - ageFrac / 0.15) * 0.6;
-      var flashG = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.35);
-      flashG.addColorStop(0,   'rgba(255,255,255,'+flashA+')');
-      flashG.addColorStop(0.5, 'rgba('+col[0]+','+col[1]+','+col[2]+','+(flashA*0.5)+')');
-      flashG.addColorStop(1,   'rgba(0,0,0,0)');
-      ctx.fillStyle = flashG;
-      ctx.fillRect(cx - r*0.35, cy - r*0.35, r*0.7, r*0.7);
-    }
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0,    'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + a.toFixed(3) + ')');
+    g.addColorStop(0.45, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (a * 0.5).toFixed(3) + ')');
+    g.addColorStop(1,    'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
   });
-
-  // ── Subtle water surface shimmer at top ──────────────────
-  for (var sh = 0; sh < 3; sh++) {
-    ctx.beginPath();
-    var shY = H * (0.04 + sh * 0.05);
-    for (var sx = 0; sx <= W; sx += 5) {
-      var sy = shY + Math.sin(sx * 0.008 + inkAge * 0.4 + sh) * 4
-                   + Math.sin(sx * 0.013 + inkAge * 0.25 + sh * 1.5) * 2.5;
-      if (sx === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-    }
-    ctx.strokeStyle = 'rgba('+ar+','+ag+','+ab+','+(0.04 - sh*0.01)+')';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
+  ctx.globalCompositeOperation = 'source-over';
 
   drawVignette();
 }
-
-
 // ═══════════════════════════════════════════════════════════════════════════
-// WEBGL RENDERER — Ink in Water
+// WEBGL RENDERER — Hazy Atmosphere
 // Falls back to Canvas 2D if WebGL unavailable
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -3563,7 +3462,7 @@ var GL_VERT = [
   'void main(){gl_Position=vec4(a_pos,0.0,1.0);}'
 ].join('\n');
 
-// ── SMOKE fragment shader ────────────────────────────────────────────────────
+// ── HAZE (hazy atmosphere) fragment shader ────────────────────────────────────────────────────
 var GL_INK_FRAG = [
   'precision mediump float;',
   'uniform float u_time;',
@@ -3586,33 +3485,42 @@ var GL_INK_FRAG = [
   'void main(){',
   '  vec2 uv=gl_FragCoord.xy/u_res;',
   '  float asp=u_res.x/u_res.y;',
-  '  float t=u_time*0.00085;',
-  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.6+0.4)*0.18;',
-  '  float yy=1.0-uv.y;',
-  '  float cx0=0.30+sin(t*0.55)*0.07;',
-  '  float cx1=0.52+sin(t*0.40+1.1)*0.09;',
-  '  float cx2=0.72+sin(t*0.65+2.3)*0.06;',
-  '  vec2 p0=vec2((uv.x-cx0)*asp*1.6, yy*2.0-t*1.60);',
-  '  vec2 w0=vec2(fbm(p0+vec2(t*0.28,0.0)),fbm(p0+vec2(0.0,t*0.22)+vec2(3.2,1.7)));',
-  '  float s0=smoothstep(0.25,0.58,fbm(p0+3.8*w0))',
-  '           *smoothstep(0.0,0.32,yy)*smoothstep(1.0,0.55,yy);',
-  '  vec2 p1=vec2((uv.x-cx1)*asp*1.4, yy*1.8-t*1.35);',
-  '  vec2 w1=vec2(fbm(p1+vec2(t*0.22+1.1,0.0)),fbm(p1+vec2(0.0,t*0.18)+vec2(1.7,4.3)));',
-  '  float s1=smoothstep(0.23,0.57,fbm(p1+4.2*w1))',
-  '           *smoothstep(0.0,0.28,yy)*smoothstep(0.95,0.50,yy);',
-  '  vec2 p2=vec2((uv.x-cx2)*asp*1.8, yy*2.2-t*1.75);',
-  '  vec2 w2=vec2(fbm(p2+vec2(t*0.32+2.3,0.0)),fbm(p2+vec2(0.0,t*0.25)+vec2(5.1,2.2)));',
-  '  float s2=smoothstep(0.25,0.59,fbm(p2+3.5*w2))',
-  '           *smoothstep(0.0,0.26,yy)*smoothstep(0.90,0.45,yy);',
-  '  float smokeTot=clamp(s0+s1+s2,0.0,1.0);',
-  '  vec3 sc0=mix(pal(0.0+t*0.05),pal(0.1+t*0.05),s0/(s0+0.001));',
-  '  vec3 sc1=mix(pal(0.35+t*0.04),pal(0.45+t*0.04),s1/(s1+0.001));',
-  '  vec3 sc2=mix(pal(0.65+t*0.06),pal(0.75+t*0.06),s2/(s2+0.001));',
-  '  vec3 smokeCol=(sc0*s0+sc1*s1+sc2*s2)/(smokeTot+0.001);',
-  '  smokeCol=smokeCol*0.42;',
-  '  col=mix(col,smokeCol,smokeTot*u_intensity*0.80);',
+  '  float t=u_time*0.00045;',
+  // Deep ambient backdrop.
+  '  vec3 col=mix(u_bg0,mix(u_bg1,u_bg2,uv.y),uv.y*0.7+0.3);',
+  '  vec2 auv=vec2(uv.x*asp,uv.y);',
+  // ── Layered haze: broad soft fog banks drifting slowly at different
+  //    depths/speeds. Domain-warped fbm keeps them organic; each layer
+  //    tinted from a different part of the palette. ──
+  '  float haze=0.0; vec3 hcol=vec3(0.0);',
+  // Far layer — large, slow, faint.
+  '  vec2 q0=auv*1.2+vec2(t*0.30, sin(t*0.2)*0.10);',
+  '  vec2 w0=vec2(fbm(q0),fbm(q0+vec2(4.1,1.7)));',
+  '  float h0=fbm(q0+1.8*w0);',
+  '  h0=smoothstep(0.35,0.85,h0)*0.55;',
+  '  haze+=h0; hcol+=pal(0.05+t*0.03)*h0;',
+  // Mid layer — medium scale, opposite drift.
+  '  vec2 q1=auv*2.1+vec2(-t*0.45+2.0, t*0.10);',
+  '  vec2 w1=vec2(fbm(q1+vec2(1.1,0.0)),fbm(q1+vec2(0.0,3.3)));',
+  '  float h1=fbm(q1+2.2*w1);',
+  '  h1=smoothstep(0.40,0.82,h1)*0.55;',
+  '  haze+=h1; hcol+=pal(0.45+t*0.04)*h1;',
+  // Near layer — finer wisps, faster, thinner.
+  '  vec2 q2=auv*3.4+vec2(t*0.62+5.0, -t*0.14);',
+  '  vec2 w2=vec2(fbm(q2+vec2(2.7,1.2)),fbm(q2+vec2(0.5,4.8)));',
+  '  float h2v=fbm(q2+2.6*w2);',
+  '  h2v=smoothstep(0.48,0.86,h2v)*0.40;',
+  '  haze+=h2v; hcol+=pal(0.75+t*0.05)*h2v;',
+  // Normalize colour, keep it soft/atmospheric.
+  '  hcol/=max(haze,0.001);',
+  '  float hazeAmt=clamp(haze,0.0,1.0);',
+  // Gentle vertical gradient — a touch denser low, thinner up high.
+  '  hazeAmt*=mix(0.7,1.0,smoothstep(0.0,0.6,uv.y));',
+  '  col=mix(col,hcol*0.85,hazeAmt*u_intensity*0.85);',
+  // Soft broad glow from the brightest haze so it reads as luminous mist.
+  '  col+=hcol*pow(hazeAmt,2.0)*0.18*u_intensity;',
   '  vec2 vc=uv-0.5;',
-  '  col*=1.0-dot(vc*vec2(0.7,0.9),vc*vec2(0.7,0.9))*0.9;',
+  '  col*=1.0-dot(vc*vec2(0.7,0.9),vc*vec2(0.7,0.9))*0.85;',
   '  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);',
   '}',
 ].join('\n');
@@ -7711,7 +7619,7 @@ document.addEventListener('keydown', function(e) {
         <div class="p-row" data-pref-row="3">
           <div class="p-toggle-group" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;width:100%">
             <button class="p-toggle" data-pref="animStyle" data-val="bokeh" data-pref-row="3" data-pref-col="0">Particles</button>
-            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="3" data-pref-col="1">Smoke</button>
+            <button class="p-toggle" data-pref="animStyle" data-val="ink"   data-pref-row="3" data-pref-col="1">Haze</button>
             <button class="p-toggle" data-pref="animStyle" data-val="hex"   data-pref-row="3" data-pref-col="2">Hex Grid</button>
             <button class="p-toggle" data-pref="animStyle" data-val="grass" data-pref-row="3" data-pref-col="3">Grass</button>
           </div>
@@ -8137,7 +8045,7 @@ function applyPrefs(prefs) {
     animMode = newMode;
     galaxyStars = null; causticPoints = null; solarParticles = null;
     matrixCols = null; flameParticles = null; flameEmbers = null;
-    bokehCircles = null; inkBlobs = null;
+    bokehCircles = null; hazeBanks = null;
     pfParticles = null;
     hexCells = null;
   }
