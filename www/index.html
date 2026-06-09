@@ -3536,22 +3536,25 @@ var GL_INK_FRAG = [
   // ── Parallax cloud layers: far=slow/large/faint, near=faster/smaller/brighter.
   //    Domain-warp is ANIMATED (t inside the warp lookups) so the cloud shapes
   //    churn/swirl as they drift — life, not a sliding still image.
-  // FAR (palette role: 4th-brightest / accent)
+  // FAR (palette role: 4th-brightest / accent) — second-order warp for real swirl
   '  vec2 p0=auv*1.0+vec2(t*1.1,0.02);',
-  '  vec2 q0=vec2(fbm(p0+vec2(t*0.6,1.7)),fbm(p0+vec2(2.3,-t*0.5)));',
-  '  float c0=smoothstep(0.42,0.82,fbm(p0+2.1*q0));',
+  '  vec2 q0=vec2(fbm(p0+vec2(t*1.8,1.7)),fbm(p0+vec2(2.3,-t*1.6)));',
+  '  vec2 r0=vec2(fbm(p0+3.5*q0+vec2(t*1.3,0.0)),fbm(p0+3.5*q0+vec2(0.0,-t*1.1)));',
+  '  float c0=smoothstep(0.42,0.82,fbm(p0+4.0*r0));',
   '  vec3 col0=mix(u_accent, u_light, sunSide*0.5);',
   '  col=mix(col, col0, c0*0.38*u_intensity);',
   // MID (3rd-brightest / sand)
   '  vec2 p1=auv*1.7+vec2(-t*1.6+3.0,0.0);',
-  '  vec2 q1=vec2(fbm(p1+vec2(1.1+t*0.8,0.0)),fbm(p1+vec2(0.0,2.9-t*0.7)));',
-  '  float c1=smoothstep(0.45,0.80,fbm(p1+2.5*q1));',
+  '  vec2 q1=vec2(fbm(p1+vec2(1.1+t*2.2,0.0)),fbm(p1+vec2(0.0,2.9-t*2.0)));',
+  '  vec2 r1=vec2(fbm(p1+3.8*q1+vec2(t*1.6,1.0)),fbm(p1+3.8*q1+vec2(2.0,-t*1.5)));',
+  '  float c1=smoothstep(0.45,0.80,fbm(p1+4.4*r1));',
   '  vec3 col1=mix(u_sand, u_light, sunSide*0.55);',
   '  col=mix(col, col1, c1*0.48*u_intensity);',
   // NEAR (2nd-brightest / caustic)
   '  vec2 p2=auv*2.6+vec2(t*2.3+6.0,-0.03);',
-  '  vec2 q2=vec2(fbm(p2+vec2(2.7+t*1.0,1.2)),fbm(p2+vec2(0.5,3.8+t*0.9)));',
-  '  float c2=smoothstep(0.48,0.82,fbm(p2+2.7*q2));',
+  '  vec2 q2=vec2(fbm(p2+vec2(2.7+t*2.6,1.2)),fbm(p2+vec2(0.5,3.8+t*2.4)));',
+  '  vec2 r2=vec2(fbm(p2+4.0*q2+vec2(t*1.9,0.5)),fbm(p2+4.0*q2+vec2(1.5,-t*1.8)));',
+  '  float c2=smoothstep(0.48,0.82,fbm(p2+4.8*r2));',
   '  vec3 col2=mix(u_caustic, u_light, sunSide*0.6);',
   '  col=mix(col, col2, c2*0.55*u_intensity);',
   // ── Haze veil: large faint unifying mist (soft palette blend).
