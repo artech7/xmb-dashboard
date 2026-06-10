@@ -3497,7 +3497,11 @@ var GL_VERT = [
 
 // ── HAZE (hazy atmosphere) fragment shader ────────────────────────────────────────────────────
 var GL_INK_FRAG = [
+  '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+  'precision highp float;',
+  '#else',
   'precision mediump float;',
+  '#endif',
   'uniform float u_time;',
   'uniform vec2  u_res;',
   'uniform float u_intensity;',
@@ -3505,7 +3509,7 @@ var GL_INK_FRAG = [
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
   'uniform vec3  u_water,u_light,u_accent;',
   'uniform vec3  u_caustic,u_sand,u_deep;',
-  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float h2(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
   'float fbm(vec2 p){float v=0.0,a=0.5;',
@@ -3575,14 +3579,18 @@ var GL_INK_FRAG = [
 ].join('\n');
 
 var GL_NEBULA_FRAG = [
+  '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+  'precision highp float;',
+  '#else',
   'precision mediump float;',
+  '#endif',
   'uniform float u_time;',
   'uniform vec2  u_res;',
   'uniform float u_intensity;',
   'uniform float u_seed;',
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
-  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float h2(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
   'float fbm(vec2 p){float v=0.0,a=0.5;',
@@ -3670,7 +3678,11 @@ var GL_NEBULA_FRAG = [
 ].join('\n');
 
 var GL_DEEPSEA_FRAG = [
+  '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+  'precision highp float;',
+  '#else',
   'precision mediump float;',
+  '#endif',
   'uniform float u_time;',
   'uniform vec2  u_res;',
   'uniform float u_intensity;',
@@ -3680,7 +3692,7 @@ var GL_DEEPSEA_FRAG = [
   'uniform vec3  u_caustic,u_sand,u_deep;',
   'uniform float u_sandTint;',
   'uniform float u_particles;',
-  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float h2(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
   '  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}',
   'float fbm(vec2 p){float v=0.0,a=0.5;',
@@ -3847,14 +3859,18 @@ var GL_DEEPSEA_FRAG = [
 ].join('\n');
 
 var GL_CRYSTALS_FRAG = [
+  '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+  'precision highp float;',
+  '#else',
   'precision mediump float;',
+  '#endif',
   'uniform float u_time;',
   'uniform vec2  u_res;',
   'uniform float u_intensity;',
   'uniform vec3  u_c0,u_c1,u_c2,u_c3,u_c4,u_c5;',
   'uniform vec3  u_bg0,u_bg1,u_bg2;',
-  'float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-  'float h1(float v){return fract(sin(v*127.1)*43758.5453);}',
+  'float h2(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
+  'float h1(float v){v=fract(v*0.1031);v*=v+33.33;v*=v+v;return fract(v);}',
   'vec3 pal(float t){float f=mod(t,1.0)*5.0;float fr=fract(f);vec3 a,b;',
   '  if(f<1.0){a=u_c0;b=u_c1;}else if(f<2.0){a=u_c1;b=u_c2;}',
   '  else if(f<3.0){a=u_c2;b=u_c3;}else if(f<4.0){a=u_c3;b=u_c4;}',
@@ -3986,14 +4002,18 @@ function glCacheUniforms(prog) {
 
 
 var GL_GALAXY_FRAG = [
+  '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+  'precision highp float;',
+  '#else',
   'precision mediump float;',
+  '#endif',
   'uniform float u_time;',
   'uniform vec2  u_res;',
   'uniform float u_intensity;',
   'uniform vec3  u_c0, u_c1, u_c2, u_c3, u_c4, u_c5;',
   'uniform vec3  u_bg0, u_bg1, u_bg2;',
   '',
-  'float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }',
+  'float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}',
   '',
   'float star(vec2 uv, float threshold){',
   '  float n = hash(floor(uv*600.0));',
